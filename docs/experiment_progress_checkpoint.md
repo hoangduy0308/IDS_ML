@@ -342,3 +342,89 @@ Lý do chốt:
 Tài liệu chính để tham chiếu từ đây về sau:
 
 - [final_model_decision.md](F:/Work/IDS_ML_New/docs/final_model_decision.md)
+
+## 15. Inference layer prototype đã hoàn thành
+
+Đã triển khai lớp inference tối thiểu cho mô hình cuối:
+
+- [ids_inference.py](F:/Work/IDS_ML_New/scripts/ids_inference.py)
+- [ids_inference_architecture.md](F:/Work/IDS_ML_New/docs/ids_inference_architecture.md)
+
+Phạm vi hiện tại:
+
+- load `CatBoost full-data`
+- load schema `72` feature
+- align input theo đúng feature columns khi train
+- ép kiểu numeric và fail sớm nếu schema sai
+- chạy `predict_proba`
+- áp `threshold = 0.5`
+- trả ra:
+  - `attack_score`
+  - `predicted_label`
+  - `is_alert`
+  - `threshold`
+
+Kiểm chứng đã làm:
+
+- test logic:
+  - `pytest F:\\Work\\IDS_ML_New\\tests\\test_ids_inference.py -q`
+  - kết quả: `3 passed`
+- dry-run thực tế trên `test.parquet`:
+  - `python F:\\Work\\IDS_ML_New\\scripts\\ids_inference.py --input-path F:\\Work\\IDS_ML_New\\artifacts\\cic_iot_diad_2024_binary\\clean\\test.parquet --output-path F:\\Work\\IDS_ML_New\\artifacts\\demo\\test_predictions_sample.parquet --limit 1000`
+
+Kết quả dry-run:
+
+- model load thành công
+- score được `1000` dòng
+- `feature_count = 72`
+- output đã có đủ cột dự đoán và cờ cảnh báo
+
+## 16. Trạng thái hiện tại của phase triển khai
+
+Đến thời điểm này, repo đã có:
+
+1. mô hình cuối đã chốt
+2. artifact model local
+3. tài liệu thí nghiệm đầy đủ
+4. inference layer prototype chạy được trên dữ liệu batch
+
+Bước tiếp theo không còn là chọn model nữa, mà là:
+
+- thiết kế lớp `feature extraction` trước model
+- chọn dạng service/runtime cho inference
+- thiết kế `alert/logging` và integration vào IDS pipeline
+
+## 17. Final model bundle đã hoàn thành
+
+Đã đóng gói model cuối cùng thành một bundle tự chứa:
+
+- `F:\\Work\\IDS_ML_New\\artifacts\\final_model\\catboost_full_data_v1`
+
+Script liên quan:
+
+- [package_final_model.py](F:/Work/IDS_ML_New/scripts/package_final_model.py)
+- [ids_inference.py](F:/Work/IDS_ML_New/scripts/ids_inference.py)
+- [final_model_bundle.md](F:/Work/IDS_ML_New/docs/final_model_bundle.md)
+
+Bundle hiện có:
+
+- `model.cbm`
+- `feature_columns.json`
+- `model_bundle.json`
+- `metrics.json`
+- `training_summary.json`
+- `MODEL_CARD.md`
+
+Kiểm chứng đã làm:
+
+- `pytest F:\\Work\\IDS_ML_New\\tests\\test_ids_inference.py -q`
+  - kết quả: `4 passed`
+- build bundle:
+  - `python F:\\Work\\IDS_ML_New\\scripts\\package_final_model.py`
+- dry-run inference từ bundle:
+  - `python F:\\Work\\IDS_ML_New\\scripts\\ids_inference.py --bundle-root F:\\Work\\IDS_ML_New\\artifacts\\final_model\\catboost_full_data_v1 --input-path F:\\Work\\IDS_ML_New\\artifacts\\cic_iot_diad_2024_binary\\clean\\test.parquet --output-path F:\\Work\\IDS_ML_New\\artifacts\\demo\\test_predictions_from_bundle.parquet --limit 1000`
+
+Kết luận:
+
+- model package hiện đã đủ đầy theo nghĩa artifact-level
+- phần còn lại từ đây trở đi là bài toán triển khai service / pipeline IDS, không còn là bài toán hoàn thiện model nữa
