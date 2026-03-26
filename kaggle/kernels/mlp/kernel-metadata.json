@@ -1,0 +1,17 @@
+{
+  "id": "hdiiii/ids-binary-mlp",
+  "title": "IDS Binary MLP",
+  "code_file": "mlp.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": "true",
+  "enable_gpu": "false",
+  "enable_tpu": "false",
+  "enable_internet": "false",
+  "dataset_sources": [
+    "hdiiii/cic-iot-diad-2024-binary-ids"
+  ],
+  "competition_sources": [],
+  "kernel_sources": [],
+  "model_sources": []
+}

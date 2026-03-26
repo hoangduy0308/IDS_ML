@@ -1,3 +1,14 @@
 CIC-IoT-DIAD-2024/
 _iot_diad*.html
 .codex/
+artifacts/
+__pycache__/
+.pytest_cache/
+.ipynb_checkpoints/
+*.pyc
+catboost_info/
+kaggle_uploads/
+.tmp_kaggle_dataset/
+.tmp_kaggle_kernel/
+kaggle_tmp_ds/
+kaggle_tmp_kernel/
