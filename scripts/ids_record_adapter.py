@@ -22,80 +22,9 @@ ADAPTER_FIXED_METADATA_KEYS = (
 )
 ADAPTER_UPSTREAM_METADATA_KEYS = ADAPTER_FIXED_METADATA_KEYS[1:]
 
-SHIPPED_ADAPTER_FEATURE_COLUMNS = (
-    "Src Port",
-    "Dst Port",
-    "Protocol",
-    "Flow Duration",
-    "Total Fwd Packet",
-    "Total Bwd packets",
-    "Total Length of Fwd Packet",
-    "Total Length of Bwd Packet",
-    "Fwd Packet Length Max",
-    "Fwd Packet Length Min",
-    "Fwd Packet Length Mean",
-    "Fwd Packet Length Std",
-    "Bwd Packet Length Max",
-    "Bwd Packet Length Min",
-    "Bwd Packet Length Mean",
-    "Bwd Packet Length Std",
-    "Flow Bytes/s",
-    "Flow Packets/s",
-    "Flow IAT Mean",
-    "Flow IAT Std",
-    "Flow IAT Max",
-    "Flow IAT Min",
-    "Fwd IAT Total",
-    "Fwd IAT Mean",
-    "Fwd IAT Std",
-    "Fwd IAT Max",
-    "Fwd IAT Min",
-    "Bwd IAT Total",
-    "Bwd IAT Mean",
-    "Bwd IAT Std",
-    "Bwd IAT Max",
-    "Bwd IAT Min",
-    "Fwd PSH Flags",
-    "Fwd Header Length",
-    "Bwd Header Length",
-    "Fwd Packets/s",
-    "Bwd Packets/s",
-    "Packet Length Min",
-    "Packet Length Max",
-    "Packet Length Mean",
-    "Packet Length Std",
-    "Packet Length Variance",
-    "FIN Flag Count",
-    "SYN Flag Count",
-    "RST Flag Count",
-    "PSH Flag Count",
-    "ACK Flag Count",
-    "CWR Flag Count",
-    "ECE Flag Count",
-    "Down/Up Ratio",
-    "Average Packet Size",
-    "Fwd Segment Size Avg",
-    "Bwd Segment Size Avg",
-    "Bwd Bytes/Bulk Avg",
-    "Bwd Packet/Bulk Avg",
-    "Bwd Bulk Rate Avg",
-    "Subflow Fwd Packets",
-    "Subflow Fwd Bytes",
-    "Subflow Bwd Packets",
-    "Subflow Bwd Bytes",
-    "FWD Init Win Bytes",
-    "Bwd Init Win Bytes",
-    "Fwd Act Data Pkts",
-    "Fwd Seg Size Min",
-    "Active Mean",
-    "Active Std",
-    "Active Max",
-    "Active Min",
-    "Idle Mean",
-    "Idle Std",
-    "Idle Max",
-    "Idle Min",
-)
+_DEFAULT_ADAPTER_FEATURE_COLUMNS: tuple[str, ...] | None = None
+_DEFAULT_ADAPTER_CONTRACT: Any | None = None
+_DEFAULT_ADAPTER_PROFILE_REGISTRY: "AdapterProfileRegistry" | None = None
 
 
 PRIMARY_PROFILE_FEATURE_ALIAS_OVERRIDES = {
@@ -161,8 +90,13 @@ SECONDARY_PROFILE_CONTROLLED_EXTRA_KEYS = (
 def _build_closed_feature_alias_map(
     feature_alias_overrides: Mapping[str, str],
     *,
-    feature_columns: Sequence[str] = SHIPPED_ADAPTER_FEATURE_COLUMNS,
+    feature_columns: Sequence[str] | None = None,
 ) -> dict[str, str]:
+    resolved_feature_columns = (
+        tuple(str(column) for column in feature_columns)
+        if feature_columns is not None
+        else _get_default_adapter_feature_columns()
+    )
     normalized_overrides = {
         str(source_key).strip(): str(target_key).strip()
         for source_key, target_key in feature_alias_overrides.items()
@@ -170,7 +104,7 @@ def _build_closed_feature_alias_map(
     override_targets = set(normalized_overrides.values())
     explicit_map = {
         str(column): str(column)
-        for column in feature_columns
+        for column in resolved_feature_columns
         if str(column) not in override_targets
     }
     explicit_map.update(normalized_overrides)
@@ -195,13 +129,23 @@ def _load_feature_contract_module() -> Any:
 
 
 def build_default_adapter_contract(
-    feature_columns: Sequence[str] = SHIPPED_ADAPTER_FEATURE_COLUMNS,
+    feature_columns: Sequence[str] | None = None,
 ) -> Any:
     feature_contract_module = _load_feature_contract_module()
-    return feature_contract_module.FlowFeatureContract(feature_columns, alias_map={})
+    resolved_feature_columns = (
+        tuple(str(column) for column in feature_columns)
+        if feature_columns is not None
+        else _get_default_adapter_feature_columns()
+    )
+    return feature_contract_module.FlowFeatureContract(resolved_feature_columns, alias_map={})
 
 
-_DEFAULT_ADAPTER_CONTRACT: Any | None = None
+def _get_default_adapter_feature_columns() -> tuple[str, ...]:
+    global _DEFAULT_ADAPTER_FEATURE_COLUMNS
+    if _DEFAULT_ADAPTER_FEATURE_COLUMNS is None:
+        feature_contract_module = _load_feature_contract_module()
+        _DEFAULT_ADAPTER_FEATURE_COLUMNS = tuple(feature_contract_module.load_default_feature_columns())
+    return _DEFAULT_ADAPTER_FEATURE_COLUMNS
 
 
 def _get_default_adapter_contract() -> Any:
@@ -209,6 +153,24 @@ def _get_default_adapter_contract() -> Any:
     if _DEFAULT_ADAPTER_CONTRACT is None:
         _DEFAULT_ADAPTER_CONTRACT = build_default_adapter_contract()
     return _DEFAULT_ADAPTER_CONTRACT
+
+
+def _get_default_adapter_profile_registry() -> "AdapterProfileRegistry":
+    global _DEFAULT_ADAPTER_PROFILE_REGISTRY
+    if _DEFAULT_ADAPTER_PROFILE_REGISTRY is None:
+        _DEFAULT_ADAPTER_PROFILE_REGISTRY = build_default_adapter_registry()
+    return _DEFAULT_ADAPTER_PROFILE_REGISTRY
+
+
+class _DefaultAdapterProfileRegistryProxy:
+    def available_profile_ids(self) -> tuple[str, ...]:
+        return _get_default_adapter_profile_registry().available_profile_ids()
+
+    def get(self, profile_id: str) -> "AdapterProfileDefinition":
+        return _get_default_adapter_profile_registry().get(profile_id)
+
+    def require(self, profile_id: str) -> "AdapterProfileDefinition":
+        return _get_default_adapter_profile_registry().require(profile_id)
 
 
 def _is_quarantined_flow_record(value: Any) -> bool:
@@ -638,8 +600,8 @@ class StructuredRecordAdapter:
     @property
     def profile_registry(self) -> AdapterProfileRegistry:
         if self._profile_registry is None:
-            if tuple(self.contract.feature_columns) == SHIPPED_ADAPTER_FEATURE_COLUMNS:
-                self._profile_registry = DEFAULT_ADAPTER_PROFILE_REGISTRY
+            if tuple(self.contract.feature_columns) == _get_default_adapter_feature_columns():
+                self._profile_registry = _get_default_adapter_profile_registry()
             else:
                 self._profile_registry = build_default_adapter_registry(
                     feature_columns=self.contract.feature_columns
@@ -1049,13 +1011,18 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 def build_default_adapter_registry(
     *,
-    feature_columns: Sequence[str] = SHIPPED_ADAPTER_FEATURE_COLUMNS,
+    feature_columns: Sequence[str] | None = None,
 ) -> AdapterProfileRegistry:
+    resolved_feature_columns = (
+        tuple(str(column) for column in feature_columns)
+        if feature_columns is not None
+        else _get_default_adapter_feature_columns()
+    )
     primary_profile = AdapterProfileDefinition(
         profile_id=PRIMARY_PROFILE_ID,
         feature_alias_map=_build_closed_feature_alias_map(
             PRIMARY_PROFILE_FEATURE_ALIAS_OVERRIDES,
-            feature_columns=feature_columns,
+            feature_columns=resolved_feature_columns,
         ),
         metadata_alias_map=PRIMARY_PROFILE_METADATA_ALIASES,
         controlled_extra_keys=PRIMARY_PROFILE_CONTROLLED_EXTRA_KEYS,
@@ -1065,7 +1032,7 @@ def build_default_adapter_registry(
         profile_id=SECONDARY_PROFILE_ID,
         feature_alias_map=_build_closed_feature_alias_map(
             SECONDARY_PROFILE_FEATURE_ALIAS_OVERRIDES,
-            feature_columns=feature_columns,
+            feature_columns=resolved_feature_columns,
         ),
         metadata_alias_map=SECONDARY_PROFILE_METADATA_ALIASES,
         controlled_extra_keys=SECONDARY_PROFILE_CONTROLLED_EXTRA_KEYS,
@@ -1074,7 +1041,7 @@ def build_default_adapter_registry(
     return AdapterProfileRegistry([primary_profile, secondary_profile])
 
 
-DEFAULT_ADAPTER_PROFILE_REGISTRY = build_default_adapter_registry()
+DEFAULT_ADAPTER_PROFILE_REGISTRY = _DefaultAdapterProfileRegistryProxy()
 DEFAULT_STRUCTURED_RECORD_ADAPTER = StructuredRecordAdapter()
 
 

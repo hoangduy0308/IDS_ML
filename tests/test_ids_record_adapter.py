@@ -34,6 +34,7 @@ from scripts.ids_record_adapter import (  # noqa: E402
     _read_jsonl_payloads,
     adapt_record as module_adapt_record,
     adapt_records as module_adapt_records,
+    build_default_adapter_contract,
     build_default_adapter_registry,
     get_adapter_profile,
     list_adapter_profile_ids,
@@ -133,6 +134,7 @@ SECONDARY_PROFILE_FIXTURE_RECORD = load_jsonl(SECONDARY_FIXTURE_PATH)[0]
 def test_default_registry_exposes_two_explicit_profiles() -> None:
     registry = build_default_adapter_registry()
 
+    assert build_default_adapter_contract().feature_columns == FEATURE_COLUMNS
     assert registry.available_profile_ids() == (
         PRIMARY_PROFILE_ID,
         SECONDARY_PROFILE_ID,
@@ -152,11 +154,13 @@ def test_default_registry_exposes_two_explicit_profiles() -> None:
         | set(primary_profile.metadata_alias_map)
         | set(primary_profile.controlled_extra_keys)
     )
+    assert set(primary_profile.feature_alias_map.values()) == set(FEATURE_COLUMNS)
     assert set(secondary_profile.accepted_source_keys()) == (
         set(secondary_profile.feature_alias_map)
         | set(secondary_profile.metadata_alias_map)
         | set(secondary_profile.controlled_extra_keys)
     )
+    assert set(secondary_profile.feature_alias_map.values()) == set(FEATURE_COLUMNS)
 
 
 def test_adapter_rejects_registry_contract_mismatches_eagerly() -> None:
