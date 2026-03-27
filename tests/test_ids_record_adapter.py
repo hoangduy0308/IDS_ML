@@ -19,9 +19,11 @@ from scripts.ids_feature_contract import DEFAULT_FEATURE_COLUMNS_PATH, FlowFeatu
 from scripts.ids_record_adapter import (  # noqa: E402
     ADAPTER_FIXED_METADATA_KEYS,
     MAX_JSONL_LINE_LENGTH,
+    PRIMARY_PROFILE_FEATURE_ALIAS_OVERRIDES,
     PRIMARY_PROFILE_ID,
     PRIMARY_PROFILE_CONTROLLED_EXTRA_KEYS,
     PRIMARY_PROFILE_METADATA_ALIASES,
+    PRIMARY_PROFILE_SAME_NAME_FEATURE_KEYS,
     SECONDARY_PROFILE_ID,
     SECONDARY_PROFILE_METADATA_ALIASES,
     AdaptedFlowRecord,
@@ -705,6 +707,39 @@ def test_secondary_profile_adapts_with_lightly_changed_metadata_names() -> None:
     }
     assert adapted.to_record()["adapter_profile"] == SECONDARY_PROFILE_ID
     assert adapted.features["Flow Duration"] == 90.0
+
+
+def test_primary_profile_declares_an_explicit_fixed_source_surface() -> None:
+    primary_profile = get_adapter_profile(PRIMARY_PROFILE_ID)
+
+    assert primary_profile.accepted_source_keys() == (
+        PRIMARY_PROFILE_SAME_NAME_FEATURE_KEYS
+        + tuple(PRIMARY_PROFILE_FEATURE_ALIAS_OVERRIDES)
+        + tuple(PRIMARY_PROFILE_METADATA_ALIASES)
+        + PRIMARY_PROFILE_CONTROLLED_EXTRA_KEYS
+    )
+
+
+def test_primary_profile_rejects_bare_canonical_contract_records() -> None:
+    adapter = StructuredRecordAdapter()
+    canonical_record = {
+        column: float(index + 1) for index, column in enumerate(FEATURE_COLUMNS)
+    }
+
+    result = adapter.adapt_record(
+        canonical_record,
+        profile_id=PRIMARY_PROFILE_ID,
+        record_index=9,
+    )
+
+    assert isinstance(result, AdapterQuarantineRecord)
+    assert result.reason == "unmapped_source_fields"
+    assert result.profile == PRIMARY_PROFILE_ID
+    assert set(PRIMARY_PROFILE_FEATURE_ALIAS_OVERRIDES.values()).issubset(
+        result.unmapped_fields
+    )
+    assert result.metadata == {}
+    assert result.controlled_extras == {}
 
 
 @pytest.mark.parametrize("profile_id", [PRIMARY_PROFILE_ID, SECONDARY_PROFILE_ID])

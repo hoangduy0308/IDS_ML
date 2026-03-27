@@ -45,6 +45,67 @@ PRIMARY_PROFILE_FEATURE_ALIAS_OVERRIDES = {
     "Init Bwd Win Byts": "Bwd Init Win Bytes",
 }
 
+PRIMARY_PROFILE_SAME_NAME_FEATURE_KEYS = (
+    "Protocol",
+    "Fwd Packet Length Max",
+    "Fwd Packet Length Min",
+    "Fwd Packet Length Mean",
+    "Fwd Packet Length Std",
+    "Bwd Packet Length Max",
+    "Bwd Packet Length Min",
+    "Bwd Packet Length Mean",
+    "Bwd Packet Length Std",
+    "Flow Bytes/s",
+    "Flow Packets/s",
+    "Flow IAT Mean",
+    "Flow IAT Std",
+    "Flow IAT Max",
+    "Flow IAT Min",
+    "Fwd IAT Total",
+    "Fwd IAT Mean",
+    "Fwd IAT Std",
+    "Fwd IAT Max",
+    "Fwd IAT Min",
+    "Bwd IAT Total",
+    "Bwd IAT Mean",
+    "Bwd IAT Std",
+    "Bwd IAT Max",
+    "Bwd IAT Min",
+    "Fwd PSH Flags",
+    "Fwd Header Length",
+    "Bwd Header Length",
+    "Fwd Packets/s",
+    "Bwd Packets/s",
+    "FIN Flag Count",
+    "SYN Flag Count",
+    "RST Flag Count",
+    "PSH Flag Count",
+    "ACK Flag Count",
+    "CWR Flag Count",
+    "ECE Flag Count",
+    "Down/Up Ratio",
+    "Average Packet Size",
+    "Fwd Segment Size Avg",
+    "Bwd Segment Size Avg",
+    "Bwd Bytes/Bulk Avg",
+    "Bwd Packet/Bulk Avg",
+    "Bwd Bulk Rate Avg",
+    "Subflow Fwd Packets",
+    "Subflow Fwd Bytes",
+    "Subflow Bwd Packets",
+    "Subflow Bwd Bytes",
+    "Fwd Act Data Pkts",
+    "Fwd Seg Size Min",
+    "Active Mean",
+    "Active Std",
+    "Active Max",
+    "Active Min",
+    "Idle Mean",
+    "Idle Std",
+    "Idle Max",
+    "Idle Min",
+)
+
 PRIMARY_PROFILE_METADATA_ALIASES = {
     "flow_id": "source_flow_id",
     "collector_id": "source_collector_id",
@@ -109,6 +170,20 @@ def _build_closed_feature_alias_map(
         if str(column) not in override_targets
     }
     explicit_map.update(normalized_overrides)
+    return explicit_map
+
+
+def _build_fixed_feature_alias_map(
+    same_name_feature_keys: Sequence[str],
+    feature_alias_overrides: Mapping[str, str],
+) -> dict[str, str]:
+    explicit_map = {str(source_key).strip(): str(source_key).strip() for source_key in same_name_feature_keys}
+    explicit_map.update(
+        {
+            str(source_key).strip(): str(target_key).strip()
+            for source_key, target_key in feature_alias_overrides.items()
+        }
+    )
     return explicit_map
 
 
@@ -1125,7 +1200,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 def build_default_adapter_registry() -> AdapterProfileRegistry:
     primary_profile = AdapterProfileDefinition(
         profile_id=PRIMARY_PROFILE_ID,
-        feature_alias_map=_build_closed_feature_alias_map(
+        feature_alias_map=_build_fixed_feature_alias_map(
+            PRIMARY_PROFILE_SAME_NAME_FEATURE_KEYS,
             PRIMARY_PROFILE_FEATURE_ALIAS_OVERRIDES,
         ),
         metadata_alias_map=PRIMARY_PROFILE_METADATA_ALIASES,
