@@ -1314,6 +1314,40 @@ def test_cli_file_mode_uses_default_sidecar_names_when_paths_are_omitted(
     assert quarantine_record["controlled_extras_redacted"] is True
 
 
+@pytest.mark.parametrize("payload", ["", "\n  \n\t\n"])
+def test_cli_file_mode_exits_cleanly_on_empty_or_whitespace_only_jsonl_input(
+    tmp_path: Path,
+    payload: str,
+) -> None:
+    input_path = tmp_path / "empty_input.jsonl"
+    adapted_output_path = tmp_path / "empty_output.jsonl"
+    quarantine_output_path = tmp_path / "empty_quarantine.jsonl"
+    input_path.write_text(payload, encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(adapter_script_path()),
+            "--profile",
+            PRIMARY_PROFILE_ID,
+            "--input-path",
+            str(input_path),
+            "--output-path",
+            str(adapted_output_path),
+            "--quarantine-output-path",
+            str(quarantine_output_path),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert result.stdout == ""
+    assert result.stderr == ""
+    assert load_jsonl(adapted_output_path) == []
+    assert load_jsonl(quarantine_output_path) == []
+
+
 def test_cli_file_mode_can_opt_in_to_raw_quarantine_source(tmp_path: Path) -> None:
     input_path = tmp_path / "raw_quarantine_input.jsonl"
     quarantine_output_path = tmp_path / "raw_quarantine_output.jsonl"
@@ -1559,6 +1593,27 @@ def test_cli_stdin_redirected_sinks_cover_malformed_transport_paths(
     serialized_quarantine = json.dumps(quarantine_records, sort_keys=True)
     assert "{bad json" not in serialized_quarantine
     assert "not" not in serialized_quarantine
+
+
+@pytest.mark.parametrize("payload", ["", "\n  \n\t\n"])
+def test_cli_stdin_stdout_mode_exits_cleanly_on_empty_or_whitespace_only_jsonl_input(
+    payload: str,
+) -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(adapter_script_path()),
+            "--profile",
+            PRIMARY_PROFILE_ID,
+        ],
+        input=payload,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert result.stdout == ""
+    assert result.stderr == ""
 
 
 def test_cli_stdin_redirected_sinks_overwrite_existing_outputs_on_reruns(
