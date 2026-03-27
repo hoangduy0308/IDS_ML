@@ -1530,6 +1530,83 @@ def test_cli_stdin_redirected_sinks_cover_malformed_transport_paths(
     assert "not" not in serialized_quarantine
 
 
+def test_cli_stdin_redirected_sinks_overwrite_existing_outputs_on_reruns(
+    tmp_path: Path,
+) -> None:
+    adapted_output_path = tmp_path / "adapted.jsonl"
+    quarantine_output_path = tmp_path / "adapter_quarantine.jsonl"
+    adapted_output_path.write_text(json.dumps({"stale": "adapted"}) + "\n", encoding="utf-8")
+    quarantine_output_path.write_text(
+        json.dumps({"stale": "quarantine"}) + "\n",
+        encoding="utf-8",
+    )
+
+    first_payload = "\n".join(
+        [
+            json.dumps(make_profile_record(PRIMARY_PROFILE_ID, flow_duration=80.0)),
+            "{bad json",
+        ]
+    )
+    first_result = subprocess.run(
+        [
+            sys.executable,
+            str(adapter_script_path()),
+            "--profile",
+            PRIMARY_PROFILE_ID,
+            "--output-path",
+            str(adapted_output_path),
+            "--quarantine-output-path",
+            str(quarantine_output_path),
+        ],
+        input=first_payload,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert first_result.stdout == ""
+    assert first_result.stderr == ""
+    assert load_jsonl(adapted_output_path) == [
+        {
+            **DEFAULT_STRUCTURED_RECORD_ADAPTER.adapt_record(
+                make_profile_record(PRIMARY_PROFILE_ID, flow_duration=80.0),
+                profile_id=PRIMARY_PROFILE_ID,
+                record_index=0,
+            ).to_record()
+        }
+    ]
+    first_quarantine_records = load_jsonl(quarantine_output_path)
+    assert len(first_quarantine_records) == 1
+    assert first_quarantine_records[0]["reason"] == "invalid_json"
+
+    second_payload = json.dumps(
+        make_profile_record(PRIMARY_PROFILE_ID, flow_duration=91.0)
+    )
+    second_result = subprocess.run(
+        [
+            sys.executable,
+            str(adapter_script_path()),
+            "--profile",
+            PRIMARY_PROFILE_ID,
+            "--output-path",
+            str(adapted_output_path),
+            "--quarantine-output-path",
+            str(quarantine_output_path),
+        ],
+        input=second_payload,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert second_result.stdout == ""
+    assert second_result.stderr == ""
+    second_adapted_records = load_jsonl(adapted_output_path)
+    assert len(second_adapted_records) == 1
+    assert second_adapted_records[0]["Flow Duration"] == 91.0
+    assert load_jsonl(quarantine_output_path) == []
+
+
 def test_cli_stdin_redirected_sinks_do_not_leave_partial_artifacts_on_open_failure(
     tmp_path: Path,
 ) -> None:
