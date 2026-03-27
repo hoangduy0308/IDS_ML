@@ -1067,7 +1067,7 @@ def _promote_staged_output_paths_transactionally(
         for temp_path, final_path in staged_paths:
             temp_path.replace(final_path)
             promoted_final_paths.append(final_path)
-    except Exception:
+    except BaseException:
         _cleanup_staged_paths(promoted_final_paths)
         for backup_path, final_path in reversed(backup_paths):
             if backup_path.exists():
@@ -1098,7 +1098,7 @@ def _open_staged_file_mode_sink_handles(
             )
             staged_paths.append((quarantine_temp_path, quarantine_output_path))
             yield adapted_handle, quarantine_handle
-    except Exception:
+    except BaseException:
         _cleanup_staged_paths(temp_path for temp_path, _ in staged_paths)
         raise
 

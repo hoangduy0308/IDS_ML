@@ -1572,6 +1572,46 @@ def test_cli_file_mode_preserves_existing_outputs_when_promotion_fails(
     assert list(tmp_path.glob(".*.tmp")) == []
 
 
+def test_cli_file_mode_cleans_staged_temp_files_on_keyboard_interrupt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    input_path = tmp_path / "source.jsonl"
+    adapted_output_path = tmp_path / "adapted_output.jsonl"
+    quarantine_output_path = tmp_path / "adapter_quarantine.jsonl"
+    original_adapted_output = json.dumps({"existing": "adapted"}) + "\n"
+    original_quarantine_output = json.dumps({"existing": "quarantine"}) + "\n"
+    input_path.write_text(json.dumps(make_profile_record(PRIMARY_PROFILE_ID)), encoding="utf-8")
+    adapted_output_path.write_text(original_adapted_output, encoding="utf-8")
+    quarantine_output_path.write_text(original_quarantine_output, encoding="utf-8")
+
+    def interrupt_run_adapter_cli(**_: object) -> object:
+        raise KeyboardInterrupt("interrupted")
+
+    monkeypatch.setattr(adapter_module, "run_adapter_cli", interrupt_run_adapter_cli)
+
+    with pytest.raises(KeyboardInterrupt, match="interrupted"):
+        adapter_module.main(
+            [
+                "--profile",
+                PRIMARY_PROFILE_ID,
+                "--input-path",
+                str(input_path),
+                "--output-path",
+                str(adapted_output_path),
+                "--quarantine-output-path",
+                str(quarantine_output_path),
+            ]
+        )
+
+    assert adapted_output_path.read_text(encoding="utf-8") == original_adapted_output
+    assert (
+        quarantine_output_path.read_text(encoding="utf-8")
+        == original_quarantine_output
+    )
+    assert list(tmp_path.glob(".*.tmp")) == []
+
+
 def test_cli_file_mode_rejects_input_output_path_collisions_before_opening_files(
     tmp_path: Path,
 ) -> None:
