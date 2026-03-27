@@ -315,6 +315,37 @@ def test_adapter_accepts_injected_contract_with_duck_typed_quarantine_result() -
     assert result.non_numeric_fields == ("Flow Duration",)
 
 
+def test_adapter_rejects_malformed_duck_typed_contract_result() -> None:
+    class FakeMalformedResult:
+        pass
+
+    class FakeContract:
+        def __init__(self) -> None:
+            self.feature_columns = list(FEATURE_COLUMNS)
+
+        def validate_record(
+            self,
+            record: dict[str, object],
+            record_index: int | None = None,
+        ) -> FakeMalformedResult:
+            return FakeMalformedResult()
+
+    adapter = StructuredRecordAdapter(contract=FakeContract())
+
+    with pytest.raises(
+        TypeError,
+        match=(
+            "contract\\.validate_record\\(\\) must return an object with either a "
+            "'reason' attribute or an 'aligned_features' mapping\\."
+        ),
+    ):
+        adapter.adapt_record(
+            make_profile_record(PRIMARY_PROFILE_ID),
+            profile_id=PRIMARY_PROFILE_ID,
+            record_index=2,
+        )
+
+
 @pytest.mark.parametrize(
     "profile_id, fixture_record, mapping_oracle, expected_metadata_alias_map",
     [
