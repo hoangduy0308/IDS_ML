@@ -523,6 +523,27 @@ def test_primary_profile_adapts_to_runtime_ready_flat_record() -> None:
     assert final_alerts[0]["passthrough"]["source_flow_id"] == "source_flow_id-value"
 
 
+def test_primary_profile_coerces_numeric_strings_and_ints_through_adapter() -> None:
+    adapter = StructuredRecordAdapter()
+    source_record = make_profile_record(PRIMARY_PROFILE_ID)
+    source_record["SrcPort"] = 443
+    source_record["DstPort"] = "8080"
+    source_record["FlowDuration"] = "80.5"
+    source_record["Tot Fwd Pkts"] = "5"
+
+    adapted = adapter.adapt_record(
+        source_record,
+        profile_id=PRIMARY_PROFILE_ID,
+        record_index=18,
+    )
+
+    assert isinstance(adapted, AdaptedFlowRecord)
+    assert adapted.features["Src Port"] == 443.0
+    assert adapted.features["Dst Port"] == 8080.0
+    assert adapted.features["Flow Duration"] == 80.5
+    assert adapted.features["Total Fwd Packet"] == 5.0
+
+
 def test_structured_record_adapter_batch_api_buckets_successes_and_quarantines() -> None:
     adapter = StructuredRecordAdapter()
     records = [
@@ -1007,6 +1028,80 @@ def test_cli_file_mode_secondary_profile_hands_off_cleanly_to_runtime(
     assert summary.quarantined_records == 0
     assert runtime_alerts[0]["passthrough"]["adapter_profile"] == SECONDARY_PROFILE_ID
     assert runtime_alerts[0]["passthrough"]["source_flow_id"] == "source_flow_id-value"
+    assert runtime_quarantines == []
+
+
+def test_cli_file_mode_coerces_numeric_strings_and_ints_before_runtime_handoff(
+    tmp_path: Path,
+) -> None:
+    input_path = tmp_path / "coercion_adapter_input.jsonl"
+    adapted_output_path = tmp_path / "coercion_adapter_output.jsonl"
+    quarantine_output_path = tmp_path / "coercion_adapter_quarantine.jsonl"
+    runtime_alerts_path = tmp_path / "coercion_runtime_alerts.jsonl"
+    runtime_quarantine_path = tmp_path / "coercion_runtime_quarantine.jsonl"
+
+    source_record = make_profile_record(PRIMARY_PROFILE_ID)
+    source_record["SrcPort"] = 443
+    source_record["DstPort"] = "8080"
+    source_record["FlowDuration"] = "80.5"
+    source_record["Tot Fwd Pkts"] = "5"
+    input_path.write_text(json.dumps(source_record) + "\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(adapter_script_path()),
+            "--profile",
+            PRIMARY_PROFILE_ID,
+            "--input-path",
+            str(input_path),
+            "--output-path",
+            str(adapted_output_path),
+            "--quarantine-output-path",
+            str(quarantine_output_path),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert result.stdout == ""
+    assert result.stderr == ""
+
+    adapted_records = load_jsonl(adapted_output_path)
+    quarantine_records = load_jsonl(quarantine_output_path)
+
+    assert len(adapted_records) == 1
+    assert quarantine_records == []
+    assert adapted_records[0]["Src Port"] == 443.0
+    assert adapted_records[0]["Dst Port"] == 8080.0
+    assert adapted_records[0]["Flow Duration"] == 80.5
+    assert adapted_records[0]["Total Fwd Packet"] == 5.0
+
+    runtime = RealtimePipelineRunner(
+        contract=FlowFeatureContract.from_feature_file(
+            DEFAULT_FEATURE_COLUMNS_PATH,
+            alias_map={},
+        ),
+        inferencer=DummyInferencer(),
+        max_batch_size=4,
+        flush_interval_seconds=60.0,
+    )
+    with adapted_output_path.open("r", encoding="utf-8") as handle:
+        summary = run_pipeline_stream(
+            stream=handle,
+            input_mode="file",
+            alerts_output_path=runtime_alerts_path,
+            quarantine_output_path=runtime_quarantine_path,
+            runner=runtime,
+        )
+
+    runtime_alerts = load_jsonl(runtime_alerts_path)
+    runtime_quarantines = load_jsonl(runtime_quarantine_path)
+
+    assert summary.valid_records == 1
+    assert summary.quarantined_records == 0
+    assert runtime_alerts[0]["passthrough"]["adapter_profile"] == PRIMARY_PROFILE_ID
     assert runtime_quarantines == []
 
 
