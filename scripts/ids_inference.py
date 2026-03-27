@@ -139,6 +139,43 @@ class IDSInferencer:
         return predictions
 
 
+def build_model_config(
+    *,
+    bundle_root: Path | None = None,
+    config_path: Path | None = None,
+    model_path: Path = DEFAULT_MODEL_PATH,
+    feature_columns_path: Path = DEFAULT_FEATURE_COLUMNS_PATH,
+    threshold: float = DEFAULT_THRESHOLD,
+) -> IDSModelConfig:
+    if bundle_root is not None:
+        return IDSModelConfig.from_bundle(bundle_root)
+    if config_path is not None:
+        return IDSModelConfig.from_config_path(config_path)
+    return IDSModelConfig(
+        model_path=model_path.resolve(),
+        feature_columns_path=feature_columns_path.resolve(),
+        threshold=float(threshold),
+    )
+
+
+def build_inferencer(
+    *,
+    bundle_root: Path | None = None,
+    config_path: Path | None = None,
+    model_path: Path = DEFAULT_MODEL_PATH,
+    feature_columns_path: Path = DEFAULT_FEATURE_COLUMNS_PATH,
+    threshold: float = DEFAULT_THRESHOLD,
+) -> IDSInferencer:
+    config = build_model_config(
+        bundle_root=bundle_root,
+        config_path=config_path,
+        model_path=model_path,
+        feature_columns_path=feature_columns_path,
+        threshold=threshold,
+    )
+    return IDSInferencer(config)
+
+
 def build_default_output_path(input_path: Path) -> Path:
     return input_path.with_name(f"{input_path.stem}_predictions{input_path.suffix}")
 
@@ -163,16 +200,13 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    if args.bundle_root is not None:
-        config = IDSModelConfig.from_bundle(args.bundle_root)
-    elif args.config_path is not None:
-        config = IDSModelConfig.from_config_path(args.config_path)
-    else:
-        config = IDSModelConfig(
-            model_path=args.model_path.resolve(),
-            feature_columns_path=args.feature_columns_path.resolve(),
-            threshold=float(args.threshold),
-        )
+    config = build_model_config(
+        bundle_root=args.bundle_root,
+        config_path=args.config_path,
+        model_path=args.model_path,
+        feature_columns_path=args.feature_columns_path,
+        threshold=args.threshold,
+    )
     input_path = args.input_path.resolve()
     output_path = args.output_path.resolve() if args.output_path else build_default_output_path(input_path)
 
