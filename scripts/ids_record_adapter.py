@@ -600,12 +600,12 @@ class StructuredRecordAdapter:
     @property
     def profile_registry(self) -> AdapterProfileRegistry:
         if self._profile_registry is None:
-            if tuple(self.contract.feature_columns) == _get_default_adapter_feature_columns():
-                self._profile_registry = _get_default_adapter_profile_registry()
-            else:
-                self._profile_registry = build_default_adapter_registry(
-                    feature_columns=self.contract.feature_columns
+            if tuple(self.contract.feature_columns) != _get_default_adapter_feature_columns():
+                raise ValueError(
+                    "Custom contracts require an explicit profile_registry; shipped adapter "
+                    "profile IDs stay fixed to the default contract surface."
                 )
+            self._profile_registry = _get_default_adapter_profile_registry()
             self._validate_configuration()
         return self._profile_registry
 
@@ -1009,20 +1009,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     return 0
 
 
-def build_default_adapter_registry(
-    *,
-    feature_columns: Sequence[str] | None = None,
-) -> AdapterProfileRegistry:
-    resolved_feature_columns = (
-        tuple(str(column) for column in feature_columns)
-        if feature_columns is not None
-        else _get_default_adapter_feature_columns()
-    )
+def build_default_adapter_registry() -> AdapterProfileRegistry:
     primary_profile = AdapterProfileDefinition(
         profile_id=PRIMARY_PROFILE_ID,
         feature_alias_map=_build_closed_feature_alias_map(
             PRIMARY_PROFILE_FEATURE_ALIAS_OVERRIDES,
-            feature_columns=resolved_feature_columns,
         ),
         metadata_alias_map=PRIMARY_PROFILE_METADATA_ALIASES,
         controlled_extra_keys=PRIMARY_PROFILE_CONTROLLED_EXTRA_KEYS,
@@ -1032,7 +1023,6 @@ def build_default_adapter_registry(
         profile_id=SECONDARY_PROFILE_ID,
         feature_alias_map=_build_closed_feature_alias_map(
             SECONDARY_PROFILE_FEATURE_ALIAS_OVERRIDES,
-            feature_columns=resolved_feature_columns,
         ),
         metadata_alias_map=SECONDARY_PROFILE_METADATA_ALIASES,
         controlled_extra_keys=SECONDARY_PROFILE_CONTROLLED_EXTRA_KEYS,

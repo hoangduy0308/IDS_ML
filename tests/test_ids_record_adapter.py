@@ -20,6 +20,7 @@ from scripts.ids_record_adapter import (  # noqa: E402
     ADAPTER_FIXED_METADATA_KEYS,
     MAX_JSONL_LINE_LENGTH,
     PRIMARY_PROFILE_ID,
+    PRIMARY_PROFILE_CONTROLLED_EXTRA_KEYS,
     PRIMARY_PROFILE_METADATA_ALIASES,
     SECONDARY_PROFILE_ID,
     SECONDARY_PROFILE_METADATA_ALIASES,
@@ -164,8 +165,15 @@ def test_default_registry_exposes_two_explicit_profiles() -> None:
 
 
 def test_adapter_rejects_registry_contract_mismatches_eagerly() -> None:
-    mismatched_registry = build_default_adapter_registry(
-        feature_columns=("Src Port", "Dst Port")
+    mismatched_registry = type(build_default_adapter_registry())(
+        [
+            AdapterProfileDefinition(
+                profile_id=PRIMARY_PROFILE_ID,
+                feature_alias_map={"SrcPort": "Src Port", "DstPort": "Dst Port"},
+                metadata_alias_map=PRIMARY_PROFILE_METADATA_ALIASES,
+                controlled_extra_keys=PRIMARY_PROFILE_CONTROLLED_EXTRA_KEYS,
+            )
+        ]
     )
 
     with pytest.raises(
@@ -175,6 +183,25 @@ def test_adapter_rejects_registry_contract_mismatches_eagerly() -> None:
         StructuredRecordAdapter(
             contract=FlowFeatureContract(FEATURE_COLUMNS, alias_map={}),
             profile_registry=mismatched_registry,
+        )
+
+
+def test_custom_contract_requires_explicit_profile_registry() -> None:
+    adapter = StructuredRecordAdapter(
+        contract=FlowFeatureContract(
+            ["Flow Duration"],
+            alias_map={"FlowDuration": "Flow Duration"},
+        )
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Custom contracts require an explicit profile_registry",
+    ):
+        adapter.adapt_record(
+            {"FlowDuration": 80.0},
+            profile_id=PRIMARY_PROFILE_ID,
+            record_index=0,
         )
 
 
