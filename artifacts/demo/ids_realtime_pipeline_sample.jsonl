@@ -1,0 +1,4 @@
+{"SrcPort": 4000, "DstPort": 80, "Protocol": 6, "FlowDuration": 20, "trace_id": "demo-ok-1", "sensor": "edge-a"}
+{"SrcPort": 4001, "DstPort": 443, "Protocol": "bad", "FlowDuration": 60, "trace_id": "demo-bad-1", "sensor": "edge-a"}
+{"SrcPort": 4002, "DstPort": 53, "Protocol": 17, "FlowDuration": 95, "trace_id": "demo-ok-2", "sensor": "edge-b"}
+{"broken_json": true

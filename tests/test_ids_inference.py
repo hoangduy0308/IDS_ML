@@ -16,6 +16,7 @@ from scripts.ids_inference import (  # noqa: E402
     IDSModelConfig,
     build_inferencer,
     build_model_config,
+    main,
 )
 
 
@@ -156,3 +157,65 @@ def test_build_inferencer_uses_resolved_config(monkeypatch: pytest.MonkeyPatch, 
     assert inferencer.config.model_path == (bundle_root / "model.cbm").resolve()
     assert inferencer.feature_columns == ["f1", "f2"]
     assert loaded_models == [(bundle_root / "model.cbm").resolve()]
+
+
+def test_ids_inference_main_preserves_cli_output_shape(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    input_path = tmp_path / "input.csv"
+    output_path = tmp_path / "output.csv"
+    input_path.write_text("f1,f2,trace_id\n0.2,1,row-a\n0.8,2,row-b\n", encoding="utf-8")
+
+    class DummyCLIInferencer(DummyInferencer):
+        def __init__(self, config: object) -> None:
+            super().__init__(threshold=0.5)
+            self.config = type(
+                "Config",
+                (),
+                {
+                    "threshold": 0.5,
+                    "positive_label": "Attack",
+                    "negative_label": "Benign",
+                    "model_path": Path("dummy_model.cbm"),
+                },
+            )()
+            self.feature_columns = ["f1", "f2"]
+
+    monkeypatch.setattr(
+        "scripts.ids_inference.build_model_config",
+        lambda **_: type(
+            "Config",
+            (),
+            {
+                "threshold": 0.5,
+                "positive_label": "Attack",
+                "negative_label": "Benign",
+                "model_path": Path("dummy_model.cbm"),
+                "feature_columns_path": Path("dummy_features.json"),
+            },
+        )(),
+    )
+    monkeypatch.setattr("scripts.ids_inference.IDSInferencer", DummyCLIInferencer)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "ids_inference.py",
+            "--input-path",
+            str(input_path),
+            "--output-path",
+            str(output_path),
+        ],
+    )
+
+    main()
+
+    summary = capsys.readouterr().out
+    result = pd.read_csv(output_path)
+
+    assert "\"rows_scored\": 2" in summary
+    assert "\"alert_rows\": 1" in summary
+    assert result["predicted_label"].tolist() == ["Benign", "Attack"]
+    assert result["trace_id"].tolist() == ["row-a", "row-b"]
