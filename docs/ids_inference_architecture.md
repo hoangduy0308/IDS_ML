@@ -2,7 +2,9 @@
 
 ## Mục tiêu
 
-Tầng này chịu trách nhiệm nhận `flow-based features` đã được trích xuất, chuẩn hóa đúng schema khi train, chạy mô hình `CatBoost full-data`, áp `threshold = 0.5`, và trả ra quyết định cảnh báo cho IDS.
+Tầng này chịu trách nhiệm nhận `flow-based features` đã được trích xuất sẵn từ upstream flow extractor, chuẩn hóa đúng schema khi train, chạy mô hình `CatBoost full-data`, áp `threshold = 0.5`, và trả ra quyết định cảnh báo cho IDS.
+
+Nó không sniff packet thô và không tự biến `PCAP` thành feature. Với IDS v1, model boundary luôn bắt đầu từ `structured flow records`.
 
 Mô hình được dùng:
 
@@ -20,25 +22,27 @@ Quyết định chốt:
 
 ```mermaid
 flowchart LR
-    A["Network traffic / flow records"] --> B["Feature extraction"]
+    A["Upstream collector / flow extractor"] --> B["Structured flow records"]
     B --> C["Schema alignment (72 features)"]
     C --> D["CatBoost full-data inference"]
     D --> E["Thresholding (0.5)"]
-    E --> F["Predicted label / score / alert"]
-    F --> G["IDS event log / alert sink / dashboard"]
+    E --> F["Model prediction event"]
+    F --> G["Alert sink / dashboard / response flow"]
 ```
 
 ## Ranh giới trách nhiệm
 
 ### 1. Feature extraction layer
 
-Lớp này không nằm trong model inference script hiện tại. Nó có nhiệm vụ:
+Lớp này nằm ngoài model inference script hiện tại. Nó có nhiệm vụ:
 
-- nhận packet hoặc flow gốc
+- nhận traffic ở upstream collector và xuất ra `structured flow records`
 - tính ra đúng các cột feature đã dùng khi train
 - bảo đảm tên cột và đơn vị đo nhất quán
 
 Nếu lớp này sinh sai schema, model layer phải fail sớm thay vì đoán.
+
+Trong runtime mới, bước này được coi là hệ thống upstream. Service inference chỉ nhận flow record đã có cấu trúc.
 
 ### 2. Inference layer
 
@@ -46,15 +50,19 @@ Inference layer chịu trách nhiệm:
 
 - load model
 - load danh sách feature columns
+- chỉ lấy đúng canonical model features để scoring
 - kiểm tra input có đủ cột không
 - ép dữ liệu về numeric
 - chạy `predict_proba`
 - lấy `attack_score`
 - áp `threshold = 0.5`
+- bỏ qua mọi non-model metadata trong lúc scoring
 - trả ra:
   - `attack_score`
   - `predicted_label`
   - `is_alert`
+
+Các khóa ngoài schema như `trace_id`, `sensor_id`, hoặc metadata collector có thể đi cùng input, nhưng chúng chỉ được giữ lại để trace output. Chúng không được đưa vào model scoring.
 
 ### 3. Alerting layer
 
@@ -66,6 +74,13 @@ Sau khi có kết quả inference, IDS có thể:
 - hoặc kích hoạt rule phản ứng tiếp theo
 
 Ở giai đoạn hiện tại, lớp này mới dừng ở output dự đoán, chưa gắn vào message bus hay service runtime.
+
+Cần phân biệt rõ:
+
+- `model alerts`: event do model suy ra từ record hợp lệ
+- `schema/pipeline anomaly alerts`: event do runtime phát khi record sai schema hoặc ingest lỗi
+
+`schema_anomaly` không phải là dự đoán `Attack/Benign`; nó là tín hiệu vận hành về lỗi input hoặc lỗi pipeline.
 
 ## File triển khai
 
@@ -79,6 +94,11 @@ Script này hỗ trợ:
 - input `Parquet`
 - output kèm toàn bộ input + cột dự đoán
 - hoặc chỉ output cột dự đoán
+
+Lớp realtime mới được mô tả riêng tại:
+
+- [ids_realtime_pipeline_architecture.md](F:/Work/IDS_ML_New/docs/ids_realtime_pipeline_architecture.md)
+- [ids_realtime_pipeline.py](F:/Work/IDS_ML_New/scripts/ids_realtime_pipeline.py)
 
 CLI cơ bản:
 
@@ -95,6 +115,12 @@ python F:\Work\IDS_ML_New\scripts\ids_inference.py `
 
 Input phải có đủ đúng `72` feature đã train. Có thể có thêm cột khác, nhưng inference layer chỉ dùng các cột trong schema.
 
+Với realtime pipeline, bước contract layer sẽ:
+
+- normalize alias tên trường nếu nằm trong alias map cho phép
+- tách `passthrough metadata`
+- chỉ chuyển `72` canonical features vào model
+
 ### Input lỗi
 
 Script sẽ fail sớm nếu:
@@ -104,6 +130,8 @@ Script sẽ fail sớm nếu:
 - file input không phải `CSV` hoặc `Parquet`
 
 Điều này là chủ ý để tránh silent mismatch giữa train và deploy.
+
+Trong runtime realtime, record lỗi không được fail toàn batch. Thay vào đó, record bị quarantine riêng và phát `schema_anomaly`, còn các record hợp lệ khác vẫn tiếp tục đi qua model.
 
 ## Output
 
@@ -123,10 +151,11 @@ Output tối thiểu gồm:
 
 ### Near-real-time IDS
 
-- feature extractor ghi flow record vào queue hoặc file sink
-- inference service đọc từng batch nhỏ
-- service append `attack_score` và `is_alert`
-- event được gửi đến alert pipeline
+- upstream flow extractor ghi `structured flow records` vào JSONL stream, file sink, hoặc pipe stdin
+- realtime pipeline gom `micro-batches` nhỏ
+- contract layer quarantine từng record lỗi mà không chấm điểm
+- inference service append `attack_score` và `is_alert` cho record hợp lệ
+- `model_prediction` và `schema_anomaly` được ghi ra các sink riêng
 
 ### Production-hardening cần làm thêm
 
