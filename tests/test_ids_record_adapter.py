@@ -10,11 +10,11 @@ import sys
 import pandas as pd
 import pytest
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from scripts import ids_record_adapter as adapter_module  # noqa: E402
 from scripts.ids_feature_contract import DEFAULT_FEATURE_COLUMNS_PATH, FlowFeatureContract, load_feature_columns  # noqa: E402
 from scripts.ids_record_adapter import (  # noqa: E402
     ADAPTER_FIXED_METADATA_KEYS,
@@ -1287,6 +1287,75 @@ def test_cli_file_mode_can_opt_in_to_raw_quarantine_source(tmp_path: Path) -> No
     assert quarantine_records[0]["source_record"]["unexpected_field"] == "boom"
     assert quarantine_records[0]["metadata"]["source_flow_id"] == "source_flow_id-value"
     assert quarantine_records[0]["controlled_extras"]["capture_mode"] == "capture_mode-value"
+
+
+def test_cli_file_mode_preserves_existing_outputs_when_sink_setup_fails(
+    tmp_path: Path,
+) -> None:
+    input_path = tmp_path / "source.jsonl"
+    adapted_output_path = tmp_path / "adapted_output.jsonl"
+    original_adapted_output = json.dumps({"existing": "adapted"}) + "\n"
+    input_path.write_text(json.dumps(make_profile_record(PRIMARY_PROFILE_ID)), encoding="utf-8")
+    adapted_output_path.write_text(original_adapted_output, encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(adapter_script_path()),
+            "--profile",
+            PRIMARY_PROFILE_ID,
+            "--input-path",
+            str(input_path),
+            "--output-path",
+            str(adapted_output_path),
+            "--quarantine-output-path",
+            str(tmp_path),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert adapted_output_path.read_text(encoding="utf-8") == original_adapted_output
+
+
+def test_cli_file_mode_preserves_existing_outputs_when_processing_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    input_path = tmp_path / "source.jsonl"
+    adapted_output_path = tmp_path / "adapted_output.jsonl"
+    quarantine_output_path = tmp_path / "adapter_quarantine.jsonl"
+    original_adapted_output = json.dumps({"existing": "adapted"}) + "\n"
+    original_quarantine_output = json.dumps({"existing": "quarantine"}) + "\n"
+    input_path.write_text(json.dumps(make_profile_record(PRIMARY_PROFILE_ID)), encoding="utf-8")
+    adapted_output_path.write_text(original_adapted_output, encoding="utf-8")
+    quarantine_output_path.write_text(original_quarantine_output, encoding="utf-8")
+
+    def fail_run_adapter_cli(**_: object) -> object:
+        raise RuntimeError("processing exploded")
+
+    monkeypatch.setattr(adapter_module, "run_adapter_cli", fail_run_adapter_cli)
+
+    with pytest.raises(RuntimeError, match="processing exploded"):
+        adapter_module.main(
+            [
+                "--profile",
+                PRIMARY_PROFILE_ID,
+                "--input-path",
+                str(input_path),
+                "--output-path",
+                str(adapted_output_path),
+                "--quarantine-output-path",
+                str(quarantine_output_path),
+            ]
+        )
+
+    assert adapted_output_path.read_text(encoding="utf-8") == original_adapted_output
+    assert (
+        quarantine_output_path.read_text(encoding="utf-8")
+        == original_quarantine_output
+    )
 
 
 def test_cli_file_mode_rejects_input_output_path_collisions_before_opening_files(

@@ -4,10 +4,11 @@ import argparse
 import importlib
 import json
 import sys
+import tempfile
 from dataclasses import dataclass, field
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Sequence, TextIO
+from typing import Any, Iterable, Iterator, Mapping, Sequence, TextIO
 
 PRIMARY_PROFILE_ID = "cicflowmeter_primary_v1"
 SECONDARY_PROFILE_ID = "cicflowmeter_secondary_v1"
@@ -850,6 +851,11 @@ def _validate_output_path_collisions(
         )
 
 
+def _validate_sink_output_path(path: Path) -> None:
+    if path.exists() and path.is_dir():
+        raise IsADirectoryError(f"Output path must be a file, got directory: {path}")
+
+
 def _resolve_adapter_output_paths(
     *,
     input_path: Path | None,
@@ -873,6 +879,10 @@ def _resolve_adapter_output_paths(
         output_path=resolved_output,
         quarantine_output_path=resolved_quarantine,
     )
+    if resolved_output is not None:
+        _validate_sink_output_path(resolved_output)
+    if resolved_quarantine is not None:
+        _validate_sink_output_path(resolved_quarantine)
     return resolved_output, resolved_quarantine
 
 
@@ -915,6 +925,66 @@ def _open_redirected_stdin_sink_handles(
         for path in created_paths:
             try:
                 path.unlink()
+            except FileNotFoundError:
+                continue
+        raise
+
+
+def _open_staged_output_handle(
+    *,
+    final_path: Path,
+    stack: ExitStack,
+) -> tuple[TextIO, Path]:
+    final_path.parent.mkdir(parents=True, exist_ok=True)
+    handle = stack.enter_context(
+        tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            newline="\n",
+            dir=final_path.parent,
+            prefix=f".{final_path.stem}.",
+            suffix=f"{final_path.suffix}.tmp" if final_path.suffix else ".tmp",
+            delete=False,
+        )
+    )
+    return handle, Path(handle.name)
+
+
+@contextmanager
+def _open_staged_file_mode_sink_handles(
+    *,
+    output_path: Path,
+    quarantine_output_path: Path,
+) -> Iterator[tuple[TextIO, TextIO]]:
+    staged_paths: list[tuple[Path, Path]] = []
+    try:
+        with ExitStack() as stack:
+            adapted_handle, adapted_temp_path = _open_staged_output_handle(
+                final_path=output_path,
+                stack=stack,
+            )
+            staged_paths.append((adapted_temp_path, output_path))
+            quarantine_handle, quarantine_temp_path = _open_staged_output_handle(
+                final_path=quarantine_output_path,
+                stack=stack,
+            )
+            staged_paths.append((quarantine_temp_path, quarantine_output_path))
+            yield adapted_handle, quarantine_handle
+    except Exception:
+        for temp_path, _ in staged_paths:
+            try:
+                temp_path.unlink()
+            except FileNotFoundError:
+                continue
+        raise
+
+    try:
+        for temp_path, final_path in staged_paths:
+            temp_path.replace(final_path)
+    except Exception:
+        for temp_path, _ in staged_paths:
+            try:
+                temp_path.unlink()
             except FileNotFoundError:
                 continue
         raise
@@ -1011,24 +1081,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             parser.error(str(exc))
         assert output_path is not None
         assert quarantine_output_path is not None
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        quarantine_output_path.parent.mkdir(parents=True, exist_ok=True)
-        with ExitStack() as stack:
-            input_handle = stack.enter_context(args.input_path.open("r", encoding="utf-8"))
-            adapted_handle = stack.enter_context(
-                output_path.open("w", encoding="utf-8", newline="\n")
-            )
-            quarantine_handle = stack.enter_context(
-                quarantine_output_path.open("w", encoding="utf-8", newline="\n")
-            )
-            summary = run_adapter_cli(
-                profile_id=args.profile,
-                input_stream=input_handle,
-                adapted_output=adapted_handle,
-                quarantine_output=quarantine_handle,
-                include_raw_quarantine_source=args.include_raw_quarantine_source,
-            )
-            summary.input_mode = input_mode
+        with args.input_path.open("r", encoding="utf-8") as input_handle:
+            with _open_staged_file_mode_sink_handles(
+                output_path=output_path,
+                quarantine_output_path=quarantine_output_path,
+            ) as (adapted_handle, quarantine_handle):
+                summary = run_adapter_cli(
+                    profile_id=args.profile,
+                    input_stream=input_handle,
+                    adapted_output=adapted_handle,
+                    quarantine_output=quarantine_handle,
+                    include_raw_quarantine_source=args.include_raw_quarantine_source,
+                )
+                summary.input_mode = input_mode
     else:
         try:
             resolved_output_path, resolved_quarantine_output_path = _resolve_adapter_output_paths(
