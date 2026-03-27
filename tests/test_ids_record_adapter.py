@@ -205,6 +205,72 @@ def test_custom_contract_requires_explicit_profile_registry() -> None:
         )
 
 
+def test_adapter_accepts_injected_contract_with_duck_typed_success_result() -> None:
+    class FakeValidatedResult:
+        def __init__(self, aligned_features: dict[str, float]) -> None:
+            self.aligned_features = aligned_features
+
+    class FakeContract:
+        def __init__(self) -> None:
+            self.feature_columns = list(FEATURE_COLUMNS)
+            self.last_record: dict[str, object] | None = None
+
+        def validate_record(
+            self,
+            record: dict[str, object],
+            record_index: int | None = None,
+        ) -> FakeValidatedResult:
+            self.last_record = record
+            return FakeValidatedResult(
+                {column: float(index + 1) for index, column in enumerate(self.feature_columns)}
+            )
+
+    contract = FakeContract()
+    adapter = StructuredRecordAdapter(contract=contract)
+
+    result = adapter.adapt_record(
+        make_profile_record(PRIMARY_PROFILE_ID),
+        profile_id=PRIMARY_PROFILE_ID,
+        record_index=0,
+    )
+
+    assert isinstance(result, AdaptedFlowRecord)
+    assert contract.last_record is not None
+    assert contract.last_record["adapter_profile"] == PRIMARY_PROFILE_ID
+    assert result.features["Flow Duration"] == 4.0
+
+
+def test_adapter_accepts_injected_contract_with_duck_typed_quarantine_result() -> None:
+    class FakeQuarantinedResult:
+        reason = "non_numeric_required_features"
+        missing_features: tuple[str, ...] = ()
+        non_numeric_features = ("Flow Duration",)
+        alias_collisions: tuple[str, ...] = ()
+
+    class FakeContract:
+        def __init__(self) -> None:
+            self.feature_columns = list(FEATURE_COLUMNS)
+
+        def validate_record(
+            self,
+            record: dict[str, object],
+            record_index: int | None = None,
+        ) -> FakeQuarantinedResult:
+            return FakeQuarantinedResult()
+
+    adapter = StructuredRecordAdapter(contract=FakeContract())
+
+    result = adapter.adapt_record(
+        make_profile_record(PRIMARY_PROFILE_ID),
+        profile_id=PRIMARY_PROFILE_ID,
+        record_index=1,
+    )
+
+    assert isinstance(result, AdapterQuarantineRecord)
+    assert result.reason == "non_numeric_required_features"
+    assert result.non_numeric_fields == ("Flow Duration",)
+
+
 @pytest.mark.parametrize(
     "profile_id, fixture_record, mapping_oracle, expected_metadata_alias_map",
     [

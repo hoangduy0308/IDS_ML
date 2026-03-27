@@ -173,9 +173,25 @@ class _DefaultAdapterProfileRegistryProxy:
         return _get_default_adapter_profile_registry().require(profile_id)
 
 
-def _is_quarantined_flow_record(value: Any) -> bool:
-    feature_contract_module = _load_feature_contract_module()
-    return isinstance(value, feature_contract_module.QuarantinedFlowRecord)
+def _is_quarantined_validation_result(value: Any) -> bool:
+    return hasattr(value, "reason")
+
+
+def _get_validation_result_tuple(value: Any, field_name: str) -> tuple[str, ...]:
+    field_value = getattr(value, field_name, ())
+    if not field_value:
+        return ()
+    return tuple(str(item) for item in field_value)
+
+
+def _get_validation_result_features(value: Any) -> dict[str, float]:
+    aligned_features = getattr(value, "aligned_features", None)
+    if aligned_features is None:
+        raise TypeError(
+            "contract.validate_record() must return an object with either a 'reason' "
+            "attribute or an 'aligned_features' mapping."
+        )
+    return {str(key): float(feature_value) for key, feature_value in aligned_features.items()}
 
 
 def _normalize_mapping(
@@ -674,15 +690,17 @@ class StructuredRecordAdapter:
         adapter_input.update(metadata)
         adapter_input.update(controlled_extras)
         validation = self.contract.validate_record(adapter_input, record_index=record_index)
-        if _is_quarantined_flow_record(validation):
+        if _is_quarantined_validation_result(validation):
             return AdapterQuarantineRecord(
                 profile=profile.profile_id,
-                reason=validation.reason,
+                reason=str(validation.reason),
                 source_record=source_record,
                 record_index=record_index,
-                missing_fields=validation.missing_features,
-                non_numeric_fields=validation.non_numeric_features,
-                alias_collisions=validation.alias_collisions,
+                missing_fields=_get_validation_result_tuple(validation, "missing_features"),
+                non_numeric_fields=_get_validation_result_tuple(
+                    validation, "non_numeric_features"
+                ),
+                alias_collisions=_get_validation_result_tuple(validation, "alias_collisions"),
                 metadata=metadata,
                 controlled_extras=controlled_extras,
             )
@@ -690,7 +708,7 @@ class StructuredRecordAdapter:
         return AdaptedFlowRecord(
             profile=profile.profile_id,
             record_index=record_index,
-            features=validation.aligned_features,
+            features=_get_validation_result_features(validation),
             metadata=metadata,
             controlled_extras=controlled_extras,
         )
