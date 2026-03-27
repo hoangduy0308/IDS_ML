@@ -1458,6 +1458,120 @@ def test_cli_file_mode_preserves_existing_outputs_when_processing_fails(
     )
 
 
+def test_cli_file_mode_overwrites_existing_outputs_on_reruns(tmp_path: Path) -> None:
+    input_path = tmp_path / "source.jsonl"
+    adapted_output_path = tmp_path / "adapted_output.jsonl"
+    quarantine_output_path = tmp_path / "adapter_quarantine.jsonl"
+    input_path.write_text(
+        PRIMARY_FIXTURE_PATH.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    adapted_output_path.write_text(json.dumps({"stale": "adapted"}) + "\n", encoding="utf-8")
+    quarantine_output_path.write_text(
+        json.dumps({"stale": "quarantine"}) + "\n",
+        encoding="utf-8",
+    )
+
+    first_result = subprocess.run(
+        [
+            sys.executable,
+            str(adapter_script_path()),
+            "--profile",
+            PRIMARY_PROFILE_ID,
+            "--input-path",
+            str(input_path),
+            "--output-path",
+            str(adapted_output_path),
+            "--quarantine-output-path",
+            str(quarantine_output_path),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert first_result.stdout == ""
+    assert first_result.stderr == ""
+    assert len(load_jsonl(adapted_output_path)) == 1
+    assert len(load_jsonl(quarantine_output_path)) == 1
+
+    rerun_payload = json.dumps(make_profile_record(PRIMARY_PROFILE_ID, flow_duration=91.0)) + "\n"
+    input_path.write_text(rerun_payload, encoding="utf-8")
+
+    second_result = subprocess.run(
+        [
+            sys.executable,
+            str(adapter_script_path()),
+            "--profile",
+            PRIMARY_PROFILE_ID,
+            "--input-path",
+            str(input_path),
+            "--output-path",
+            str(adapted_output_path),
+            "--quarantine-output-path",
+            str(quarantine_output_path),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert second_result.stdout == ""
+    assert second_result.stderr == ""
+    second_adapted_records = load_jsonl(adapted_output_path)
+    assert len(second_adapted_records) == 1
+    assert second_adapted_records[0]["Flow Duration"] == 91.0
+    assert load_jsonl(quarantine_output_path) == []
+
+
+def test_cli_file_mode_preserves_existing_outputs_when_promotion_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    input_path = tmp_path / "source.jsonl"
+    adapted_output_path = tmp_path / "adapted_output.jsonl"
+    quarantine_output_path = tmp_path / "adapter_quarantine.jsonl"
+    original_adapted_output = json.dumps({"existing": "adapted"}) + "\n"
+    original_quarantine_output = json.dumps({"existing": "quarantine"}) + "\n"
+    input_path.write_text(json.dumps(make_profile_record(PRIMARY_PROFILE_ID)), encoding="utf-8")
+    adapted_output_path.write_text(original_adapted_output, encoding="utf-8")
+    quarantine_output_path.write_text(original_quarantine_output, encoding="utf-8")
+
+    replace_calls = 0
+    original_replace = Path.replace
+
+    def fail_second_promotion(self: Path, target: Path) -> Path:
+        nonlocal replace_calls
+        if target in (adapted_output_path, quarantine_output_path):
+            replace_calls += 1
+            if replace_calls == 2:
+                raise OSError("promotion exploded")
+        return original_replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", fail_second_promotion)
+
+    with pytest.raises(OSError, match="promotion exploded"):
+        adapter_module.main(
+            [
+                "--profile",
+                PRIMARY_PROFILE_ID,
+                "--input-path",
+                str(input_path),
+                "--output-path",
+                str(adapted_output_path),
+                "--quarantine-output-path",
+                str(quarantine_output_path),
+            ]
+        )
+
+    assert adapted_output_path.read_text(encoding="utf-8") == original_adapted_output
+    assert (
+        quarantine_output_path.read_text(encoding="utf-8")
+        == original_quarantine_output
+    )
+    assert list(tmp_path.glob(".*.tmp")) == []
+
+
 def test_cli_file_mode_rejects_input_output_path_collisions_before_opening_files(
     tmp_path: Path,
 ) -> None:

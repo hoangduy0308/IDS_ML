@@ -1025,6 +1025,59 @@ def _open_staged_output_handle(
     return handle, Path(handle.name)
 
 
+def _reserve_staged_path(final_path: Path, *, suffix: str) -> Path:
+    final_path.parent.mkdir(parents=True, exist_ok=True)
+    handle = tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        newline="\n",
+        dir=final_path.parent,
+        prefix=f".{final_path.stem}.",
+        suffix=suffix,
+        delete=False,
+    )
+    handle.close()
+    return Path(handle.name)
+
+
+def _cleanup_staged_paths(paths: Iterable[Path]) -> None:
+    for path in paths:
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            continue
+
+
+def _promote_staged_output_paths_transactionally(
+    staged_paths: Sequence[tuple[Path, Path]],
+) -> None:
+    backup_paths: list[tuple[Path, Path]] = []
+    promoted_final_paths: list[Path] = []
+    try:
+        for _, final_path in staged_paths:
+            if not final_path.exists():
+                continue
+            backup_path = _reserve_staged_path(
+                final_path,
+                suffix=f"{final_path.suffix}.bak" if final_path.suffix else ".bak",
+            )
+            final_path.replace(backup_path)
+            backup_paths.append((backup_path, final_path))
+
+        for temp_path, final_path in staged_paths:
+            temp_path.replace(final_path)
+            promoted_final_paths.append(final_path)
+    except Exception:
+        _cleanup_staged_paths(promoted_final_paths)
+        for backup_path, final_path in reversed(backup_paths):
+            if backup_path.exists():
+                backup_path.replace(final_path)
+        _cleanup_staged_paths(temp_path for temp_path, _ in staged_paths)
+        raise
+    else:
+        _cleanup_staged_paths(backup_path for backup_path, _ in backup_paths)
+
+
 @contextmanager
 def _open_staged_file_mode_sink_handles(
     *,
@@ -1046,23 +1099,10 @@ def _open_staged_file_mode_sink_handles(
             staged_paths.append((quarantine_temp_path, quarantine_output_path))
             yield adapted_handle, quarantine_handle
     except Exception:
-        for temp_path, _ in staged_paths:
-            try:
-                temp_path.unlink()
-            except FileNotFoundError:
-                continue
+        _cleanup_staged_paths(temp_path for temp_path, _ in staged_paths)
         raise
 
-    try:
-        for temp_path, final_path in staged_paths:
-            temp_path.replace(final_path)
-    except Exception:
-        for temp_path, _ in staged_paths:
-            try:
-                temp_path.unlink()
-            except FileNotFoundError:
-                continue
-        raise
+    _promote_staged_output_paths_transactionally(staged_paths)
 
 
 def build_cli_parser() -> argparse.ArgumentParser:
