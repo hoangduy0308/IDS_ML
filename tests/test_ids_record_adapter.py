@@ -205,6 +205,48 @@ def test_custom_contract_requires_explicit_profile_registry() -> None:
         )
 
 
+def test_custom_contract_accepts_explicit_matching_profile_registry() -> None:
+    custom_profile_id = "custom-flow-duration-v1"
+    custom_profile = AdapterProfileDefinition(
+        profile_id=custom_profile_id,
+        feature_alias_map={"FlowDuration": "Flow Duration"},
+        metadata_alias_map={"TraceId": "source_flow_id"},
+        controlled_extra_keys=("capture_mode",),
+    )
+    custom_contract = FlowFeatureContract(
+        ["Flow Duration"],
+        alias_map={"FlowDuration": "Flow Duration"},
+    )
+    custom_registry = type(build_default_adapter_registry())([custom_profile])
+    adapter = StructuredRecordAdapter(
+        contract=custom_contract,
+        profile_registry=custom_registry,
+    )
+
+    result = adapter.adapt_record(
+        {
+            "FlowDuration": 80.0,
+            "TraceId": "flow-1",
+            "capture_mode": "batch",
+        },
+        profile_id=custom_profile_id,
+        record_index=0,
+    )
+
+    assert isinstance(result, AdaptedFlowRecord)
+    assert result.profile == custom_profile_id
+    assert result.features == {"Flow Duration": 80.0}
+    assert result.metadata == {"source_flow_id": "flow-1"}
+    assert result.controlled_extras == {"capture_mode": "batch"}
+    assert DEFAULT_ADAPTER_PROFILE_REGISTRY.available_profile_ids() == (
+        PRIMARY_PROFILE_ID,
+        SECONDARY_PROFILE_ID,
+    )
+    assert set(get_adapter_profile(PRIMARY_PROFILE_ID).feature_alias_map.values()) == set(
+        FEATURE_COLUMNS
+    )
+
+
 def test_adapter_accepts_injected_contract_with_duck_typed_success_result() -> None:
     class FakeValidatedResult:
         def __init__(self, aligned_features: dict[str, float]) -> None:
