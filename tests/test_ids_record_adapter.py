@@ -1678,9 +1678,37 @@ def test_cli_file_mode_cleans_staged_temp_files_on_keyboard_interrupt(
     adapted_output_path.write_text(original_adapted_output, encoding="utf-8")
     quarantine_output_path.write_text(original_quarantine_output, encoding="utf-8")
 
-    def interrupt_run_adapter_cli(**_: object) -> object:
+    staged_temp_paths: list[Path] = []
+    original_open_staged_output_handle = adapter_module._open_staged_output_handle
+
+    def capture_staged_output_handle(*, final_path: Path, stack: object) -> tuple[object, Path]:
+        handle, staged_path = original_open_staged_output_handle(
+            final_path=final_path,
+            stack=stack,
+        )
+        staged_temp_paths.append(staged_path)
+        return handle, staged_path
+
+    def interrupt_run_adapter_cli(**kwargs: object) -> object:
+        assert len(staged_temp_paths) == 2
+        assert all(path.exists() for path in staged_temp_paths)
+        adapted_output = kwargs["adapted_output"]
+        quarantine_output = kwargs["quarantine_output"]
+        assert hasattr(adapted_output, "write")
+        assert hasattr(adapted_output, "flush")
+        assert hasattr(quarantine_output, "write")
+        assert hasattr(quarantine_output, "flush")
+        adapted_output.write(json.dumps({"partial": "adapted"}) + "\n")
+        adapted_output.flush()
+        quarantine_output.write(json.dumps({"partial": "quarantine"}) + "\n")
+        quarantine_output.flush()
         raise KeyboardInterrupt("interrupted")
 
+    monkeypatch.setattr(
+        adapter_module,
+        "_open_staged_output_handle",
+        capture_staged_output_handle,
+    )
     monkeypatch.setattr(adapter_module, "run_adapter_cli", interrupt_run_adapter_cli)
 
     with pytest.raises(KeyboardInterrupt, match="interrupted"):
@@ -1702,7 +1730,10 @@ def test_cli_file_mode_cleans_staged_temp_files_on_keyboard_interrupt(
         quarantine_output_path.read_text(encoding="utf-8")
         == original_quarantine_output
     )
+    assert staged_temp_paths
+    assert all(not path.exists() for path in staged_temp_paths)
     assert list(tmp_path.glob(".*.tmp")) == []
+    assert list(tmp_path.glob(".*.bak")) == []
 
 
 def test_cli_file_mode_rejects_input_output_path_collisions_before_opening_files(
