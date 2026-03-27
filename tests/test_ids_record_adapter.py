@@ -370,6 +370,81 @@ def test_adapter_profile_definition_rejects_adapter_profile_as_upstream_metadata
         )
 
 
+@pytest.mark.parametrize(
+    ("kwargs", "error_match"),
+    [
+        (
+            {
+                "profile_id": "   ",
+                "feature_alias_map": {"SrcPort": "Src Port"},
+                "metadata_alias_map": {},
+            },
+            "profile_id must not be blank",
+        ),
+        (
+            {
+                "profile_id": "bad-profile",
+                "feature_alias_map": {
+                    "SrcPort": "Src Port",
+                    "SourcePort": "Src Port",
+                },
+                "metadata_alias_map": {},
+            },
+            "duplicate targets",
+        ),
+        (
+            {
+                "profile_id": "bad-profile",
+                "feature_alias_map": {"SrcPort": "Src Port"},
+                "metadata_alias_map": {"SrcPort": "source_flow_id"},
+            },
+            "source keys overlap",
+        ),
+        (
+            {
+                "profile_id": "bad-profile",
+                "feature_alias_map": {"SrcPort": "Src Port"},
+                "metadata_alias_map": {"flow_id": "not_a_supported_target"},
+            },
+            "upstream-controlled adapter metadata keys",
+        ),
+        (
+            {
+                "profile_id": "bad-profile",
+                "feature_alias_map": {"SrcPort": "Src Port"},
+                "metadata_alias_map": {},
+                "controlled_extra_keys": ("SrcPort",),
+            },
+            "controlled extras overlap feature source keys",
+        ),
+        (
+            {
+                "profile_id": "bad-profile",
+                "feature_alias_map": {"SrcPort": "Src Port"},
+                "metadata_alias_map": {"flow_id": "source_flow_id"},
+                "controlled_extra_keys": ("flow_id",),
+            },
+            "controlled extras overlap metadata source keys",
+        ),
+        (
+            {
+                "profile_id": "bad-profile",
+                "feature_alias_map": {"SrcPort": "Src Port"},
+                "metadata_alias_map": {},
+                "controlled_extra_keys": ("source_flow_id",),
+            },
+            "controlled extras overlap fixed adapter metadata keys",
+        ),
+    ],
+)
+def test_adapter_profile_definition_guardrails_fail_fast(
+    kwargs: dict[str, object],
+    error_match: str,
+) -> None:
+    with pytest.raises(ValueError, match=error_match):
+        AdapterProfileDefinition(**kwargs)
+
+
 def test_adapted_flow_record_carries_model_fields_and_controlled_metadata() -> None:
     adapted = AdaptedFlowRecord(
         profile=PRIMARY_PROFILE_ID,
