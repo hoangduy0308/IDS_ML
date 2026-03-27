@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import importlib
 import json
+import shutil
 import sys
 import tempfile
 from dataclasses import dataclass, field
@@ -1048,6 +1049,14 @@ def _cleanup_staged_paths(paths: Iterable[Path]) -> None:
             continue
 
 
+def _restore_backup_path(backup_path: Path, final_path: Path) -> None:
+    try:
+        backup_path.replace(final_path)
+    except OSError:
+        shutil.copyfile(backup_path, final_path)
+        backup_path.unlink()
+
+
 def _promote_staged_output_paths_transactionally(
     staged_paths: Sequence[tuple[Path, Path]],
 ) -> None:
@@ -1068,10 +1077,15 @@ def _promote_staged_output_paths_transactionally(
             temp_path.replace(final_path)
             promoted_final_paths.append(final_path)
     except BaseException:
-        _cleanup_staged_paths(promoted_final_paths)
         for backup_path, final_path in reversed(backup_paths):
             if backup_path.exists():
-                backup_path.replace(final_path)
+                _restore_backup_path(backup_path, final_path)
+        backed_up_final_paths = {final_path for _, final_path in backup_paths}
+        _cleanup_staged_paths(
+            final_path
+            for final_path in promoted_final_paths
+            if final_path not in backed_up_final_paths
+        )
         _cleanup_staged_paths(temp_path for temp_path, _ in staged_paths)
         raise
     else:
