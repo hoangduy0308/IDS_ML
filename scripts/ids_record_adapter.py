@@ -858,6 +858,50 @@ def _resolve_adapter_output_paths(
     return resolved_output, resolved_quarantine
 
 
+def _open_redirected_stdin_sink_handles(
+    *,
+    output_path: Path | None,
+    quarantine_output_path: Path | None,
+) -> tuple[TextIO, TextIO, ExitStack]:
+    adapted_output: TextIO = sys.stdout
+    quarantine_output: TextIO = sys.stderr
+    created_paths: list[Path] = []
+    stack = ExitStack()
+    try:
+        if output_path is not None:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_existed = output_path.exists()
+            adapted_output = stack.enter_context(
+                output_path.open("a+", encoding="utf-8", newline="\n")
+            )
+            if not output_existed:
+                created_paths.append(output_path)
+        if quarantine_output_path is not None:
+            quarantine_output_path.parent.mkdir(parents=True, exist_ok=True)
+            quarantine_existed = quarantine_output_path.exists()
+            quarantine_output = stack.enter_context(
+                quarantine_output_path.open("a+", encoding="utf-8", newline="\n")
+            )
+            if not quarantine_existed:
+                created_paths.append(quarantine_output_path)
+
+        for handle in (adapted_output, quarantine_output):
+            if handle in (sys.stdout, sys.stderr):
+                continue
+            handle.seek(0)
+            handle.truncate(0)
+
+        return adapted_output, quarantine_output, stack
+    except Exception:
+        stack.close()
+        for path in created_paths:
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                continue
+        raise
+
+
 def build_cli_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
@@ -968,8 +1012,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             summary.input_mode = input_mode
     else:
-        adapted_output: TextIO
-        quarantine_output: TextIO
         try:
             resolved_output_path, resolved_quarantine_output_path = _resolve_adapter_output_paths(
                 input_path=None,
@@ -978,19 +1020,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         except FileModePathCollisionError as exc:
             parser.error(str(exc))
-        if resolved_output_path is None:
-            adapted_output = sys.stdout
-        else:
-            resolved_output_path.parent.mkdir(parents=True, exist_ok=True)
-            adapted_output = resolved_output_path.open("w", encoding="utf-8", newline="\n")
-        if resolved_quarantine_output_path is None:
-            quarantine_output = sys.stderr
-        else:
-            resolved_quarantine_output_path.parent.mkdir(parents=True, exist_ok=True)
-            quarantine_output = resolved_quarantine_output_path.open(
-                "w", encoding="utf-8", newline="\n"
+        with ExitStack() as stack:
+            adapted_output, quarantine_output, redirected_stack = _open_redirected_stdin_sink_handles(
+                output_path=resolved_output_path,
+                quarantine_output_path=resolved_quarantine_output_path,
             )
-        try:
+            stack.enter_context(redirected_stack)
             summary = run_adapter_cli(
                 profile_id=args.profile,
                 input_stream=sys.stdin,
@@ -999,11 +1034,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                 include_raw_quarantine_source=args.include_raw_quarantine_source,
             )
             summary.input_mode = input_mode
-        finally:
-            if adapted_output is not sys.stdout:
-                adapted_output.close()
-            if quarantine_output is not sys.stderr:
-                quarantine_output.close()
 
     _ = summary
     return 0

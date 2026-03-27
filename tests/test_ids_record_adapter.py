@@ -1318,6 +1318,31 @@ def test_cli_stdin_redirected_sinks_cover_malformed_transport_paths(
     assert "not" not in serialized_quarantine
 
 
+def test_cli_stdin_redirected_sinks_do_not_leave_partial_artifacts_on_open_failure(
+    tmp_path: Path,
+) -> None:
+    adapted_output_path = tmp_path / "adapted.jsonl"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(adapter_script_path()),
+            "--profile",
+            PRIMARY_PROFILE_ID,
+            "--output-path",
+            str(adapted_output_path),
+            "--quarantine-output-path",
+            str(tmp_path),
+        ],
+        input=json.dumps(make_profile_record(PRIMARY_PROFILE_ID)),
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert not adapted_output_path.exists()
+
+
 def test_cli_stdin_rejects_output_quarantine_path_collisions_before_opening_files(
     tmp_path: Path,
 ) -> None:
