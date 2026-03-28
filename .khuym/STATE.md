@@ -1,12 +1,12 @@
-STATUS: validation-risk-hardened-awaiting-approval
-PHASE: validating_complete_gate2_pending
-ACTIVE_SKILL: khuym:validating -> COMPLETE
+STATUS: swarm-executing
+PHASE: swarming_in_progress
+ACTIVE_SKILL: khuym:swarming -> IN_PROGRESS
 FEATURE: ids-live-host-based-ml-ids
 CONTEXT_MD: F:/Work/IDS_ML_New/history/ids-live-host-based-ml-ids/CONTEXT.md
 DISCOVERY_MD: F:/Work/IDS_ML_New/history/ids-live-host-based-ml-ids/discovery.md
 APPROACH_MD: F:/Work/IDS_ML_New/history/ids-live-host-based-ml-ids/approach.md
 VALIDATION_MD: F:/Work/IDS_ML_New/history/ids-live-host-based-ml-ids/validation.md
-HANDOFF: user_gate_2
+HANDOFF: swarm_live
 LOCKED_DECISIONS: D1-D10
 PREVIOUS_FEATURE: ids-structured-record-adapter
 PREVIOUS_CONTEXT_MD: F:/Work/IDS_ML_New/history/ids-structured-record-adapter/CONTEXT.md
@@ -26,8 +26,8 @@ Artifacts Written:
 - F:/Work/IDS_ML_New/history/ids-live-host-based-ml-ids/validation.md
 
 Next:
-- Validation complete on the revised staged-live architecture with residual risks hardened into explicit constraints
-- Await GATE 2 approval before invoking `khuym:swarming`
+- Swarm is live on epic ids_ml_new-vtc
+- Wait for ids_ml_new-vtc.4 to complete, then unlock ids_ml_new-vtc.5 and ids_ml_new-vtc.6
 
 ## Swarm Status
 - Epic: ids_ml_new-vtc
@@ -49,6 +49,17 @@ Next:
     - claimed ids_ml_new-vtc.1
     - reports scripts/ids_live_capture.py + tests/test_ids_live_capture.py implemented
     - reports `python -m pytest -q tests/test_ids_live_capture.py` passing
+    - Agent Mail message 228
+    - ids_ml_new-vtc.1 completed and closed
+    - commit: 1ec08d4
+    - Agent Mail message 233
+    - ids_ml_new-vtc.2 claimed and set to in_progress
+    - reserved scope: scripts/ids_live_flow_bridge.py, tests/test_ids_live_flow_bridge.py, artifacts/demo/ids_live_sensor_primary_sample.jsonl
+    - Agent Mail message 234
+    - ids_ml_new-vtc.2 completed and closed
+    - verification: `python -m pytest -q tests/test_ids_live_capture.py tests/test_ids_live_flow_bridge.py` -> 9 passed
+    - commits: 114e716, a04afd8
+    - explicitly stood down from ids_ml_new-vtc.4 to avoid daemon file-scope overlap
 - DarkBeacon
   - spawned via subagent nickname: Dirac
   - startup hint: ids_ml_new-vtc.3
@@ -57,6 +68,19 @@ Next:
     - Agent Mail messages 222-223
     - ids_ml_new-vtc.3 set to in_progress
     - files reserved: scripts/ids_live_sensor_sinks.py, tests/test_ids_live_sensor_sinks.py
+    - bead ids_ml_new-vtc.3 now closed in br
+    - Agent Mail message 231
+    - explicit completion report posted to epic thread
+    - subagent-reported verification:
+      - `python -m pytest -q tests/test_ids_live_sensor_sinks.py` -> 4 passed
+      - `python -m py_compile scripts/ids_live_sensor_sinks.py tests/test_ids_live_sensor_sinks.py` -> exit 0
+    - commit: 8063efa
+    - Agent Mail message 243
+    - ids_ml_new-vtc.4 is now actively in progress
+    - daemon files in scope: scripts/ids_live_sensor.py, tests/test_ids_live_sensor.py
+    - verification in progress:
+      - `python -m pytest -q tests/test_ids_live_sensor.py tests/test_ids_live_sensor_sinks.py` -> 8 passed
+      - `python -m py_compile scripts/ids_live_sensor.py scripts/ids_live_sensor_sinks.py tests/test_ids_live_sensor.py tests/test_ids_live_sensor_sinks.py` -> exit 0
 
 Risk Summary:
 - HIGH: rolling dumpcap capture manager on one NIC
