@@ -1,0 +1,27 @@
+[Unit]
+Description=IDS live host-based ML sensor
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=exec
+User=ids-sensor
+Group=ids-sensor
+WorkingDirectory=/opt/ids_ml_new
+Environment=IDS_LIVE_SENSOR_INTERFACE=eth0
+Environment=IDS_LIVE_SENSOR_SPOOL_DIR=/var/lib/ids-live-sensor
+Environment=IDS_LIVE_SENSOR_ALERTS_OUTPUT=/var/log/ids-live-sensor/ids_live_alerts.jsonl
+Environment=IDS_LIVE_SENSOR_QUARANTINE_OUTPUT=/var/log/ids-live-sensor/ids_live_quarantine.jsonl
+Environment=IDS_LIVE_SENSOR_SUMMARY_OUTPUT=/var/log/ids-live-sensor/ids_live_sensor_summary.jsonl
+ExecStartPre=/usr/bin/bash -lc 'set -euo pipefail; command -v dumpcap >/dev/null; command -v java >/dev/null; command -v Cmd >/dev/null; test -r /opt/ids_ml_new/artifacts/final_model/catboost_full_data_v1/model.cbm; test -r /opt/ids_ml_new/artifacts/final_model/catboost_full_data_v1/feature_columns.json; test -w /var/lib/ids-live-sensor; test -w /var/log/ids-live-sensor; : "${IDS_LIVE_SENSOR_INTERFACE:?missing interface}"; : "${IDS_LIVE_SENSOR_SPOOL_DIR:?missing spool dir}";'
+ExecStart=/usr/bin/python3 /opt/ids_ml_new/scripts/ids_live_sensor.py --interface eth0 --spool-dir /var/lib/ids-live-sensor --capture-window-duration-seconds 2.5 --capture-window-file-count 2 --max-pending-windows 2 --capture-buffer-megabytes 64 --update-interval-seconds 0.5 --extractor-command-prefix Cmd --adapter-profile-id cicflowmeter_primary_v1 --alerts-output-path /var/log/ids-live-sensor/ids_live_alerts.jsonl --quarantine-output-path /var/log/ids-live-sensor/ids_live_quarantine.jsonl --summary-output-path /var/log/ids-live-sensor/ids_live_sensor_summary.jsonl --feature-columns-path /opt/ids_ml_new/artifacts/final_model/catboost_full_data_v1/feature_columns.json --model-path /opt/ids_ml_new/artifacts/final_model/catboost_full_data_v1/model.cbm --threshold 0.5
+Restart=on-failure
+RestartSec=5s
+StateDirectory=ids-live-sensor
+LogsDirectory=ids-live-sensor
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
