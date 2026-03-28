@@ -4,6 +4,7 @@ from pathlib import Path
 import sys
 
 import pytest
+from starlette.testclient import TestClient
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -36,23 +37,32 @@ def test_load_operator_console_config_rejects_invalid_port(tmp_path: Path) -> No
         load_operator_console_config(environ=env, repo_root=repo_root)
 
 
-def test_build_operator_console_app_bootstraps_without_dashboard_modules(tmp_path: Path) -> None:
+def test_build_operator_console_app_wires_health_and_console_routes(tmp_path: Path) -> None:
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
+    templates_dir = REPO_ROOT / "scripts/ids_operator_console/templates"
+    static_dir = REPO_ROOT / "scripts/ids_operator_console/static"
     env = {
         "IDS_OPERATOR_CONSOLE_SECRET_KEY": "test-secret",
         "IDS_OPERATOR_CONSOLE_DATABASE_PATH": str(repo_root / "runtime" / "operator_console.db"),
-        "IDS_OPERATOR_CONSOLE_TEMPLATES_DIR": str(repo_root / "templates_missing"),
-        "IDS_OPERATOR_CONSOLE_STATIC_DIR": str(repo_root / "static_missing"),
+        "IDS_OPERATOR_CONSOLE_TEMPLATES_DIR": str(templates_dir),
+        "IDS_OPERATOR_CONSOLE_STATIC_DIR": str(static_dir),
     }
     config = load_operator_console_config(environ=env, repo_root=repo_root)
 
     app = server.build_operator_console_app(config)
+    client = TestClient(app)
 
     assert app.state.operator_console_config == config
     assert app.state.templates is not None
     assert (repo_root / "runtime").exists()
     assert any(route.path == "/healthz" for route in app.routes)
+    assert any(route.path == "/dashboard" for route in app.routes)
+    assert any(route.path == "/api/v1/console/snapshot" for route in app.routes)
+
+    health_response = client.get("/healthz")
+    assert health_response.status_code == 200
+    assert health_response.json()["service"] == "ids-operator-console"
 
 
 def test_main_loads_config_and_invokes_run_server(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

@@ -133,6 +133,16 @@ def create_operator_console_web_app(
             context=template_context,
         )
 
+    @app.get("/healthz", response_class=JSONResponse)
+    def healthz() -> JSONResponse:
+        return JSONResponse(
+            {
+                "status": "ok",
+                "service": "ids-operator-console",
+                "database_path": str(config.database_path),
+            }
+        )
+
     @app.get("/", response_class=HTMLResponse)
     def root(request: Request) -> RedirectResponse:
         redirect = require_authenticated_redirect(request, login_path="/login")

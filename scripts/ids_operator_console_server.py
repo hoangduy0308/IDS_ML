@@ -7,10 +7,7 @@ import sys
 from typing import Sequence
 
 import uvicorn
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
+from fastapi import FastAPI
 
 if __package__ in (None, ""):
     REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -18,44 +15,11 @@ if __package__ in (None, ""):
         sys.path.insert(0, str(REPO_ROOT))
 
 from scripts.ids_operator_console import OperatorConsoleConfig, load_operator_console_config
+from scripts.ids_operator_console.web import create_operator_console_web_app
 
 
 def build_operator_console_app(config: OperatorConsoleConfig) -> FastAPI:
-    config.ensure_runtime_dirs()
-    templates = Jinja2Templates(directory=str(config.templates_dir))
-
-    app = FastAPI(title="IDS Operator Console", version="0.1.0")
-    app.state.operator_console_config = config
-    app.state.templates = templates
-
-    if config.static_dir.exists():
-        app.mount("/static", StaticFiles(directory=str(config.static_dir)), name="static")
-
-    @app.get("/healthz", response_class=JSONResponse)
-    def healthz() -> dict[str, object]:
-        return {
-            "status": "ok",
-            "service": "ids-operator-console",
-            "database_path": str(config.database_path),
-        }
-
-    @app.get("/", response_class=HTMLResponse)
-    def index(request: Request) -> HTMLResponse:
-        dashboard_template = config.templates_dir / "dashboard.html"
-        if dashboard_template.exists():
-            return templates.TemplateResponse(
-                request=request,
-                name="dashboard.html",
-                context={
-                    "request": request,
-                    "title": "IDS Operator Console",
-                },
-            )
-        return HTMLResponse(
-            "<html><body><h1>IDS Operator Console bootstrap ready</h1></body></html>"
-        )
-
-    return app
+    return create_operator_console_web_app(config)
 
 
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
