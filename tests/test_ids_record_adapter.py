@@ -1524,7 +1524,7 @@ def test_cli_file_mode_overwrites_existing_outputs_on_reruns(tmp_path: Path) -> 
     assert load_jsonl(quarantine_output_path) == []
 
 
-def test_cli_file_mode_preserves_existing_outputs_when_promotion_fails(
+def test_cli_file_mode_leaves_backup_artifacts_when_restore_replace_fails(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1564,18 +1564,35 @@ def test_cli_file_mode_preserves_existing_outputs_when_promotion_fails(
             ]
         )
 
-    assert adapted_output_path.read_text(encoding="utf-8") == original_adapted_output
+    assert adapted_output_path.exists()
+    assert adapted_output_path.read_text(encoding="utf-8") != original_adapted_output
     assert (
         quarantine_output_path.read_text(encoding="utf-8")
         == original_quarantine_output
     )
     assert list(tmp_path.glob(".*.tmp")) == []
-    assert list(tmp_path.glob(".*.bak")) == []
+    backup_files = list(tmp_path.glob(".*.bak"))
+    assert len(backup_files) == 1
+    assert backup_files[0].read_text(encoding="utf-8") == original_adapted_output
 
 
-def test_cli_file_mode_preserves_existing_outputs_when_restore_replace_fails(
+@pytest.mark.parametrize(
+    (
+        "existing_output_path_name",
+        "existing_output_contents",
+        "failing_temp_target_path_name",
+    ),
+    [
+        ("adapted_output_path", "adapted", "quarantine_output_path"),
+        ("quarantine_output_path", "quarantine", "adapted_output_path"),
+    ],
+)
+def test_cli_file_mode_preserves_existing_outputs_in_asymmetric_rollback_states(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    existing_output_path_name: str,
+    existing_output_contents: str,
+    failing_temp_target_path_name: str,
 ) -> None:
     input_path = tmp_path / "source.jsonl"
     adapted_output_path = tmp_path / "adapted_output.jsonl"
@@ -1583,23 +1600,27 @@ def test_cli_file_mode_preserves_existing_outputs_when_restore_replace_fails(
     original_adapted_output = json.dumps({"existing": "adapted"}) + "\n"
     original_quarantine_output = json.dumps({"existing": "quarantine"}) + "\n"
     input_path.write_text(json.dumps(make_profile_record(PRIMARY_PROFILE_ID)), encoding="utf-8")
-    adapted_output_path.write_text(original_adapted_output, encoding="utf-8")
-    quarantine_output_path.write_text(original_quarantine_output, encoding="utf-8")
+
+    existing_output_path = {
+        "adapted_output_path": adapted_output_path,
+        "quarantine_output_path": quarantine_output_path,
+    }[existing_output_path_name]
+    existing_output_payload = {
+        "adapted": original_adapted_output,
+        "quarantine": original_quarantine_output,
+    }[existing_output_contents]
+    existing_output_path.write_text(existing_output_payload, encoding="utf-8")
+
+    failing_temp_target_path = {
+        "adapted_output_path": adapted_output_path,
+        "quarantine_output_path": quarantine_output_path,
+    }[failing_temp_target_path_name]
 
     original_replace = Path.replace
-    restore_failure_injected = False
 
     def fail_promotion_then_restore(self: Path, target: Path) -> Path:
-        nonlocal restore_failure_injected
-        if self.suffix == ".tmp" and target == quarantine_output_path:
+        if self.suffix == ".tmp" and target == failing_temp_target_path:
             raise OSError("promotion exploded")
-        if (
-            self.suffix == ".bak"
-            and target == adapted_output_path
-            and not restore_failure_injected
-        ):
-            restore_failure_injected = True
-            raise OSError("restore exploded")
         return original_replace(self, target)
 
     monkeypatch.setattr(Path, "replace", fail_promotion_then_restore)
@@ -1618,11 +1639,12 @@ def test_cli_file_mode_preserves_existing_outputs_when_restore_replace_fails(
             ]
         )
 
-    assert adapted_output_path.read_text(encoding="utf-8") == original_adapted_output
-    assert (
-        quarantine_output_path.read_text(encoding="utf-8")
-        == original_quarantine_output
-    )
+    if existing_output_path_name == "adapted_output_path":
+        assert adapted_output_path.read_text(encoding="utf-8") == original_adapted_output
+        assert not quarantine_output_path.exists()
+    else:
+        assert quarantine_output_path.read_text(encoding="utf-8") == original_quarantine_output
+        assert not adapted_output_path.exists()
     assert list(tmp_path.glob(".*.tmp")) == []
     assert list(tmp_path.glob(".*.bak")) == []
 
