@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import importlib
 import json
-import shutil
 import sys
 import tempfile
 from dataclasses import dataclass, field
@@ -1050,11 +1049,7 @@ def _cleanup_staged_paths(paths: Iterable[Path]) -> None:
 
 
 def _restore_backup_path(backup_path: Path, final_path: Path) -> None:
-    try:
-        backup_path.replace(final_path)
-    except OSError:
-        shutil.copyfile(backup_path, final_path)
-        backup_path.unlink()
+    backup_path.replace(final_path)
 
 
 def _promote_staged_output_paths_transactionally(
@@ -1076,10 +1071,15 @@ def _promote_staged_output_paths_transactionally(
         for temp_path, final_path in staged_paths:
             temp_path.replace(final_path)
             promoted_final_paths.append(final_path)
-    except BaseException:
+    except BaseException as exc:
+        restore_error: BaseException | None = None
         for backup_path, final_path in reversed(backup_paths):
             if backup_path.exists():
-                _restore_backup_path(backup_path, final_path)
+                try:
+                    _restore_backup_path(backup_path, final_path)
+                except BaseException as restore_exc:
+                    if restore_error is None:
+                        restore_error = restore_exc
         backed_up_final_paths = {final_path for _, final_path in backup_paths}
         _cleanup_staged_paths(
             final_path
@@ -1087,6 +1087,8 @@ def _promote_staged_output_paths_transactionally(
             if final_path not in backed_up_final_paths
         )
         _cleanup_staged_paths(temp_path for temp_path, _ in staged_paths)
+        if restore_error is not None:
+            raise exc from restore_error
         raise
     else:
         _cleanup_staged_paths(backup_path for backup_path, _ in backup_paths)
