@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Reports | IDS Operator Console{% endblock %}
+{% block content %}
+<section class="panel">
+  <h2>Reports And Summaries</h2>
+  <p>Operational history for alert/anomaly monitoring windows.</p>
+  {% if summaries %}
+  <table>
+    <thead>
+      <tr>
+        <th>Summary Time</th>
+        <th>Alert Count</th>
+        <th>Anomaly Count</th>
+        <th>Window (s)</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for summary in summaries %}
+      <tr>
+        <td>{{ summary.summary_ts }}</td>
+        <td>{{ summary.payload.alert_count if summary.payload else "-" }}</td>
+        <td>{{ summary.payload.anomaly_count if summary.payload else "-" }}</td>
+        <td>{{ summary.payload.window_seconds if summary.payload else "-" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>No summary records available.</p>
+  {% endif %}
+</section>
+{% endblock %}

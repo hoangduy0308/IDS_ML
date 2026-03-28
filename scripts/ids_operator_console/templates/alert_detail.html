@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Alert {{ alert.id }} | IDS Operator Console{% endblock %}
+{% block content %}
+<section class="panel">
+  <h2>Alert {{ alert.id }}</h2>
+  <p>Status: <strong>{{ alert.triage_status }}</strong></p>
+  <p>Severity: <strong>{{ alert.severity or "unknown" }}</strong></p>
+  <p>Source event: <code>{{ alert.source_event_id or "-" }}</code></p>
+  <p>Source IP: <code>{{ alert.src_ip or "-" }}</code> | Destination IP: <code>{{ alert.dst_ip or "-" }}</code></p>
+</section>
+
+<section class="grid two-col">
+  <article class="panel">
+    <h3>Update Triage Status</h3>
+    <form method="post" action="/alerts/{{ alert.id }}/status" class="stack-form">
+      <input type="hidden" name="csrf_token" value="{{ admin.csrf_token }}">
+      <label>
+        New status
+        <select name="to_status">
+          {% for state in triage_states %}
+          <option value="{{ state }}" {% if alert.triage_status == state %}selected{% endif %}>{{ state }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button type="submit">Save status</button>
+    </form>
+  </article>
+
+  <article class="panel">
+    <h3>Add Investigation Note</h3>
+    <form method="post" action="/alerts/{{ alert.id }}/notes" class="stack-form">
+      <input type="hidden" name="csrf_token" value="{{ admin.csrf_token }}">
+      <label>
+        Note
+        <textarea name="note_text" rows="4" required></textarea>
+      </label>
+      <button type="submit">Add note</button>
+    </form>
+  </article>
+</section>
+
+<section class="grid two-col">
+  <article class="panel">
+    <h3>Status History</h3>
+    {% if timeline.status_history %}
+    <ul>
+      {% for item in timeline.status_history %}
+      <li>
+        {{ item.changed_at }} - {{ item.from_status or "new" }} → {{ item.to_status }} ({{ item.changed_by }})
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p>No status history recorded.</p>
+    {% endif %}
+  </article>
+
+  <article class="panel">
+    <h3>Notes</h3>
+    {% if timeline.notes %}
+    <ul>
+      {% for note in timeline.notes %}
+      <li>{{ note.created_at }} - {{ note.author }}: {{ note.note_text }}</li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p>No notes recorded.</p>
+    {% endif %}
+  </article>
+</section>
+{% endblock %}

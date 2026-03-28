@@ -1,0 +1,162 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  background: #f4f7fb;
+  color: #101828;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.5rem;
+  background: linear-gradient(130deg, #12253e, #1e3a5f);
+  color: #f8fbff;
+}
+
+.brand h1 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.brand p {
+  margin: 0.25rem 0 0;
+  font-size: 0.9rem;
+  opacity: 0.9;
+}
+
+.topnav {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.topnav a {
+  color: #f8fbff;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.logout-form button {
+  border: none;
+  background: #fef3c7;
+  color: #92400e;
+  padding: 0.45rem 0.75rem;
+  border-radius: 0.4rem;
+  cursor: pointer;
+}
+
+.layout {
+  padding: 1.25rem;
+}
+
+.grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.grid.two-col {
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.panel {
+  background: #ffffff;
+  border: 1px solid #d7dee8;
+  border-radius: 0.6rem;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.panel-narrow {
+  max-width: 420px;
+  margin: 2rem auto;
+}
+
+.stack-form {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.inline-form {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.75rem;
+}
+
+label {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+}
+
+input,
+select,
+textarea,
+button {
+  font: inherit;
+}
+
+input,
+select,
+textarea {
+  border: 1px solid #c8d2df;
+  border-radius: 0.4rem;
+  padding: 0.45rem 0.55rem;
+}
+
+button {
+  border: 1px solid #184b96;
+  background: #1f63c5;
+  color: #ffffff;
+  border-radius: 0.45rem;
+  padding: 0.45rem 0.85rem;
+  cursor: pointer;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  border-bottom: 1px solid #e2e8f0;
+  text-align: left;
+  padding: 0.45rem 0.35rem;
+  font-size: 0.9rem;
+}
+
+th {
+  font-weight: 700;
+}
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.5rem;
+}
+
+.metrics dt {
+  font-size: 0.78rem;
+  color: #46546a;
+}
+
+.metrics dd {
+  margin: 0.1rem 0 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.error {
+  color: #b42318;
+}
+
+.footer {
+  padding: 0 1.25rem 1rem;
+  color: #607089;
+}

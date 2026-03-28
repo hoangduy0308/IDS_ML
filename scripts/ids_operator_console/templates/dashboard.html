@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}Dashboard | IDS Operator Console{% endblock %}
+{% block content %}
+<section class="panel">
+  <h2>Combined Console</h2>
+  <p>Central triage lane for model alerts with separate anomaly visibility.</p>
+</section>
+
+<section class="grid two-col">
+  <article class="panel">
+    <h3>Sensor Health</h3>
+    <dl class="metrics">
+      <div>
+        <dt>Status</dt>
+        <dd>{{ health.status }}</dd>
+      </div>
+      <div>
+        <dt>Latest Summary</dt>
+        <dd>{{ health.summary_ts or "N/A" }}</dd>
+      </div>
+      <div>
+        <dt>Alert Count</dt>
+        <dd>{{ health.alert_count }}</dd>
+      </div>
+      <div>
+        <dt>Anomaly Count</dt>
+        <dd>{{ health.anomaly_count }}</dd>
+      </div>
+      <div>
+        <dt>Window Seconds</dt>
+        <dd>{{ health.window_seconds or "N/A" }}</dd>
+      </div>
+    </dl>
+  </article>
+
+  <article class="panel">
+    <h3>Alert Queue</h3>
+    <form method="get" action="/dashboard" class="inline-form">
+      <label>
+        Triage status
+        <select name="status_filter">
+          <option value="">all</option>
+          {% for state in triage_states %}
+          <option value="{{ state }}" {% if status_filter == state %}selected{% endif %}>{{ state }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button type="submit">Apply</button>
+    </form>
+
+    {% if alerts %}
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Status</th>
+          <th>Severity</th>
+          <th>Source</th>
+          <th>Suppressed</th>
+          <th>Event Time</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for alert in alerts %}
+        <tr>
+          <td><a href="/alerts/{{ alert.id }}">{{ alert.id }}</a></td>
+          <td>{{ alert.triage_status }}</td>
+          <td>{{ alert.severity or "unknown" }}</td>
+          <td>{{ alert.src_ip or "-" }}</td>
+          <td>{{ "yes" if alert.suppressed else "no" }}</td>
+          <td>{{ alert.event_ts }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p>No alerts in the selected triage view.</p>
+    {% endif %}
+  </article>
+</section>
+
+<section class="panel">
+  <h3>Anomaly Lane</h3>
+  <p>Operational anomalies remain separate from attack-alert triage.</p>
+  {% if anomalies %}
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Type</th>
+        <th>Reason</th>
+        <th>Event Time</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for anomaly in anomalies %}
+      <tr>
+        <td>{{ anomaly.id }}</td>
+        <td>{{ anomaly.anomaly_type }}</td>
+        <td>{{ anomaly.reason or anomaly.redacted_summary or "-" }}</td>
+        <td>{{ anomaly.event_ts }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>No anomalies recorded.</p>
+  {% endif %}
+</section>
+{% endblock %}

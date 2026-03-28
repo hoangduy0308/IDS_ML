@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Login | IDS Operator Console{% endblock %}
+{% block content %}
+<section class="panel panel-narrow">
+  <h2>Admin Login</h2>
+  <p>Authenticate to access the combined console.</p>
+  {% if login_error %}
+  <p class="error">{{ login_error }}</p>
+  {% endif %}
+  <form method="post" action="/login" class="stack-form">
+    <label>
+      Username
+      <input type="text" name="username" required>
+    </label>
+    <label>
+      Password
+      <input type="password" name="password" required>
+    </label>
+    <button type="submit">Sign In</button>
+  </form>
+</section>
+{% endblock %}
