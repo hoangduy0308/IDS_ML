@@ -1582,6 +1582,11 @@ def test_cli_file_mode_leaves_backup_artifacts_when_restore_replace_fails(
     quarantine_output_path = tmp_path / "adapter_quarantine.jsonl"
     original_adapted_output = json.dumps({"existing": "adapted"}) + "\n"
     original_quarantine_output = json.dumps({"existing": "quarantine"}) + "\n"
+    expected_promoted_output = DEFAULT_STRUCTURED_RECORD_ADAPTER.adapt_record(
+        make_profile_record(PRIMARY_PROFILE_ID),
+        profile_id=PRIMARY_PROFILE_ID,
+        record_index=0,
+    ).to_record()
     input_path.write_text(json.dumps(make_profile_record(PRIMARY_PROFILE_ID)), encoding="utf-8")
     adapted_output_path.write_text(original_adapted_output, encoding="utf-8")
     quarantine_output_path.write_text(original_quarantine_output, encoding="utf-8")
@@ -1618,16 +1623,12 @@ def test_cli_file_mode_leaves_backup_artifacts_when_restore_replace_fails(
             ]
         )
 
-    assert adapted_output_path.exists()
-    assert adapted_output_path.read_text(encoding="utf-8") != original_adapted_output
-    assert (
-        quarantine_output_path.read_text(encoding="utf-8")
-        == original_quarantine_output
-    )
+    assert load_jsonl(adapted_output_path) == [expected_promoted_output]
+    assert load_jsonl(quarantine_output_path) == [json.loads(original_quarantine_output)]
     assert list(tmp_path.glob(".*.tmp")) == []
     backup_files = list(tmp_path.glob(".*.bak"))
     assert len(backup_files) == 1
-    assert backup_files[0].read_text(encoding="utf-8") == original_adapted_output
+    assert load_jsonl(backup_files[0]) == [json.loads(original_adapted_output)]
 
 
 @pytest.mark.parametrize(
@@ -1694,10 +1695,10 @@ def test_cli_file_mode_preserves_existing_outputs_in_asymmetric_rollback_states(
         )
 
     if existing_output_path_name == "adapted_output_path":
-        assert adapted_output_path.read_text(encoding="utf-8") == original_adapted_output
+        assert load_jsonl(adapted_output_path) == [json.loads(original_adapted_output)]
         assert not quarantine_output_path.exists()
     else:
-        assert quarantine_output_path.read_text(encoding="utf-8") == original_quarantine_output
+        assert load_jsonl(quarantine_output_path) == [json.loads(original_quarantine_output)]
         assert not adapted_output_path.exists()
     assert list(tmp_path.glob(".*.tmp")) == []
     assert list(tmp_path.glob(".*.bak")) == []
