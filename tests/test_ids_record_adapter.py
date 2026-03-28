@@ -1524,7 +1524,7 @@ def test_cli_file_mode_overwrites_existing_outputs_on_reruns(tmp_path: Path) -> 
     assert load_jsonl(quarantine_output_path) == []
 
 
-def test_cli_file_mode_leaves_backup_artifacts_when_restore_replace_fails(
+def test_cli_file_mode_preserves_existing_outputs_when_promotion_fails(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1549,6 +1549,60 @@ def test_cli_file_mode_leaves_backup_artifacts_when_restore_replace_fails(
         return original_replace(self, target)
 
     monkeypatch.setattr(Path, "replace", fail_second_promotion)
+
+    with pytest.raises(OSError, match="promotion exploded"):
+        adapter_module.main(
+            [
+                "--profile",
+                PRIMARY_PROFILE_ID,
+                "--input-path",
+                str(input_path),
+                "--output-path",
+                str(adapted_output_path),
+                "--quarantine-output-path",
+                str(quarantine_output_path),
+            ]
+        )
+
+    assert adapted_output_path.read_text(encoding="utf-8") == original_adapted_output
+    assert (
+        quarantine_output_path.read_text(encoding="utf-8")
+        == original_quarantine_output
+    )
+    assert list(tmp_path.glob(".*.tmp")) == []
+    assert list(tmp_path.glob(".*.bak")) == []
+
+
+def test_cli_file_mode_leaves_backup_artifacts_when_restore_replace_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    input_path = tmp_path / "source.jsonl"
+    adapted_output_path = tmp_path / "adapted_output.jsonl"
+    quarantine_output_path = tmp_path / "adapter_quarantine.jsonl"
+    original_adapted_output = json.dumps({"existing": "adapted"}) + "\n"
+    original_quarantine_output = json.dumps({"existing": "quarantine"}) + "\n"
+    input_path.write_text(json.dumps(make_profile_record(PRIMARY_PROFILE_ID)), encoding="utf-8")
+    adapted_output_path.write_text(original_adapted_output, encoding="utf-8")
+    quarantine_output_path.write_text(original_quarantine_output, encoding="utf-8")
+
+    original_replace = Path.replace
+    restore_failure_injected = False
+
+    def fail_promotion_then_restore(self: Path, target: Path) -> Path:
+        nonlocal restore_failure_injected
+        if self.suffix == ".tmp" and target == quarantine_output_path:
+            raise OSError("promotion exploded")
+        if (
+            self.suffix == ".bak"
+            and target == adapted_output_path
+            and not restore_failure_injected
+        ):
+            restore_failure_injected = True
+            raise OSError("restore exploded")
+        return original_replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", fail_promotion_then_restore)
 
     with pytest.raises(OSError, match="promotion exploded"):
         adapter_module.main(
