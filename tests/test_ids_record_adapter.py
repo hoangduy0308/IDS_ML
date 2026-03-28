@@ -91,6 +91,30 @@ def load_jsonl(path: Path) -> list[dict[str, object]]:
         return [json.loads(line) for line in handle if line.strip()]
 
 
+def build_expected_adapted_record(
+    source_record: dict[str, object],
+    *,
+    profile_id: str,
+    same_name_feature_keys: tuple[str, ...],
+    feature_alias_map: dict[str, str],
+    metadata_alias_map: dict[str, str],
+    controlled_extra_keys: tuple[str, ...],
+) -> dict[str, object]:
+    expected_record: dict[str, object] = {}
+    for feature_key in same_name_feature_keys:
+        if feature_key in source_record:
+            expected_record[feature_key] = source_record[feature_key]
+    for source_key, canonical_key in feature_alias_map.items():
+        expected_record[canonical_key] = source_record[source_key]
+    for source_key, target_key in metadata_alias_map.items():
+        expected_record[target_key] = source_record[source_key]
+    for extra_key in controlled_extra_keys:
+        if extra_key in source_record:
+            expected_record[extra_key] = source_record[extra_key]
+    expected_record["adapter_profile"] = profile_id
+    return expected_record
+
+
 def adapter_script_path() -> Path:
     return REPO_ROOT / "scripts" / "ids_record_adapter.py"
 
@@ -1536,6 +1560,8 @@ def test_cli_file_mode_preserves_existing_outputs_when_promotion_fails(
     input_path.write_text(json.dumps(make_profile_record(PRIMARY_PROFILE_ID)), encoding="utf-8")
     adapted_output_path.write_text(original_adapted_output, encoding="utf-8")
     quarantine_output_path.write_text(original_quarantine_output, encoding="utf-8")
+    original_adapted_output_bytes = adapted_output_path.read_bytes()
+    original_quarantine_output_bytes = quarantine_output_path.read_bytes()
 
     replace_calls = 0
     original_replace = Path.replace
@@ -1564,11 +1590,9 @@ def test_cli_file_mode_preserves_existing_outputs_when_promotion_fails(
             ]
         )
 
-    assert adapted_output_path.read_text(encoding="utf-8") == original_adapted_output
-    assert (
-        quarantine_output_path.read_text(encoding="utf-8")
-        == original_quarantine_output
-    )
+    # Rollback must preserve the exact bytes that were already on disk.
+    assert adapted_output_path.read_bytes() == original_adapted_output_bytes
+    assert quarantine_output_path.read_bytes() == original_quarantine_output_bytes
     assert list(tmp_path.glob(".*.tmp")) == []
     assert list(tmp_path.glob(".*.bak")) == []
 
@@ -1582,14 +1606,19 @@ def test_cli_file_mode_leaves_backup_artifacts_when_restore_replace_fails(
     quarantine_output_path = tmp_path / "adapter_quarantine.jsonl"
     original_adapted_output = json.dumps({"existing": "adapted"}) + "\n"
     original_quarantine_output = json.dumps({"existing": "quarantine"}) + "\n"
-    expected_promoted_output = DEFAULT_STRUCTURED_RECORD_ADAPTER.adapt_record(
-        make_profile_record(PRIMARY_PROFILE_ID),
+    expected_promoted_output = build_expected_adapted_record(
+        PRIMARY_PROFILE_FIXTURE_RECORD,
         profile_id=PRIMARY_PROFILE_ID,
-        record_index=0,
-    ).to_record()
+        same_name_feature_keys=PRIMARY_PROFILE_SAME_NAME_FEATURE_KEYS,
+        feature_alias_map=PRIMARY_PROFILE_FEATURE_ALIAS_OVERRIDES,
+        metadata_alias_map=PRIMARY_PROFILE_METADATA_ALIASES,
+        controlled_extra_keys=PRIMARY_PROFILE_CONTROLLED_EXTRA_KEYS,
+    )
     input_path.write_text(json.dumps(make_profile_record(PRIMARY_PROFILE_ID)), encoding="utf-8")
     adapted_output_path.write_text(original_adapted_output, encoding="utf-8")
     quarantine_output_path.write_text(original_quarantine_output, encoding="utf-8")
+    original_adapted_output_bytes = adapted_output_path.read_bytes()
+    original_quarantine_output_bytes = quarantine_output_path.read_bytes()
 
     original_replace = Path.replace
     restore_failure_injected = False
@@ -1628,7 +1657,9 @@ def test_cli_file_mode_leaves_backup_artifacts_when_restore_replace_fails(
     assert list(tmp_path.glob(".*.tmp")) == []
     backup_files = list(tmp_path.glob(".*.bak"))
     assert len(backup_files) == 1
-    assert load_jsonl(backup_files[0]) == [json.loads(original_adapted_output)]
+    # The restore path should round-trip the exact preexisting bytes.
+    assert backup_files[0].read_bytes() == original_adapted_output_bytes
+    assert quarantine_output_path.read_bytes() == original_quarantine_output_bytes
 
 
 @pytest.mark.parametrize(
@@ -1665,6 +1696,7 @@ def test_cli_file_mode_preserves_existing_outputs_in_asymmetric_rollback_states(
         "quarantine": original_quarantine_output,
     }[existing_output_contents]
     existing_output_path.write_text(existing_output_payload, encoding="utf-8")
+    original_existing_output_bytes = existing_output_path.read_bytes()
 
     failing_temp_target_path = {
         "adapted_output_path": adapted_output_path,
@@ -1695,10 +1727,10 @@ def test_cli_file_mode_preserves_existing_outputs_in_asymmetric_rollback_states(
         )
 
     if existing_output_path_name == "adapted_output_path":
-        assert load_jsonl(adapted_output_path) == [json.loads(original_adapted_output)]
+        assert adapted_output_path.read_bytes() == original_existing_output_bytes
         assert not quarantine_output_path.exists()
     else:
-        assert load_jsonl(quarantine_output_path) == [json.loads(original_quarantine_output)]
+        assert quarantine_output_path.read_bytes() == original_existing_output_bytes
         assert not adapted_output_path.exists()
     assert list(tmp_path.glob(".*.tmp")) == []
     assert list(tmp_path.glob(".*.bak")) == []
