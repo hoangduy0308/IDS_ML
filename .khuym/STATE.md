@@ -1,13 +1,69 @@
-STATUS: reviewing-complete
-PHASE: reviewing_rerun_12_complete
-ACTIVE_SKILL: khuym:reviewing -> COMPLETE
-FEATURE: ids-structured-record-adapter
-CONTEXT_MD: F:/Work/IDS_ML_New/history/ids-structured-record-adapter/CONTEXT.md
-EPIC_TOPIC: epic-ids_ml_new-w70
-COORDINATOR: CrimsonRaven
-EPIC: ids_ml_new-f4w
-HANDOFF: compounding
-FLAGGED_LEARNINGS: 5 (see .khuym/findings/learnings-candidates.md)
+STATUS: validation-risk-hardened-awaiting-approval
+PHASE: validating_complete_gate2_pending
+ACTIVE_SKILL: khuym:validating -> COMPLETE
+FEATURE: ids-live-host-based-ml-ids
+CONTEXT_MD: F:/Work/IDS_ML_New/history/ids-live-host-based-ml-ids/CONTEXT.md
+DISCOVERY_MD: F:/Work/IDS_ML_New/history/ids-live-host-based-ml-ids/discovery.md
+APPROACH_MD: F:/Work/IDS_ML_New/history/ids-live-host-based-ml-ids/approach.md
+VALIDATION_MD: F:/Work/IDS_ML_New/history/ids-live-host-based-ml-ids/validation.md
+HANDOFF: user_gate_2
+LOCKED_DECISIONS: D1-D10
+PREVIOUS_FEATURE: ids-structured-record-adapter
+PREVIOUS_CONTEXT_MD: F:/Work/IDS_ML_New/history/ids-structured-record-adapter/CONTEXT.md
+FLAGGED_LEARNINGS: 2 critical patterns loaded from history/learnings/critical-patterns.md
+EPIC: ids_ml_new-vtc
+BEADS_CREATED: 6 tasks + 1 epic
+PLANNING_REVISION: 1
+LAST_VALIDATION_RESULT: READY_FOR_APPROVAL_RISK_HARDENED
+REVISION_REASON: replaced the blocked direct live-compatible extractor assumption with a staged-live architecture of rolling closed pcap windows -> extractor -> adapter -> runtime, re-validated the new seams successfully, then ran an additional hardening pass to convert latency/backlog and Linux dependency packaging concerns into explicit execution constraints.
+HIGH_RISK_COMPONENTS: rolling dumpcap capture manager; closed-window extractor toolchain
+RISK_HARDENING_SPIKES: ids_ml_new-3eq; ids_ml_new-4vh
+
+Artifacts Written:
+- F:/Work/IDS_ML_New/history/ids-live-host-based-ml-ids/CONTEXT.md
+- F:/Work/IDS_ML_New/history/ids-live-host-based-ml-ids/discovery.md
+- F:/Work/IDS_ML_New/history/ids-live-host-based-ml-ids/approach.md
+- F:/Work/IDS_ML_New/history/ids-live-host-based-ml-ids/validation.md
+
+Next:
+- Validation complete on the revised staged-live architecture with residual risks hardened into explicit constraints
+- Await GATE 2 approval before invoking `khuym:swarming`
+
+## Swarm Status
+- Epic: ids_ml_new-vtc
+- Topic: epic-ids_ml_new-vtc
+- Coordinator: QuietPond
+- Swarm start message:
+  - thread_id: ids_ml_new-vtc
+  - message_id: 218
+- Overseer broadcast:
+  - message_id: 219
+
+## Active Workers
+- CloudyReef
+  - spawned via subagent nickname: Feynman
+  - startup hint: ids_ml_new-vtc.1
+  - expected ownership: scripts/ids_live_capture.py, tests/test_ids_live_capture.py
+  - latest status:
+    - Agent Mail message 226
+    - claimed ids_ml_new-vtc.1
+    - reports scripts/ids_live_capture.py + tests/test_ids_live_capture.py implemented
+    - reports `python -m pytest -q tests/test_ids_live_capture.py` passing
+- DarkBeacon
+  - spawned via subagent nickname: Dirac
+  - startup hint: ids_ml_new-vtc.3
+  - expected ownership: scripts/ids_live_sensor_sinks.py, tests/test_ids_live_sensor_sinks.py
+  - latest status:
+    - Agent Mail messages 222-223
+    - ids_ml_new-vtc.3 set to in_progress
+    - files reserved: scripts/ids_live_sensor_sinks.py, tests/test_ids_live_sensor_sinks.py
+
+Risk Summary:
+- HIGH: rolling dumpcap capture manager on one NIC
+- HIGH: closed-window extractor toolchain and semantic fidelity
+- MEDIUM: daemon backlog/orchestration, local sink behavior, systemd packaging
+
+---
 
 Artifacts Written:
 - F:/Work/IDS_ML_New/history/ids-structured-record-adapter/discovery.md
