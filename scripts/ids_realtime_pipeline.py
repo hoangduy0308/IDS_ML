@@ -2,13 +2,20 @@ from __future__ import annotations
 
 import argparse
 import json
+import queue
 import sys
+import threading
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Mapping, TextIO
 
 import pandas as pd
+
+if __package__ in (None, ""):
+    REPO_ROOT = Path(__file__).resolve().parents[1]
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
 
 from scripts.ids_feature_contract import FlowFeatureContract, QuarantinedFlowRecord
 from scripts.ids_inference import (
@@ -24,6 +31,7 @@ DEFAULT_ALERTS_OUTPUT_PATH = Path("ids_alerts.jsonl")
 DEFAULT_QUARANTINE_OUTPUT_PATH = Path("ids_quarantine.jsonl")
 DEFAULT_MAX_BATCH_SIZE = 32
 DEFAULT_FLUSH_INTERVAL_SECONDS = 1.0
+_STREAM_END = object()
 
 
 @dataclass(frozen=True)
@@ -102,6 +110,11 @@ class RealtimePipelineRunner:
             return [], False
         return self.flush_buffer(), True
 
+    def flush_if_due(self, *, now: float | None = None) -> tuple[list[dict[str, Any]], bool]:
+        current_time = self.time_source() if now is None else now
+        alerts, _, flushed = self._flush_if_due(current_time)
+        return alerts, flushed
+
     def _flush_if_due(
         self, now: float
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], bool]:
@@ -148,20 +161,57 @@ class RealtimePipelineRunner:
         return event
 
 
-def read_jsonl_stream(stream: TextIO) -> list[tuple[int, str]]:
-    return [
-        (index, line.rstrip("\n"))
-        for index, line in enumerate(stream, start=1)
-        if line.strip()
-    ]
+def read_jsonl_stream(stream: TextIO):
+    for index, line in enumerate(stream, start=1):
+        line = line.rstrip("\n")
+        if line.strip():
+            yield index, line
 
 
-def write_jsonl(path: Path, records: list[dict[str, Any]]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8", newline="\n") as handle:
-        for record in records:
-            handle.write(json.dumps(record, ensure_ascii=False))
-            handle.write("\n")
+def read_jsonl_stream_realtime(
+    stream: TextIO,
+    *,
+    poll_interval_seconds: float,
+):
+    if poll_interval_seconds <= 0:
+        raise ValueError("poll_interval_seconds must be positive")
+
+    line_queue: queue.Queue[tuple[int, str] | object] = queue.Queue()
+
+    def _reader() -> None:
+        try:
+            for index, line in enumerate(stream, start=1):
+                line_queue.put((index, line.rstrip("\n")))
+        finally:
+            line_queue.put(_STREAM_END)
+
+    reader_thread = threading.Thread(
+        target=_reader,
+        name="ids-jsonl-stream-reader",
+        daemon=True,
+    )
+    reader_thread.start()
+
+    while True:
+        try:
+            item = line_queue.get(timeout=poll_interval_seconds)
+        except queue.Empty:
+            yield None, None
+            continue
+        if item is _STREAM_END:
+            break
+        index, line = item
+        if line.strip():
+            yield index, line
+
+
+def append_jsonl_records(handle: TextIO, records: list[dict[str, Any]]) -> None:
+    if not records:
+        return
+    for record in records:
+        handle.write(json.dumps(record, ensure_ascii=False))
+        handle.write("\n")
+    handle.flush()
 
 
 def resolve_output_paths(
@@ -195,76 +245,98 @@ def run_pipeline_stream(
     quarantine_output_path: Path,
     runner: RealtimePipelineRunner,
 ) -> PipelineSummary:
-    alerts: list[dict[str, Any]] = []
-    quarantines: list[dict[str, Any]] = []
     summary = PipelineSummary(input_mode=input_mode)
+    alerts_output_path.parent.mkdir(parents=True, exist_ok=True)
+    quarantine_output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    for line_number, line in read_jsonl_stream(stream):
-        summary.total_records += 1
-        try:
-            payload = json.loads(line)
-        except json.JSONDecodeError as exc:
-            quarantines.append(
-                {
-                    "event_type": "schema_anomaly",
-                    "anomaly_type": "invalid_json",
-                    "reason": "invalid_json",
-                    "record_index": line_number - 1,
-                    "line_number": line_number,
-                    "raw_line": line,
-                    "error": str(exc),
-                    "missing_features": [],
-                    "non_numeric_features": [],
-                    "alias_collisions": [],
-                    "passthrough": {},
-                }
-            )
-            summary.quarantined_records += 1
-            summary.schema_anomaly_records += 1
-            continue
-        if not isinstance(payload, dict):
-            quarantines.append(
-                {
-                    "event_type": "schema_anomaly",
-                    "anomaly_type": "invalid_record_type",
-                    "reason": "invalid_record_type",
-                    "record_index": line_number - 1,
-                    "line_number": line_number,
-                    "raw_record": payload,
-                    "missing_features": [],
-                    "non_numeric_features": [],
-                    "alias_collisions": [],
-                    "passthrough": {},
-                }
-            )
-            summary.quarantined_records += 1
-            summary.schema_anomaly_records += 1
-            continue
-
-        batch_alerts, batch_quarantines, flushed = runner.ingest_record(
-            payload,
-            record_index=line_number - 1,
-        )
-        alerts.extend(batch_alerts)
-        quarantines.extend(batch_quarantines)
-        summary.valid_records += sum(
-            1 for event in batch_alerts if event["event_type"] == "model_prediction"
-        )
-        summary.alert_records += sum(1 for event in batch_alerts if event["is_alert"])
-        summary.quarantined_records += len(batch_quarantines)
-        summary.schema_anomaly_records += len(batch_quarantines)
-        if flushed:
+    def emit_alerts(
+        handle: TextIO,
+        events: list[dict[str, Any]],
+        *,
+        flushed: bool,
+    ) -> None:
+        append_jsonl_records(handle, events)
+        summary.valid_records += len(events)
+        summary.alert_records += sum(1 for event in events if event["is_alert"])
+        if flushed and events:
             summary.batch_flushes += 1
 
-    final_alerts, flushed = runner.finalize()
-    alerts.extend(final_alerts)
-    summary.valid_records += len(final_alerts)
-    summary.alert_records += sum(1 for event in final_alerts if event["is_alert"])
-    if flushed:
-        summary.batch_flushes += 1
+    def emit_quarantines(handle: TextIO, events: list[dict[str, Any]]) -> None:
+        append_jsonl_records(handle, events)
+        summary.quarantined_records += len(events)
+        summary.schema_anomaly_records += len(events)
 
-    write_jsonl(alerts_output_path, alerts)
-    write_jsonl(quarantine_output_path, quarantines)
+    if input_mode == "stdin":
+        stream_events = read_jsonl_stream_realtime(
+            stream,
+            poll_interval_seconds=max(
+                0.05,
+                min(runner.flush_interval_seconds / 4.0, 0.25),
+            ),
+        )
+    else:
+        stream_events = read_jsonl_stream(stream)
+
+    with alerts_output_path.open("w", encoding="utf-8", newline="\n") as alerts_handle:
+        with quarantine_output_path.open("w", encoding="utf-8", newline="\n") as quarantine_handle:
+            for line_number, line in stream_events:
+                if line_number is None:
+                    due_alerts, flushed = runner.flush_if_due()
+                    emit_alerts(alerts_handle, due_alerts, flushed=flushed)
+                    continue
+
+                summary.total_records += 1
+                try:
+                    payload = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    emit_quarantines(
+                        quarantine_handle,
+                        [
+                            {
+                                "event_type": "schema_anomaly",
+                                "anomaly_type": "invalid_json",
+                                "reason": "invalid_json",
+                                "record_index": line_number - 1,
+                                "line_number": line_number,
+                                "raw_line": line,
+                                "error": str(exc),
+                                "missing_features": [],
+                                "non_numeric_features": [],
+                                "alias_collisions": [],
+                                "passthrough": {},
+                            }
+                        ],
+                    )
+                    continue
+                if not isinstance(payload, dict):
+                    emit_quarantines(
+                        quarantine_handle,
+                        [
+                            {
+                                "event_type": "schema_anomaly",
+                                "anomaly_type": "invalid_record_type",
+                                "reason": "invalid_record_type",
+                                "record_index": line_number - 1,
+                                "line_number": line_number,
+                                "raw_record": payload,
+                                "missing_features": [],
+                                "non_numeric_features": [],
+                                "alias_collisions": [],
+                                "passthrough": {},
+                            }
+                        ],
+                    )
+                    continue
+
+                batch_alerts, batch_quarantines, flushed = runner.ingest_record(
+                    payload,
+                    record_index=line_number - 1,
+                )
+                emit_alerts(alerts_handle, batch_alerts, flushed=flushed)
+                emit_quarantines(quarantine_handle, batch_quarantines)
+
+            final_alerts, flushed = runner.finalize()
+            emit_alerts(alerts_handle, final_alerts, flushed=flushed)
     return summary
 
 

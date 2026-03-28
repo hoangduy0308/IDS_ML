@@ -12,3 +12,6 @@ kaggle_uploads/
 .tmp_kaggle_kernel/
 kaggle_tmp_ds/
 kaggle_tmp_kernel/
+
+# bv (beads viewer) local config and caches
+.bv/

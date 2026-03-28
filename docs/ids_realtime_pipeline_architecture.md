@@ -50,11 +50,13 @@ CLI ví dụ:
 
 ```powershell
 python F:\\Work\\IDS_ML_New\\scripts\\ids_realtime_pipeline.py `
-  --input-path F:\\Work\\IDS_ML_New\\artifacts\\demo\\ids_realtime_sample.jsonl `
+  --input-path F:\\Work\\IDS_ML_New\\path\\to\\flows_72_features.jsonl `
   --bundle-root F:\\Work\\IDS_ML_New\\artifacts\\final_model\\catboost_full_data_v1 `
   --max-batch-size 32 `
   --flush-interval-seconds 1.0
 ```
+
+Lưu ý: fixture tại `artifacts/demo/ids_realtime_pipeline_sample.jsonl` là fixture nhẹ để regression test đường `JSONL -> alert/quarantine`. Nó không tự đại diện cho input production đủ `72` feature để chấm điểm với bundle thật.
 
 ## Contract boundary
 
@@ -172,3 +174,7 @@ Thứ tự giải thích cho report:
 - [ids_inference_architecture.md](F:/Work/IDS_ML_New/docs/ids_inference_architecture.md)
 - [final_model_bundle.md](F:/Work/IDS_ML_New/docs/final_model_bundle.md)
 - [CONTEXT.md](F:/Work/IDS_ML_New/history/ids-pre-model-realtime-pipeline/CONTEXT.md)
+
+## Related adapter layer
+
+- [ids_record_adapter_architecture.md](F:/Work/IDS_ML_New/docs/ids_record_adapter_architecture.md) documents the upstream adapter that normalizes CICFlowMeter-like records before this runtime consumes them.

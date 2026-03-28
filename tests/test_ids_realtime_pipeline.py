@@ -3,7 +3,11 @@ from __future__ import annotations
 import io
 import json
 from pathlib import Path
+import queue
+import subprocess
 import sys
+import threading
+import time
 
 import pandas as pd
 import pytest
@@ -38,6 +42,27 @@ class DummyInferencer:
                 "threshold": self.threshold,
             }
         )
+
+
+class BlockingLineStream:
+    def __init__(self) -> None:
+        self._queue: queue.Queue[str | None] = queue.Queue()
+
+    def push_line(self, line: str) -> None:
+        payload = line if line.endswith("\n") else f"{line}\n"
+        self._queue.put(payload)
+
+    def close(self) -> None:
+        self._queue.put(None)
+
+    def __iter__(self) -> "BlockingLineStream":
+        return self
+
+    def __next__(self) -> str:
+        item = self._queue.get(timeout=5.0)
+        if item is None:
+            raise StopIteration
+        return item
 
 
 def make_contract() -> FlowFeatureContract:
@@ -185,6 +210,69 @@ def test_run_pipeline_stream_supports_stdin_mode_and_invalid_json(tmp_path: Path
     assert quarantines[0]["anomaly_type"] == "invalid_json"
 
 
+def test_run_pipeline_stream_flushes_stdin_records_before_eof(tmp_path: Path) -> None:
+    alerts_path = tmp_path / "alerts.jsonl"
+    quarantine_path = tmp_path / "quarantine.jsonl"
+    runner = RealtimePipelineRunner(
+        contract=make_contract(),
+        inferencer=DummyInferencer(),
+        max_batch_size=10,
+        flush_interval_seconds=0.2,
+    )
+    stream = BlockingLineStream()
+    result: dict[str, object] = {}
+    errors: list[BaseException] = []
+
+    def target() -> None:
+        try:
+            result["summary"] = run_pipeline_stream(
+                stream=stream,
+                input_mode="stdin",
+                alerts_output_path=alerts_path,
+                quarantine_output_path=quarantine_path,
+                runner=runner,
+            )
+        except BaseException as exc:  # pragma: no cover - surfaced in assertions
+            errors.append(exc)
+
+    worker = threading.Thread(target=target, daemon=True)
+    worker.start()
+    stream.push_line(
+        json.dumps(
+            {
+                "SrcPort": 10,
+                "DstPort": 20,
+                "Protocol": 6,
+                "FlowDuration": 90,
+                "trace_id": "stream-1",
+            }
+        )
+    )
+
+    deadline = time.monotonic() + 2.0
+    flushed_alerts: list[dict[str, object]] | None = None
+    while time.monotonic() < deadline:
+        if alerts_path.exists():
+            payload = alerts_path.read_text(encoding="utf-8").strip()
+            if payload:
+                flushed_alerts = [json.loads(line) for line in payload.splitlines() if line.strip()]
+                break
+        time.sleep(0.05)
+
+    stream.close()
+    worker.join(timeout=2.0)
+
+    assert not errors, str(errors[0]) if errors else ""
+    assert worker.is_alive() is False
+    assert flushed_alerts is not None, "expected alert output before EOF"
+    assert flushed_alerts[0]["passthrough"] == {"trace_id": "stream-1"}
+    summary = result["summary"]
+    assert summary.valid_records == 1
+    assert summary.alert_records == 1
+    assert summary.batch_flushes == 1
+    assert quarantine_path.read_text(encoding="utf-8") == ""
+
+
 def test_demo_fixture_drives_end_to_end_alert_and_quarantine_outputs(tmp_path: Path) -> None:
     alerts_path = tmp_path / "demo_alerts.jsonl"
     quarantine_path = tmp_path / "demo_quarantine.jsonl"
@@ -216,6 +304,19 @@ def test_demo_fixture_drives_end_to_end_alert_and_quarantine_outputs(tmp_path: P
     ]
     assert quarantines[0]["reason"] == "non_numeric_required_features"
     assert quarantines[1]["reason"] == "invalid_json"
+
+
+def test_script_entrypoint_help_runs_from_repo_root() -> None:
+    completed = subprocess.run(
+        [sys.executable, "scripts/ids_realtime_pipeline.py", "--help"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "Run the IDS realtime micro-batch pipeline" in completed.stdout
 
 
 def test_main_supports_file_input_path(
