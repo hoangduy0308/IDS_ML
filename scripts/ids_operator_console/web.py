@@ -29,6 +29,7 @@ from .config import OperatorConsoleConfig
 from .db import DEFAULT_SENSOR_ID, OperatorStore, open_existing_operator_store
 from .health import build_liveness_payload, build_readiness_payload
 from .migrations import assert_runtime_ready
+from .reporting import build_report_bundle, build_report_rollup
 
 
 def _decode_payload(raw_payload: Any) -> dict[str, Any]:
@@ -397,7 +398,7 @@ def create_operator_console_web_app(
 
         return render_template(
             request,
-            "anomalies.html",
+            "operations.html",
             anomalies=anomalies,
             health=_prepare_health_snapshot(summaries),
             readiness=build_readiness_payload(config),
@@ -423,14 +424,23 @@ def create_operator_console_web_app(
             return redirect
         runtime_store = _open_store()
         try:
-            summaries = _with_decoded_payload(runtime_store.list_recent_summaries(limit=100))
+            report_bundle = build_report_bundle(
+                runtime_store,
+                alert_limit=200,
+                anomaly_limit=100,
+                summary_limit=100,
+                include_suppressed_alerts=True,
+            )
         finally:
             if store is None:
                 runtime_store.close()
+        summaries = report_bundle["summaries"]
         return render_template(
             request,
             "reports.html",
             summaries=summaries,
+            report_bundle=report_bundle,
+            report_rollup=build_report_rollup(report_bundle),
             page_key="reports",
             page_meta={
                 "eyebrow": "Reports",
