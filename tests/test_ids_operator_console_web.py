@@ -114,28 +114,37 @@ def _login(client: TestClient) -> None:
         follow_redirects=False,
     )
     assert response.status_code == 303
-    assert response.headers["location"] == "/dashboard"
+    assert response.headers["location"] == "/overview"
 
 
-def test_dashboard_redirects_to_login_when_unauthenticated(tmp_path: Path) -> None:
+def test_overview_and_legacy_dashboard_redirect_to_login_when_unauthenticated(tmp_path: Path) -> None:
     client, _, _ = _build_test_app(tmp_path)
-    response = client.get("/dashboard", follow_redirects=False)
-    assert response.status_code == 303
-    assert response.headers["location"] == "/login"
+    for path in ("/overview", "/dashboard"):
+        response = client.get(path, follow_redirects=False)
+        assert response.status_code == 303
+        assert response.headers["location"] == "/login"
 
 
-def test_dashboard_renders_combined_console_with_health_and_anomaly_lane(tmp_path: Path) -> None:
+def test_overview_renders_operator_surface_and_legacy_routes_redirect(tmp_path: Path) -> None:
     client, _, _ = _build_test_app(tmp_path)
     _login(client)
-    response = client.get("/dashboard")
+    response = client.get("/overview")
     assert response.status_code == 200
     body = response.text
-    assert "Combined Console" in body
-    assert "Sensor Health" in body
-    assert "Anomaly Lane" in body
+    assert "Overview" in body
+    assert "Priority Queue Snapshot" in body
+    assert "Health Snapshot" in body
+    assert "Anomaly Preview" in body
     assert "schema_anomaly" in body
     assert "bundle-a" in body
-    assert "bundle-prev" in body
+
+    dashboard_redirect = client.get("/dashboard", follow_redirects=False)
+    assert dashboard_redirect.status_code == 303
+    assert dashboard_redirect.headers["location"] == "/overview"
+
+    anomalies_redirect = client.get("/anomalies", follow_redirects=False)
+    assert anomalies_redirect.status_code == 303
+    assert anomalies_redirect.headers["location"] == "/operations"
 
     ready = client.get("/readyz")
     assert ready.status_code == 200
@@ -152,12 +161,27 @@ def test_alert_detail_and_sensor_aware_json_endpoints(tmp_path: Path) -> None:
     client, _, alert_id = _build_test_app(tmp_path)
     _login(client)
 
+    alerts_page = client.get("/alerts")
+    assert alerts_page.status_code == 200
+    assert "Alert Queue" in alerts_page.text
+
+    operations_page = client.get("/operations")
+    assert operations_page.status_code == 200
+    assert "Operations" in operations_page.text
+    assert "Anomaly Lane" in operations_page.text
+
+    reports_page = client.get("/reports")
+    assert reports_page.status_code == 200
+    assert "Recent Window Trend" in reports_page.text
+    assert "Anomaly History" in reports_page.text
+
     detail = client.get(f"/alerts/{alert_id}")
     assert detail.status_code == 200
     body = detail.text
     assert f"Alert {alert_id}" in body
     assert "Correlated with known scanner host" in body
     assert "acknowledged" in body
+    assert "Back to alerts" in body
 
     snapshot = client.get("/api/v1/console/snapshot")
     assert snapshot.status_code == 200

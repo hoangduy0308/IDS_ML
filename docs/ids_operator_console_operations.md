@@ -107,7 +107,7 @@ python scripts/ids_operator_console_manage.py \
   --json smoke
 ```
 
-`smoke` verifies the wired runtime contract of the console itself. Active bundle visibility appears in `/readyz` and the dashboard after the console has ingested at least one live sensor summary containing an `active_bundle` block. When notifications are enabled, the same smoke payload also surfaces `components.notification` without making notification degradation flip the top-level `ready` bit.
+`smoke` verifies the wired runtime contract of the console itself. Active bundle visibility appears in `/readyz` and the `Overview` surface after the console has ingested at least one live sensor summary containing an `active_bundle` block. When notifications are enabled, the same smoke payload also surfaces `components.notification` without making notification degradation flip the top-level `ready` bit.
 
 ## Upgrade From V1
 
@@ -133,7 +133,7 @@ python scripts/ids_operator_console_manage.py \
 6. If Telegram is enabled on this host, run `notify-status` and make sure preflight/systemd can see the same manage/worker contract.
 7. Run `smoke` and verify `/readyz` returns ready.
 
-For bundle visibility, also verify that `/readyz` contains `components.active_bundle` and that the dashboard shows the current bundle identity once fresh sensor summaries have been ingested.
+For bundle visibility, also verify that `/readyz` contains `components.active_bundle` and that `Overview` shows the current bundle identity once fresh sensor summaries have been ingested.
 
 ## Backup
 
@@ -226,6 +226,7 @@ python scripts/ids_operator_console_manage.py \
 - `/healthz` returns `200`
 - `/readyz` returns `200`
 - root redirect is wired to `/login`
+- authenticated legacy redirects `/dashboard -> /overview` and `/anomalies -> /operations` are still wired
 - config/schema/admin bootstrap contract is still valid
 
 For this feature, operators should also inspect the `/readyz` payload body and confirm:
@@ -243,6 +244,9 @@ If smoke fails, treat that as a deployment blocker rather than a warning.
 - run `python scripts/ids_operator_console_manage.py --database-path ... --json smoke`
 - inspect `/readyz` for `components.active_bundle`
 - inspect `/readyz` or `notify-status` for `components.notification`
-- verify the dashboard `Sensor Health` section shows active bundle, bundle status, activated-at, and rollback target
+- verify `Overview` shows runtime health and active bundle identity
+- verify `Alerts` is the dedicated triage queue
+- verify `Operations` shows anomaly visibility separately from the alert queue
+- verify `Reports` shows summary/trend context above operational history tables
 - confirm live sensor summaries are still being ingested into the console database
 - if Telegram is enabled, check `systemctl status ids-operator-console-notify.service` and `journalctl -u ids-operator-console-notify.service`

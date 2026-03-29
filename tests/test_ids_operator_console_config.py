@@ -112,7 +112,12 @@ def test_build_operator_console_app_wires_health_and_console_routes(tmp_path: Pa
     assert app.state.templates is not None
     assert any(route.path == "/healthz" for route in app.routes)
     assert any(route.path == "/readyz" for route in app.routes)
+    assert any(route.path == "/overview" for route in app.routes)
+    assert any(route.path == "/alerts" for route in app.routes)
+    assert any(route.path == "/operations" for route in app.routes)
+    assert any(route.path == "/reports" for route in app.routes)
     assert any(route.path == "/dashboard" for route in app.routes)
+    assert any(route.path == "/anomalies" for route in app.routes)
     assert any(route.path == "/api/v1/console/snapshot" for route in app.routes)
 
     health_response = client.get("/healthz")
@@ -123,6 +128,10 @@ def test_build_operator_console_app_wires_health_and_console_routes(tmp_path: Pa
     assert ready_response.status_code == 200
     assert ready_response.json()["ready"] is True
     assert ready_response.json()["components"]["schema"]["state"] == "current"
+
+    root_response = client.get("/", follow_redirects=False)
+    assert root_response.status_code == 303
+    assert root_response.headers["location"] == "/login"
 
 
 def test_main_loads_config_and_invokes_run_server(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
