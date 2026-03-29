@@ -21,6 +21,13 @@ from scripts.ids_live_sensor import (  # noqa: E402
     LiveSensorDaemonConfig,
 )
 from scripts.ids_live_sensor_sinks import LiveSensorLocalSink  # noqa: E402
+from scripts.ids_model_bundle import (  # noqa: E402
+    ActiveBundleResolutionError,
+    build_activation_record_payload,
+    build_feature_schema_metadata,
+    build_inference_contract_metadata,
+    write_activation_record,
+)
 
 
 def load_jsonl(path: Path) -> list[dict[str, object]]:
@@ -28,6 +35,56 @@ def load_jsonl(path: Path) -> list[dict[str, object]]:
         return []
     with path.open("r", encoding="utf-8") as handle:
         return [json.loads(line) for line in handle if line.strip()]
+
+
+def write_activation_contract(tmp_path: Path) -> Path:
+    bundle_root = tmp_path / "bundle"
+    bundle_root.mkdir(parents=True, exist_ok=True)
+    feature_columns_path = bundle_root / "feature_columns.json"
+    feature_columns_path.write_text(
+        json.dumps({"feature_columns": ["Flow Duration", "Src Port", "Dst Port"]}),
+        encoding="utf-8",
+    )
+    (bundle_root / "model.cbm").write_text("model", encoding="utf-8")
+    (bundle_root / "model_bundle.json").write_text(
+        json.dumps(
+            {
+                "manifest_version": 2,
+                "bundle_name": "bundle-under-test",
+                "created_at": "2026-03-29T00:00:00+07:00",
+                "model_key": "catboost_full_data",
+                "model_family": "CatBoostClassifier",
+                "model_artifact": "model.cbm",
+                "feature_columns_file": "feature_columns.json",
+                "threshold": 0.5,
+                "positive_label": "Attack",
+                "negative_label": "Benign",
+                "feature_count": 3,
+                "train_rows": 123,
+                "metrics_file": "metrics.json",
+                "training_summary_file": "training_summary.json",
+                "compatibility": {
+                    "feature_schema": build_feature_schema_metadata(feature_columns_path),
+                    "inference_contract": build_inference_contract_metadata(
+                        positive_label="Attack",
+                        negative_label="Benign",
+                        threshold=0.5,
+                    ),
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    activation_path = tmp_path / "active_bundle.json"
+    write_activation_record(
+        activation_path,
+        build_activation_record_payload(
+            active_bundle_root=bundle_root,
+            active_bundle_name="bundle-under-test",
+            activated_at="2026-03-29T00:00:00+07:00",
+        ),
+    )
+    return activation_path
 
 
 class RecordingRuntimeRunner:
@@ -235,6 +292,7 @@ def make_config(tmp_path: Path, **overrides: object) -> LiveSensorDaemonConfig:
         "alerts_output_path": tmp_path / "alerts.jsonl",
         "quarantine_output_path": tmp_path / "quarantine.jsonl",
         "summary_output_path": tmp_path / "summary.jsonl",
+        "activation_path": write_activation_contract(tmp_path),
     }
     kwargs.update(overrides)
     return LiveSensorDaemonConfig(**kwargs)
@@ -449,10 +507,46 @@ def test_service_unit_keeps_preflight_and_stdout_journal_contract() -> None:
     assert "IDS_LIVE_SENSOR_JAVA_BINARY=" in content
     assert "IDS_LIVE_SENSOR_EXTRACTOR_BINARY=" in content
     assert "IDS_LIVE_SENSOR_JNETPCAP_PATH=" in content
+    assert "IDS_LIVE_SENSOR_ACTIVE_BUNDLE_PATH=" in content
     assert "ids_live_sensor_preflight.py" in content
     assert '--dumpcap-binary ${IDS_LIVE_SENSOR_DUMPCAP_BINARY}' in content
+    assert '--activation-path ${IDS_LIVE_SENSOR_ACTIVE_BUNDLE_PATH}' in content
     assert '--interface "$IDS_LIVE_SENSOR_INTERFACE"' in content
     assert '--dumpcap-binary "$IDS_LIVE_SENSOR_DUMPCAP_BINARY"' in content
     assert '--extractor-command-prefix "$IDS_LIVE_SENSOR_EXTRACTOR_BINARY"' in content
+    assert '--activation-path "$IDS_LIVE_SENSOR_ACTIVE_BUNDLE_PATH"' in content
     assert "StandardOutput=journal" in content
     assert "StandardError=journal" in content
+
+
+def test_daemon_uses_activation_contract_for_runtime_wiring(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    loaded_models: list[Path] = []
+    observed_feature_paths: list[Path] = []
+
+    class DummyModel:
+        def load_model(self, path: Path) -> None:
+            loaded_models.append(Path(path))
+
+        def predict_proba(self, frame: object) -> object:
+            raise AssertionError("predict_proba should not run in this wiring test")
+
+    def fake_contract_loader(path: Path) -> object:
+        observed_feature_paths.append(Path(path))
+        return object()
+
+    monkeypatch.setattr("scripts.ids_inference.CatBoostClassifier", DummyModel)
+    monkeypatch.setattr("scripts.ids_live_sensor.FlowFeatureContract.from_feature_file", fake_contract_loader)
+
+    daemon = LiveSensorDaemon(make_config(tmp_path))
+
+    assert loaded_models == [(tmp_path / "bundle" / "model.cbm").resolve()]
+    assert observed_feature_paths == [(tmp_path / "bundle" / "feature_columns.json").resolve()]
+    assert daemon.config.activation_path == (tmp_path / "active_bundle.json").resolve()
+
+
+def test_daemon_fails_closed_when_activation_contract_missing(tmp_path: Path) -> None:
+    with pytest.raises(ActiveBundleResolutionError, match="Activation record not found"):
+        LiveSensorDaemon(make_config(tmp_path, activation_path=tmp_path / "missing.json"))

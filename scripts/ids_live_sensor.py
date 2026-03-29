@@ -16,7 +16,8 @@ if __package__ in (None, ""):
         sys.path.insert(0, str(REPO_ROOT))
 
 from scripts.ids_feature_contract import FlowFeatureContract
-from scripts.ids_inference import DEFAULT_FEATURE_COLUMNS_PATH, DEFAULT_MODEL_PATH, DEFAULT_THRESHOLD, build_inferencer
+from scripts.ids_inference import IDSInferencer, build_model_config
+from scripts.ids_model_bundle import DEFAULT_ACTIVATION_RECORD_NAME
 from scripts.ids_live_capture import (
     CaptureBacklogExceededError,
     CaptureFailure,
@@ -72,11 +73,7 @@ class LiveSensorDaemonConfig:
     summary_output_path: Path = DEFAULT_SUMMARY_OUTPUT_PATH
     max_batch_size: int = DEFAULT_MAX_BATCH_SIZE
     flush_interval_seconds: float = DEFAULT_FLUSH_INTERVAL_SECONDS
-    feature_columns_path: Path = DEFAULT_FEATURE_COLUMNS_PATH
-    model_path: Path = DEFAULT_MODEL_PATH
-    threshold: float = DEFAULT_THRESHOLD
-    bundle_root: Path | None = None
-    config_path: Path | None = None
+    activation_path: Path = Path(DEFAULT_ACTIVATION_RECORD_NAME)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "interface", str(self.interface).strip())
@@ -84,12 +81,7 @@ class LiveSensorDaemonConfig:
         object.__setattr__(self, "alerts_output_path", Path(self.alerts_output_path))
         object.__setattr__(self, "quarantine_output_path", Path(self.quarantine_output_path))
         object.__setattr__(self, "summary_output_path", Path(self.summary_output_path))
-        object.__setattr__(self, "feature_columns_path", Path(self.feature_columns_path))
-        object.__setattr__(self, "model_path", Path(self.model_path))
-        if self.bundle_root is not None:
-            object.__setattr__(self, "bundle_root", Path(self.bundle_root))
-        if self.config_path is not None:
-            object.__setattr__(self, "config_path", Path(self.config_path))
+        object.__setattr__(self, "activation_path", Path(self.activation_path).resolve())
         if self.capture_window_duration_seconds <= 0:
             raise ValueError("capture_window_duration_seconds must be positive")
         if self.capture_window_file_count <= 0:
@@ -166,19 +158,18 @@ class LiveSensorDaemon:
                 adapter_profile_id=config.adapter_profile_id,
             )
         )
-        self.runtime_runner = runtime_runner or RealtimePipelineRunner(
-            contract=FlowFeatureContract.from_feature_file(config.feature_columns_path),
-            inferencer=build_inferencer(
-                bundle_root=config.bundle_root,
-                config_path=config.config_path,
-                model_path=config.model_path,
-                feature_columns_path=config.feature_columns_path,
-                threshold=config.threshold,
-            ),
-            max_batch_size=config.max_batch_size,
-            flush_interval_seconds=config.flush_interval_seconds,
-            time_source=self.time_source,
-        )
+        if runtime_runner is None:
+            runtime_model_config = build_model_config(activation_path=config.activation_path)
+            runtime_runner = RealtimePipelineRunner(
+                contract=FlowFeatureContract.from_feature_file(
+                    runtime_model_config.feature_columns_path
+                ),
+                inferencer=IDSInferencer(runtime_model_config),
+                max_batch_size=config.max_batch_size,
+                flush_interval_seconds=config.flush_interval_seconds,
+                time_source=self.time_source,
+            )
+        self.runtime_runner = runtime_runner
         self.sink = sink or LiveSensorLocalSink(
             alerts_output_path=config.alerts_output_path,
             quarantine_output_path=config.quarantine_output_path,
@@ -449,13 +440,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=float,
         default=DEFAULT_FLUSH_INTERVAL_SECONDS,
     )
-    parser.add_argument(
-        "--feature-columns-path",
-        type=Path,
-        default=DEFAULT_FEATURE_COLUMNS_PATH,
-    )
-    parser.add_argument("--model-path", type=Path, default=DEFAULT_MODEL_PATH)
-    parser.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD)
+    parser.add_argument("--activation-path", type=Path, required=True)
     return parser.parse_args(argv)
 
 
@@ -476,9 +461,7 @@ def build_daemon_from_args(args: argparse.Namespace) -> LiveSensorDaemon:
         summary_output_path=args.summary_output_path,
         max_batch_size=args.max_batch_size,
         flush_interval_seconds=args.flush_interval_seconds,
-        feature_columns_path=args.feature_columns_path,
-        model_path=args.model_path,
-        threshold=args.threshold,
+        activation_path=args.activation_path,
     )
     return LiveSensorDaemon(config)
 

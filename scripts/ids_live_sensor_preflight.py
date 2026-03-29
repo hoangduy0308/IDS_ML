@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
 
+from scripts.ids_model_bundle import resolve_active_model_bundle
+
 
 @dataclass(frozen=True)
 class LiveSensorPreflightConfig:
@@ -14,8 +16,7 @@ class LiveSensorPreflightConfig:
     java_binary: Path
     extractor_binary: Path
     jnetpcap_path: Path
-    model_path: Path
-    feature_columns_path: Path
+    activation_path: Path
     spool_dir: Path
     alerts_output_path: Path
     quarantine_output_path: Path
@@ -92,8 +93,8 @@ def validate_preflight(config: LiveSensorPreflightConfig) -> None:
     _require_existing_file(config.java_binary, name="java_binary", executable=True)
     _require_existing_file(config.extractor_binary, name="extractor_binary", executable=True)
     _require_existing_path(config.jnetpcap_path, name="jnetpcap_path")
-    _require_existing_file(config.model_path, name="model_path")
-    _require_existing_file(config.feature_columns_path, name="feature_columns_path")
+    activation_path = _require_existing_file(config.activation_path, name="activation_path")
+    resolve_active_model_bundle(activation_path)
     _require_writable_directory(config.spool_dir, name="spool_dir")
     _require_writable_parent(config.alerts_output_path, name="alerts_output_path")
     _require_writable_parent(config.quarantine_output_path, name="quarantine_output_path")
@@ -109,8 +110,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--java-binary", type=Path, required=True)
     parser.add_argument("--extractor-binary", type=Path, required=True)
     parser.add_argument("--jnetpcap-path", type=Path, required=True)
-    parser.add_argument("--model-path", type=Path, required=True)
-    parser.add_argument("--feature-columns-path", type=Path, required=True)
+    parser.add_argument("--activation-path", type=Path, required=True)
     parser.add_argument("--spool-dir", type=Path, required=True)
     parser.add_argument("--alerts-output-path", type=Path, required=True)
     parser.add_argument("--quarantine-output-path", type=Path, required=True)
@@ -125,8 +125,7 @@ def build_config_from_args(args: argparse.Namespace) -> LiveSensorPreflightConfi
         java_binary=Path(args.java_binary),
         extractor_binary=Path(args.extractor_binary),
         jnetpcap_path=Path(args.jnetpcap_path),
-        model_path=Path(args.model_path),
-        feature_columns_path=Path(args.feature_columns_path),
+        activation_path=Path(args.activation_path),
         spool_dir=Path(args.spool_dir),
         alerts_output_path=Path(args.alerts_output_path),
         quarantine_output_path=Path(args.quarantine_output_path),
