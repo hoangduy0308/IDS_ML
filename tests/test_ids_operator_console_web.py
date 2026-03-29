@@ -18,7 +18,13 @@ from scripts.ids_operator_console.migrations import migrate_operator_store  # no
 from scripts.ids_operator_console.web import create_operator_console_web_app  # noqa: E402
 
 
-def _build_test_app(tmp_path: Path, *, environment: str = "development") -> tuple[TestClient, Path, int]:
+def _build_test_app(
+    tmp_path: Path,
+    *,
+    environment: str = "development",
+    telegram_enabled: bool = False,
+    failed_notification: bool = False,
+) -> tuple[TestClient, Path, int]:
     env = {
         "IDS_OPERATOR_CONSOLE_ENVIRONMENT": environment,
         "IDS_OPERATOR_CONSOLE_SECRET_KEY": "web-test-secret",
@@ -28,6 +34,9 @@ def _build_test_app(tmp_path: Path, *, environment: str = "development") -> tupl
     }
     if environment == "production":
         env["IDS_OPERATOR_CONSOLE_PUBLIC_BASE_URL"] = "https://console.example"
+    if telegram_enabled:
+        env["IDS_OPERATOR_CONSOLE_TELEGRAM_BOT_TOKEN"] = "telegram-token"
+        env["IDS_OPERATOR_CONSOLE_TELEGRAM_CHAT_ID"] = "-100web"
     config = load_operator_console_config(environ=env, repo_root=REPO_ROOT)
     migrate_operator_store(config.database_path, allow_bootstrap=True)
     store = open_existing_operator_store(config.database_path)
@@ -74,6 +83,21 @@ def _build_test_app(tmp_path: Path, *, environment: str = "development") -> tupl
                 },
             },
         )
+        if telegram_enabled:
+            delivery_id = store.save_notification_delivery(
+                alert_id=alert_id,
+                channel="telegram",
+                target="-100web",
+                dedupe_key="alert-web-001",
+                payload={"text": "Alert alert-web-001"},
+                status="pending",
+            )
+            if failed_notification:
+                store.mark_notification_attempt(
+                    delivery_id=delivery_id,
+                    status="failed",
+                    last_error="telegram outage",
+                )
     finally:
         store.close()
 
@@ -119,6 +143,8 @@ def test_dashboard_renders_combined_console_with_health_and_anomaly_lane(tmp_pat
     assert payload["ready"] is True
     assert payload["components"]["admin_bootstrap"]["admin_count"] == 1
     assert payload["components"]["active_bundle"]["state"]["active_bundle_name"] == "bundle-a"
+    assert payload["components"]["notification"]["state"] == "disabled"
+    assert payload["components"]["notification"]["ok"] is True
 
 
 def test_alert_detail_and_sensor_aware_json_endpoints(tmp_path: Path) -> None:
@@ -163,3 +189,19 @@ def test_production_login_sets_secure_session_cookie(tmp_path: Path) -> None:
     assert "secure" in set_cookie
     assert "httponly" in set_cookie
     assert "samesite=lax" in set_cookie
+
+
+def test_readyz_keeps_core_ready_when_notification_component_is_degraded(tmp_path: Path) -> None:
+    client, _, _ = _build_test_app(
+        tmp_path,
+        telegram_enabled=True,
+        failed_notification=True,
+    )
+    ready = client.get("/readyz")
+    assert ready.status_code == 200
+    payload = ready.json()
+    assert payload["ready"] is True
+    assert payload["components"]["notification"]["enabled"] is True
+    assert payload["components"]["notification"]["ok"] is False
+    assert payload["components"]["notification"]["state"] == "degraded"
+    assert payload["components"]["notification"]["failed_count"] == 1

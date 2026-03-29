@@ -13,6 +13,8 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 import scripts.ids_operator_console_manage as manage  # noqa: E402
+import scripts.ids_operator_console.notifications as notifications  # noqa: E402
+import scripts.ids_operator_console.ops as ops  # noqa: E402
 import scripts.ids_operator_console_preflight as preflight  # noqa: E402
 from scripts.ids_operator_console.config import load_operator_console_config  # noqa: E402
 from scripts.ids_operator_console.db import OperatorStore  # noqa: E402
@@ -28,6 +30,13 @@ def _make_executable(path: Path) -> Path:
     path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8", newline="\n")
     path.chmod(path.stat().st_mode | 0o111)
     return path
+
+
+def _append_jsonl(path: Path, payload: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8", newline="\n") as handle:
+        handle.write(json.dumps(payload, ensure_ascii=False))
+        handle.write("\n")
 
 
 def _make_preflight_config(tmp_path: Path, **overrides: object) -> OperatorConsolePreflightConfig:
@@ -236,6 +245,8 @@ def test_manage_backup_restore_retention_and_smoke(tmp_path: Path, capsys: pytes
     assert smoke_payload["health_status"] == 200
     assert smoke_payload["readiness_status"] == 200
     assert smoke_payload["ready"] is True
+    assert smoke_payload["notification"]["state"] == "disabled"
+    assert smoke_payload["notification"]["ok"] is True
 
     second_backup_rc = manage.main(
         [
@@ -267,6 +278,142 @@ def test_manage_backup_restore_retention_and_smoke(tmp_path: Path, capsys: pytes
     assert prune_rc == 0
     assert len(prune_payload["kept"]) == 1
     assert len(prune_payload["removed"]) == 1
+
+
+def test_manage_notification_commands_surface_runtime_contract(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db_path = tmp_path / "operator_console.db"
+    templates_dir = REPO_ROOT / "scripts/ids_operator_console/templates"
+    static_dir = REPO_ROOT / "scripts/ids_operator_console/static"
+    alerts_path = tmp_path / "logs" / "ids_live_alerts.jsonl"
+    quarantine_path = tmp_path / "logs" / "ids_live_quarantine.jsonl"
+    summary_path = tmp_path / "logs" / "ids_live_sensor_summary.jsonl"
+
+    manage.main(["--database-path", str(db_path), "migrate", "--allow-bootstrap"])
+    capsys.readouterr()
+    manage.main(
+        [
+            "--database-path",
+            str(db_path),
+            "bootstrap-admin",
+            "--username",
+            "admin",
+            "--password",
+            "correct-password",
+        ]
+    )
+    capsys.readouterr()
+
+    monkeypatch.setenv("IDS_OPERATOR_CONSOLE_SECRET_KEY", "dev-secret")
+    monkeypatch.setenv("IDS_OPERATOR_CONSOLE_TEMPLATES_DIR", str(templates_dir))
+    monkeypatch.setenv("IDS_OPERATOR_CONSOLE_STATIC_DIR", str(static_dir))
+    monkeypatch.setenv("IDS_OPERATOR_CONSOLE_ALERTS_INPUT_PATH", str(alerts_path))
+    monkeypatch.setenv("IDS_OPERATOR_CONSOLE_QUARANTINE_INPUT_PATH", str(quarantine_path))
+    monkeypatch.setenv("IDS_OPERATOR_CONSOLE_SUMMARY_INPUT_PATH", str(summary_path))
+    monkeypatch.setenv("IDS_OPERATOR_CONSOLE_TELEGRAM_BOT_TOKEN", "telegram-token")
+    monkeypatch.setenv("IDS_OPERATOR_CONSOLE_TELEGRAM_CHAT_ID", "-100ops")
+
+    sent_messages: list[str] = []
+
+    def fake_send(_config: object, *, chat_id: str, text: str) -> str:
+        sent_messages.append(f"{chat_id}:{text}")
+        return f"msg-{len(sent_messages)}"
+
+    monkeypatch.setattr(ops, "send_telegram_message", fake_send)
+    monkeypatch.setattr(notifications, "send_telegram_message", fake_send)
+
+    _append_jsonl(
+        alerts_path,
+        {
+            "event_type": "model_prediction",
+            "source_event_id": "ops-alert-1",
+            "timestamp": "2026-03-29T02:00:00+00:00",
+            "severity": "high",
+            "src_ip": "10.10.0.5",
+            "dst_ip": "10.10.0.7",
+            "is_alert": True,
+        },
+    )
+
+    notify_status_rc = manage.main(["--database-path", str(db_path), "--json", "notify-status"])
+    notify_status_payload = json.loads(capsys.readouterr().out)
+    assert notify_status_rc == 0
+    assert notify_status_payload["enabled"] is True
+    assert notify_status_payload["state"] == "ok"
+
+    test_send_rc = manage.main(
+        ["--database-path", str(db_path), "--json", "notify-test-send", "--text", "operator ping"]
+    )
+    test_send_payload = json.loads(capsys.readouterr().out)
+    assert test_send_rc == 0
+    assert test_send_payload["provider_message_id"] == "msg-1"
+
+    run_once_rc = manage.main(["--database-path", str(db_path), "--json", "notify-run-once"])
+    run_once_payload = json.loads(capsys.readouterr().out)
+    assert run_once_rc == 0
+    assert run_once_payload["ingest"]["alerts_ingested"] == 1
+    assert run_once_payload["queued"] == 1
+    assert run_once_payload["dispatch"]["sent"] == 1
+
+    worker_rc = manage.main(
+        [
+            "--database-path",
+            str(db_path),
+            "--json",
+            "notify-worker",
+            "--iterations",
+            "1",
+            "--poll-interval-seconds",
+            "0",
+        ]
+    )
+    worker_payload = json.loads(capsys.readouterr().out)
+    assert worker_rc == 0
+    assert worker_payload["iterations"] == 1
+
+    store = OperatorStore.open(db_path)
+    try:
+        alert_id = store.upsert_alert(
+            source_event_id="ops-alert-failed",
+            event_ts="2026-03-29T02:01:00+00:00",
+            severity="high",
+            src_ip="10.10.0.8",
+            dst_ip="10.10.0.9",
+            payload={"event_type": "model_prediction", "score": 0.88},
+        )
+        failed_delivery_id = store.save_notification_delivery(
+            alert_id=alert_id,
+            channel="telegram",
+            target="-100ops",
+            dedupe_key="ops-alert-failed",
+            payload={"text": "failed delivery"},
+            status="pending",
+        )
+        store.mark_notification_attempt(
+            delivery_id=failed_delivery_id,
+            status="failed",
+            last_error="telegram outage",
+        )
+    finally:
+        store.close()
+
+    redrive_rc = manage.main(
+        ["--database-path", str(db_path), "--json", "notify-redrive", "--limit", "10"]
+    )
+    redrive_payload = json.loads(capsys.readouterr().out)
+    assert redrive_rc == 0
+    assert redrive_payload["redriven"] == 1
+    assert redrive_payload["status"]["pending_count"] >= 1
+
+    smoke_rc = manage.main(["--database-path", str(db_path), "--json", "smoke"])
+    smoke_payload = json.loads(capsys.readouterr().out)
+    assert smoke_rc == 0
+    assert smoke_payload["ready"] is True
+    assert smoke_payload["notification"]["enabled"] is True
+    assert smoke_payload["notification"]["channel"] == "telegram"
 
 
 def test_manage_requires_explicit_migrate_before_bootstrap(tmp_path: Path) -> None:

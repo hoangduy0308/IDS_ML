@@ -13,8 +13,11 @@ import sqlite3
 from starlette.testclient import TestClient
 
 from .config import OperatorConsoleConfig, PLACEHOLDER_SECRET_VALUES
+from .db import open_existing_operator_store
 from .health import build_readiness_payload
 from .migrations import assert_runtime_ready, inspect_operator_store
+from .notification_runtime import NotificationRuntimeConfig, run_notification_maintenance_cycle, run_notification_worker
+from .notifications import redrive_failed_telegram_notifications, send_telegram_message
 from .web import create_operator_console_web_app
 
 
@@ -50,6 +53,18 @@ class SmokeResult:
     readiness_status: int
     redirect_status: int
     readiness_payload: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class NotificationTestSendResult:
+    target: str
+    provider_message_id: str
+
+
+@dataclass(frozen=True)
+class NotificationRedriveResult:
+    redriven: int
+    status: dict[str, Any]
 
 
 def _utc_now() -> datetime:
@@ -246,3 +261,116 @@ def run_smoke_checks(config: OperatorConsoleConfig) -> SmokeResult:
         redirect_status=root.status_code,
         readiness_payload=build_readiness_payload(config),
     )
+
+
+def notification_status(config: OperatorConsoleConfig) -> dict[str, Any]:
+    readiness_payload = build_readiness_payload(config)
+    return dict(readiness_payload["components"]["notification"])
+
+
+def _notification_runtime_config(
+    config: OperatorConsoleConfig,
+    *,
+    poll_interval_seconds: float = 30.0,
+) -> NotificationRuntimeConfig:
+    return NotificationRuntimeConfig.from_operator_console_config(
+        config,
+        worker_poll_interval_seconds=poll_interval_seconds,
+    )
+
+
+def run_notification_maintenance_once(config: OperatorConsoleConfig) -> dict[str, Any]:
+    result = run_notification_maintenance_cycle(_notification_runtime_config(config))
+    return {
+        "ingest": {
+            "alerts_ingested": result.ingest.alerts_ingested,
+            "anomalies_ingested": result.ingest.anomalies_ingested,
+            "summaries_ingested": result.ingest.summaries_ingested,
+            "parse_errors": result.ingest.parse_errors,
+            "streams_scanned": result.ingest.streams_scanned,
+        },
+        "queued": result.queued,
+        "dispatch": {
+            "queued": result.dispatch.queued,
+            "sent": result.dispatch.sent,
+            "retried": result.dispatch.retried,
+            "failed": result.dispatch.failed,
+            "scanned": result.dispatch.scanned,
+        },
+        "status": {
+            "enabled": result.status.enabled,
+            "configured": result.status.configured,
+            "channel": result.status.channel,
+            "target": result.status.target,
+            "pending_count": result.status.pending_count,
+            "retry_count": result.status.retry_count,
+            "failed_count": result.status.failed_count,
+            "sent_count": result.status.sent_count,
+            "due_count": result.status.due_count,
+            "oldest_due_at": result.status.oldest_due_at,
+            "last_error": result.status.last_error,
+        },
+    }
+
+
+def run_notification_worker_iterations(
+    config: OperatorConsoleConfig,
+    *,
+    iterations: int,
+    poll_interval_seconds: float = 30.0,
+) -> dict[str, Any]:
+    results = run_notification_worker(
+        _notification_runtime_config(config, poll_interval_seconds=poll_interval_seconds),
+        iterations=iterations,
+        sleep_fn=lambda _seconds: None if poll_interval_seconds <= 0 else None,
+    )
+    latest = results[-1]
+    return {
+        "iterations": len(results),
+        "last_cycle": {
+            "queued": latest.queued,
+            "dispatch": {
+                "sent": latest.dispatch.sent,
+                "retried": latest.dispatch.retried,
+                "failed": latest.dispatch.failed,
+                "scanned": latest.dispatch.scanned,
+            },
+            "status": {
+                "enabled": latest.status.enabled,
+                "configured": latest.status.configured,
+                "pending_count": latest.status.pending_count,
+                "retry_count": latest.status.retry_count,
+                "failed_count": latest.status.failed_count,
+                "sent_count": latest.status.sent_count,
+                "due_count": latest.status.due_count,
+            },
+        },
+    }
+
+
+def send_test_notification(config: OperatorConsoleConfig, *, text: str) -> NotificationTestSendResult:
+    runtime_config = _notification_runtime_config(config)
+    if runtime_config.telegram is None:
+        raise OpsError("telegram notifications are disabled")
+    provider_message_id = send_telegram_message(
+        runtime_config.telegram,
+        chat_id=runtime_config.telegram.default_chat_id,
+        text=text,
+    )
+    return NotificationTestSendResult(
+        target=runtime_config.telegram.default_chat_id,
+        provider_message_id=provider_message_id,
+    )
+
+
+def redrive_notification_failures(
+    config: OperatorConsoleConfig,
+    *,
+    limit: int = 100,
+) -> NotificationRedriveResult:
+    store = open_existing_operator_store(config.database_path)
+    try:
+        redriven = redrive_failed_telegram_notifications(store, limit=limit)
+    finally:
+        store.close()
+    return NotificationRedriveResult(redriven=redriven, status=notification_status(config))

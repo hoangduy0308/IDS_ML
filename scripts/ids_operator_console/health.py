@@ -7,6 +7,7 @@ import json
 from .config import OperatorConsoleConfig
 from .db import open_existing_operator_store
 from .migrations import inspect_operator_store
+from .notification_runtime import NotificationRuntimeConfig, build_notification_runtime_status
 
 
 def _path_health(path: Path) -> dict[str, Any]:
@@ -57,6 +58,96 @@ def _load_latest_active_bundle_state(config: OperatorConsoleConfig) -> dict[str,
     return dict(active_bundle) if isinstance(active_bundle, dict) else None
 
 
+def _build_notification_component(config: OperatorConsoleConfig) -> dict[str, Any]:
+    token_present = config.telegram_bot_token is not None
+    chat_present = config.telegram_chat_id is not None
+    enabled = token_present and chat_present
+    configured = enabled
+    if token_present != chat_present:
+        return {
+            "ok": False,
+            "state": "misconfigured",
+            "enabled": False,
+            "configured": False,
+            "channel": "telegram",
+            "target": config.telegram_chat_id,
+            "backlog": 0,
+            "pending_count": 0,
+            "retry_count": 0,
+            "failed_count": 0,
+            "sent_count": 0,
+            "due_count": 0,
+            "oldest_due_at": None,
+            "last_error": {
+                "message": "telegram_bot_token and telegram_chat_id must be set together",
+            },
+        }
+    if not enabled:
+        return {
+            "ok": True,
+            "state": "disabled",
+            "enabled": False,
+            "configured": False,
+            "channel": "telegram",
+            "target": None,
+            "backlog": 0,
+            "pending_count": 0,
+            "retry_count": 0,
+            "failed_count": 0,
+            "sent_count": 0,
+            "due_count": 0,
+            "oldest_due_at": None,
+            "last_error": None,
+        }
+
+    try:
+        store = open_existing_operator_store(config.database_path)
+    except Exception as exc:
+        return {
+            "ok": False,
+            "state": "degraded",
+            "enabled": enabled,
+            "configured": configured,
+            "channel": "telegram",
+            "target": config.telegram_chat_id,
+            "backlog": 0,
+            "pending_count": 0,
+            "retry_count": 0,
+            "failed_count": 0,
+            "sent_count": 0,
+            "due_count": 0,
+            "oldest_due_at": None,
+            "last_error": {"message": str(exc)},
+        }
+    try:
+        runtime_status = build_notification_runtime_status(
+            store,
+            runtime_config=NotificationRuntimeConfig.from_operator_console_config(config),
+        )
+    finally:
+        store.close()
+
+    backlog = runtime_status.pending_count + runtime_status.retry_count
+    component_ok = runtime_status.failed_count == 0
+    state = "ok" if component_ok else "degraded"
+    return {
+        "ok": component_ok,
+        "state": state,
+        "enabled": runtime_status.enabled,
+        "configured": runtime_status.configured,
+        "channel": runtime_status.channel,
+        "target": runtime_status.target,
+        "backlog": backlog,
+        "pending_count": runtime_status.pending_count,
+        "retry_count": runtime_status.retry_count,
+        "failed_count": runtime_status.failed_count,
+        "sent_count": runtime_status.sent_count,
+        "due_count": runtime_status.due_count,
+        "oldest_due_at": runtime_status.oldest_due_at,
+        "last_error": runtime_status.last_error,
+    }
+
+
 def build_readiness_payload(config: OperatorConsoleConfig) -> dict[str, Any]:
     inspection = inspect_operator_store(config.database_path)
     data_paths = {
@@ -72,6 +163,7 @@ def build_readiness_payload(config: OperatorConsoleConfig) -> dict[str, Any]:
         config_ok = False
 
     active_bundle_state = _load_latest_active_bundle_state(config)
+    notification = _build_notification_component(config)
     ready = config_ok and inspection.runtime_ready and data_path_ok
     return {
         "status": "ok" if ready else "degraded",
@@ -108,5 +200,6 @@ def build_readiness_payload(config: OperatorConsoleConfig) -> dict[str, Any]:
                 "ok": active_bundle_state is not None,
                 "state": active_bundle_state,
             },
+            "notification": notification,
         },
     }

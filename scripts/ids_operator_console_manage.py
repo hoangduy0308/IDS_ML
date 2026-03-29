@@ -18,9 +18,14 @@ from scripts.ids_operator_console.config import load_operator_console_config
 from scripts.ids_operator_console.migrations import inspect_operator_store, migrate_operator_store
 from scripts.ids_operator_console.ops import (
     create_backup,
+    notification_status,
     prune_backup_retention,
+    redrive_notification_failures,
     restore_backup,
+    run_notification_maintenance_once,
+    run_notification_worker_iterations,
     run_smoke_checks,
+    send_test_notification,
 )
 
 
@@ -90,6 +95,32 @@ def _build_parser() -> argparse.ArgumentParser:
     retention_parser.add_argument("--keep-last", type=int, default=3)
 
     subparsers.add_parser("smoke", help="Run smoke checks against the wired runtime contract.")
+
+    subparsers.add_parser("notify-status", help="Show non-gating notification runtime health.")
+
+    notify_test_send_parser = subparsers.add_parser(
+        "notify-test-send",
+        help="Send a test Telegram notification through the configured runtime contract.",
+    )
+    notify_test_send_parser.add_argument("--text", required=True)
+
+    subparsers.add_parser(
+        "notify-run-once",
+        help="Run one explicit notification maintenance cycle (ingest -> queue -> dispatch).",
+    )
+
+    notify_worker_parser = subparsers.add_parser(
+        "notify-worker",
+        help="Run the notification worker loop for an explicit number of iterations.",
+    )
+    notify_worker_parser.add_argument("--iterations", type=int, default=1)
+    notify_worker_parser.add_argument("--poll-interval-seconds", type=float, default=30.0)
+
+    notify_redrive_parser = subparsers.add_parser(
+        "notify-redrive",
+        help="Redrive failed notification deliveries back to pending.",
+    )
+    notify_redrive_parser.add_argument("--limit", type=int, default=100)
 
     return parser
 
@@ -180,6 +211,51 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "readiness_status": result.readiness_status,
                 "redirect_status": result.redirect_status,
                 "ready": result.readiness_payload["ready"],
+                "notification": result.readiness_payload["components"]["notification"],
+            },
+            as_json=args.json_output,
+        )
+        return 0
+
+    if args.command == "notify-status":
+        config = _load_runtime_config(database_path=database_path)
+        _print_payload(notification_status(config), as_json=args.json_output)
+        return 0
+
+    if args.command == "notify-test-send":
+        config = _load_runtime_config(database_path=database_path)
+        result = send_test_notification(config, text=str(args.text))
+        _print_payload(
+            {
+                "target": result.target,
+                "provider_message_id": result.provider_message_id,
+            },
+            as_json=args.json_output,
+        )
+        return 0
+
+    if args.command == "notify-run-once":
+        config = _load_runtime_config(database_path=database_path)
+        _print_payload(run_notification_maintenance_once(config), as_json=args.json_output)
+        return 0
+
+    if args.command == "notify-worker":
+        config = _load_runtime_config(database_path=database_path)
+        result = run_notification_worker_iterations(
+            config,
+            iterations=int(args.iterations),
+            poll_interval_seconds=float(args.poll_interval_seconds),
+        )
+        _print_payload(result, as_json=args.json_output)
+        return 0
+
+    if args.command == "notify-redrive":
+        config = _load_runtime_config(database_path=database_path)
+        result = redrive_notification_failures(config, limit=int(args.limit))
+        _print_payload(
+            {
+                "redriven": result.redriven,
+                "status": result.status,
             },
             as_json=args.json_output,
         )
