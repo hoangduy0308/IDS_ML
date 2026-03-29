@@ -1,22 +1,33 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
 import subprocess
 import sys
 from typing import Any, Callable, Sequence
+from urllib.request import urlopen
 
 from scripts.ids_live_sensor_preflight import (
     LiveSensorPreflightConfig,
     validate_preflight as validate_live_sensor_preflight,
+)
+from scripts.ids_live_sensor_health import (
+    LiveSensorHealthConfig,
+    build_live_sensor_health_payload,
 )
 from scripts.ids_model_bundle import build_bundle_status_payload
 from scripts.ids_operator_console.config import (
     OperatorConsoleConfig,
     load_operator_console_config,
 )
+from scripts.ids_operator_console.health import (
+    build_notification_component,
+    build_readiness_payload,
+)
+from scripts.ids_operator_console.ops import run_smoke_checks
 from scripts.ids_operator_console_preflight import (
     OperatorConsolePreflightConfig,
     validate_preflight as validate_operator_console_preflight,
@@ -24,6 +35,7 @@ from scripts.ids_operator_console_preflight import (
 
 
 CommandRunner = Callable[[Sequence[str]], str]
+ProxyChecker = Callable[[str, float], tuple[int, str | None]]
 
 
 @dataclass(frozen=True)
@@ -47,6 +59,9 @@ class SameHostStackConfig:
     console_service_name: str = "ids-operator-console.service"
     live_sensor_service_name: str = "ids-live-sensor.service"
     notification_service_name: str = "ids-operator-console-notify.service"
+    sensor_freshness_window_seconds: float = 300.0
+    proxy_public_url: str | None = None
+    proxy_timeout_seconds: float = 5.0
     candidate_bundle_root: Path | None = None
     admin_username: str | None = None
     admin_password: str | None = None
@@ -173,6 +188,192 @@ def build_operator_preflight_config(config: SameHostStackConfig) -> OperatorCons
         telegram_bot_token=telegram_token,
         telegram_bot_token_file=operator_config.telegram_bot_token_source,
         telegram_chat_id=operator_config.telegram_chat_id,
+    )
+
+
+def _default_proxy_checker(url: str, timeout_seconds: float) -> tuple[int, str | None]:
+    with urlopen(url, timeout=timeout_seconds) as response:
+        return int(getattr(response, "status", 200)), response.geturl()
+
+
+def _build_bundle_component(config: SameHostStackConfig) -> dict[str, Any]:
+    payload = build_bundle_status_payload(Path(config.activation_path).resolve())
+    ok = bool(payload.get("runtime_ready"))
+    return {
+        "ok": ok,
+        "state": "ready" if ok else "degraded",
+        "detail": None if ok else str(payload.get("detail", "activation contract is not runtime-ready")),
+        "payload": payload,
+    }
+
+
+def _build_live_sensor_component(config: SameHostStackConfig) -> dict[str, Any]:
+    payload = build_live_sensor_health_payload(
+        LiveSensorHealthConfig(
+            activation_path=config.activation_path,
+            summary_output_path=config.summary_output_path,
+            freshness_window_seconds=config.sensor_freshness_window_seconds,
+        ),
+        now=datetime.now(timezone.utc),
+    )
+    return {
+        "ok": bool(payload.get("ready")),
+        "state": "ready" if payload.get("ready") else "degraded",
+        "detail": None if payload.get("ready") else "live sensor runtime health is degraded",
+        "payload": payload,
+    }
+
+
+def _build_operator_status_component(config: SameHostStackConfig) -> dict[str, Any]:
+    payload = build_readiness_payload(load_stack_operator_config(config))
+    ok = bool(payload.get("ready"))
+    return {
+        "ok": ok,
+        "state": "ready" if ok else "degraded",
+        "detail": None if ok else "operator console readiness is degraded",
+        "payload": payload,
+    }
+
+
+def _build_operator_smoke_component(config: SameHostStackConfig) -> dict[str, Any]:
+    smoke = run_smoke_checks(load_stack_operator_config(config))
+    redirect_ok = smoke.redirect_status in {200, 302, 307, 308}
+    ok = smoke.health_status == 200 and smoke.readiness_status == 200 and redirect_ok
+    return {
+        "ok": ok,
+        "state": "ready" if ok else "degraded",
+        "detail": None if ok else "operator console smoke checks did not pass",
+        "payload": {
+            "health_status": smoke.health_status,
+            "readiness_status": smoke.readiness_status,
+            "redirect_status": smoke.redirect_status,
+            "readiness_payload": smoke.readiness_payload,
+        },
+    }
+
+
+def _build_notification_path_component(config: SameHostStackConfig) -> dict[str, Any]:
+    payload = build_notification_component(load_stack_operator_config(config), include_sensitive=True)
+    enabled = bool(payload.get("enabled"))
+    ok = bool(payload.get("ok")) or not enabled
+    return {
+        "ok": ok,
+        "state": str(payload.get("state", "unknown")),
+        "detail": None if ok else "notification runtime is enabled but not healthy",
+        "payload": payload,
+    }
+
+
+def _build_proxy_component(
+    config: SameHostStackConfig,
+    *,
+    proxy_checker: ProxyChecker,
+) -> dict[str, Any]:
+    proxy_public_url = None if config.proxy_public_url is None else str(config.proxy_public_url).strip()
+    if not proxy_public_url:
+        return {
+            "ok": True,
+            "state": "unconfigured",
+            "detail": None,
+            "gating": False,
+            "payload": {
+                "configured": False,
+                "public_url": None,
+            },
+        }
+
+    try:
+        status_code, final_url = proxy_checker(proxy_public_url, float(config.proxy_timeout_seconds))
+    except Exception as exc:
+        return {
+            "ok": False,
+            "state": "degraded",
+            "detail": str(exc),
+            "gating": False,
+            "payload": {
+                "configured": True,
+                "public_url": proxy_public_url,
+                "status_code": None,
+                "final_url": None,
+            },
+        }
+
+    ok = 200 <= status_code < 400
+    return {
+        "ok": ok,
+        "state": "reachable" if ok else "degraded",
+        "detail": None if ok else f"proxy returned HTTP {status_code}",
+        "gating": False,
+        "payload": {
+            "configured": True,
+            "public_url": proxy_public_url,
+            "status_code": status_code,
+            "final_url": final_url,
+        },
+    }
+
+
+def _build_stack_health_payload(
+    config: SameHostStackConfig,
+    *,
+    command_name: str,
+    proxy_checker: ProxyChecker,
+) -> dict[str, Any]:
+    bundle_component = _build_bundle_component(config)
+    live_sensor_component = _build_live_sensor_component(config)
+    operator_component = (
+        _build_operator_smoke_component(config)
+        if command_name == "smoke"
+        else _build_operator_status_component(config)
+    )
+    notification_component = _build_notification_path_component(config)
+    proxy_component = _build_proxy_component(config, proxy_checker=proxy_checker)
+
+    ready = all(
+        [
+            bundle_component["ok"],
+            live_sensor_component["ok"],
+            operator_component["ok"],
+            notification_component["ok"],
+        ]
+    )
+    return {
+        "service": "ids-same-host-stack",
+        "command": command_name,
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+        "ready": ready,
+        "status": "ok" if ready else "degraded",
+        "components": {
+            "model_activation_contract": bundle_component,
+            "live_sensor_data_path": live_sensor_component,
+            "operator_visibility_path": operator_component,
+            "outbound_notification_path": notification_component,
+            "reverse_proxy_edge_seam": proxy_component,
+        },
+    }
+
+
+def build_stack_status_payload(
+    config: SameHostStackConfig,
+    *,
+    proxy_checker: ProxyChecker = _default_proxy_checker,
+) -> dict[str, Any]:
+    return _build_stack_health_payload(
+        config,
+        command_name="status",
+        proxy_checker=proxy_checker,
+    )
+
+
+def build_stack_smoke_payload(
+    config: SameHostStackConfig,
+    *,
+    proxy_checker: ProxyChecker = _default_proxy_checker,
+) -> dict[str, Any]:
+    return _build_stack_health_payload(
+        config,
+        command_name="smoke",
+        proxy_checker=proxy_checker,
     )
 
 

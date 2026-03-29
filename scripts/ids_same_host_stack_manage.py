@@ -13,6 +13,8 @@ if __package__ in (None, ""):
 
 from scripts.ids_same_host_stack import (  # noqa: E402
     SameHostStackConfig,
+    build_stack_smoke_payload,
+    build_stack_status_payload,
     run_stack_bootstrap,
     validate_stack_preflight,
 )
@@ -80,10 +82,19 @@ def _build_parser() -> argparse.ArgumentParser:
         "--notification-service-name",
         default="ids-operator-console-notify.service",
     )
+    parser.add_argument(
+        "--sensor-freshness-window-seconds",
+        type=float,
+        default=300.0,
+    )
+    parser.add_argument("--proxy-public-url", default=None)
+    parser.add_argument("--proxy-timeout-seconds", type=float, default=5.0)
     parser.add_argument("--json", action="store_true", dest="json_output")
 
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("preflight", help="Validate the canonical same-host stack preflight.")
+    subparsers.add_parser("status", help="Report stack runtime health per failure domain.")
+    subparsers.add_parser("smoke", help="Run stack smoke checks per failure domain.")
 
     bootstrap_parser = subparsers.add_parser(
         "bootstrap",
@@ -130,6 +141,9 @@ def build_config_from_args(args: argparse.Namespace) -> SameHostStackConfig:
         console_service_name=str(args.console_service_name),
         live_sensor_service_name=str(args.live_sensor_service_name),
         notification_service_name=str(args.notification_service_name),
+        sensor_freshness_window_seconds=float(args.sensor_freshness_window_seconds),
+        proxy_public_url=args.proxy_public_url,
+        proxy_timeout_seconds=float(args.proxy_timeout_seconds),
         candidate_bundle_root=(
             Path(args.candidate_bundle_root).resolve()
             if getattr(args, "candidate_bundle_root", None)
@@ -159,6 +173,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         payload = run_stack_bootstrap(config)
         _print_payload(payload, as_json=args.json_output)
         return 0
+
+    if args.command == "status":
+        payload = build_stack_status_payload(config)
+        _print_payload(payload, as_json=args.json_output)
+        return 0 if payload.get("ready") else 2
+
+    if args.command == "smoke":
+        payload = build_stack_smoke_payload(config)
+        _print_payload(payload, as_json=args.json_output)
+        return 0 if payload.get("ready") else 2
 
     parser.error(f"unsupported command: {args.command}")
     return 2

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from dataclasses import replace
 import json
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -288,3 +290,143 @@ def test_manage_main_bootstrap_or_preflight_prints_json_payload(
 
     assert exit_code == 0
     assert json.loads(capsys.readouterr().out)["command"] == "preflight"
+
+
+def test_build_stack_status_payload_status_or_smoke_keeps_failure_domains_explicit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _build_config(tmp_path)
+
+    monkeypatch.setattr(
+        stack,
+        "build_bundle_status_payload",
+        lambda path: {"runtime_ready": True, "activation_path": str(path)},
+    )
+    monkeypatch.setattr(
+        stack,
+        "build_live_sensor_health_payload",
+        lambda *_args, **_kwargs: {"ready": True, "status": "ok"},
+    )
+    monkeypatch.setattr(
+        stack,
+        "build_readiness_payload",
+        lambda _config: {"ready": True, "status": "ok"},
+    )
+    monkeypatch.setattr(
+        stack,
+        "build_notification_component",
+        lambda _config, include_sensitive=True: {
+            "ok": True,
+            "state": "disabled",
+            "enabled": False,
+        },
+    )
+
+    payload = stack.build_stack_status_payload(config)
+
+    assert payload["ready"] is True
+    assert set(payload["components"]) == {
+        "model_activation_contract",
+        "live_sensor_data_path",
+        "operator_visibility_path",
+        "outbound_notification_path",
+        "reverse_proxy_edge_seam",
+    }
+    assert payload["components"]["outbound_notification_path"]["state"] == "disabled"
+    assert payload["components"]["reverse_proxy_edge_seam"]["state"] == "unconfigured"
+
+
+def test_build_stack_smoke_payload_status_or_smoke_keeps_proxy_non_gating(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = replace(_build_config(tmp_path), proxy_public_url="https://console.example")
+
+    monkeypatch.setattr(
+        stack,
+        "build_bundle_status_payload",
+        lambda path: {"runtime_ready": True, "activation_path": str(path)},
+    )
+    monkeypatch.setattr(
+        stack,
+        "build_live_sensor_health_payload",
+        lambda *_args, **_kwargs: {"ready": True, "status": "ok"},
+    )
+    monkeypatch.setattr(
+        stack,
+        "run_smoke_checks",
+        lambda _config: SimpleNamespace(
+            health_status=200,
+            readiness_status=200,
+            redirect_status=307,
+            readiness_payload={"ready": True, "status": "ok"},
+        ),
+    )
+    monkeypatch.setattr(
+        stack,
+        "build_notification_component",
+        lambda _config, include_sensitive=True: {
+            "ok": True,
+            "state": "disabled",
+            "enabled": False,
+        },
+    )
+
+    payload = stack.build_stack_smoke_payload(
+        config,
+        proxy_checker=lambda _url, _timeout: (502, None),
+    )
+
+    assert payload["ready"] is True
+    assert payload["components"]["operator_visibility_path"]["payload"]["redirect_status"] == 307
+    assert payload["components"]["reverse_proxy_edge_seam"]["state"] == "degraded"
+    assert payload["components"]["reverse_proxy_edge_seam"]["gating"] is False
+
+
+def test_manage_main_status_or_smoke_prints_json_payload(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config = _build_config(tmp_path)
+
+    monkeypatch.setattr(
+        manage,
+        "build_stack_status_payload",
+        lambda _: {"ready": True, "command": "status"},
+    )
+
+    exit_code = manage.main(
+        [
+            "--repo-root",
+            str(config.repo_root),
+            "--python-binary",
+            str(config.python_binary),
+            "--operator-env-file",
+            str(config.operator_env_file),
+            "--activation-path",
+            str(config.activation_path),
+            "--dumpcap-binary",
+            str(config.dumpcap_binary),
+            "--java-binary",
+            str(config.java_binary),
+            "--extractor-binary",
+            str(config.extractor_binary),
+            "--jnetpcap-path",
+            str(config.jnetpcap_path),
+            "--spool-dir",
+            str(config.spool_dir),
+            "--alerts-output-path",
+            str(config.alerts_output_path),
+            "--quarantine-output-path",
+            str(config.quarantine_output_path),
+            "--summary-output-path",
+            str(config.summary_output_path),
+            "--json",
+            "status",
+        ]
+    )
+
+    assert exit_code == 0
+    assert json.loads(capsys.readouterr().out)["command"] == "status"
