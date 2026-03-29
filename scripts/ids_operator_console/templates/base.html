@@ -6,32 +6,29 @@
   <title>{% block title %}IDS Operator Console{% endblock %}</title>
   <link rel="stylesheet" href="/static/console.css">
 </head>
-<body>
-  <header class="topbar">
-    <div class="brand">
-      <h1>IDS Operator Console</h1>
-      <p>Alert triage and sensor health visibility</p>
-    </div>
+<body class="{% if admin %}console-app{% else %}console-auth{% endif %}" data-nav-open="false">
+  <div class="shell{% if not admin %} shell-auth{% endif %}">
     {% if admin %}
-    <nav class="topnav">
-      <a href="/dashboard">Dashboard</a>
-      <a href="/anomalies">Anomalies</a>
-      <a href="/reports">Reports</a>
-    </nav>
-    <form method="post" action="/logout" class="logout-form">
-      <input type="hidden" name="csrf_token" value="{{ admin.csrf_token }}">
-      <button type="submit">Logout ({{ admin.username }})</button>
-    </form>
+      {% include "partials/app_sidebar.html" %}
     {% endif %}
-  </header>
 
-  <main class="layout">
-    {% block content %}{% endblock %}
-  </main>
+    <div class="shell__main">
+      {% if admin %}
+        {% include "partials/top_utility_bar.html" %}
+      {% endif %}
 
-  <footer class="footer">
-    <small>Generated at {{ generated_at }}</small>
-  </footer>
+      <main id="console-main" class="layout">
+        {% block content %}{% endblock %}
+      </main>
+
+      <footer class="footer">
+        <small>
+          <span>Generated</span>
+          <span data-client-stamp>{{ generated_at }}</span>
+        </small>
+      </footer>
+    </div>
+  </div>
   <script src="/static/console.js"></script>
 </body>
 </html>

@@ -1,0 +1,75 @@
+<!-- app_sidebar partial -->
+{% set current_path = request.url.path %}
+{% set current_nav = page_key if page_key is defined else (
+  "reports" if current_path == "/reports" else
+  "operations" if current_path == "/anomalies" or current_path == "/operations" else
+  "alerts" if current_path == "/alerts" else
+  "detail" if current_path.startswith("/alerts/") else
+  "overview"
+) %}
+{% set console_nav = primary_nav if primary_nav is defined else [
+  {"key": "overview", "label": "Overview", "href": "/dashboard", "meta": "Alert pressure and runtime health"},
+  {"key": "alerts", "label": "Alerts", "href": "/dashboard", "meta": "Primary triage lane"},
+  {"key": "operations", "label": "Operations", "href": "/anomalies", "meta": "Anomaly and readiness lane"},
+  {"key": "reports", "label": "Reports", "href": "/reports", "meta": "History, windows, and summaries"}
+] %}
+
+<aside class="app-sidebar" aria-label="Console navigation">
+  <div class="app-sidebar__inner">
+    <div class="app-sidebar__brand">
+      <div class="brand-lockup">
+        <span class="brand-mark">IDS</span>
+        <div class="brand-lockup__copy">
+          <p class="brand-lockup__eyebrow">Precision Lab Surface</p>
+          <h1>Operator Console</h1>
+          <p>Read, triage, and monitor without control-plane drift.</p>
+        </div>
+      </div>
+      <button type="button" class="drawer-close" data-drawer-close aria-label="Close navigation">
+        Close
+      </button>
+    </div>
+
+    <nav class="sidebar-nav" aria-label="Primary">
+      {% for item in console_nav %}
+        <a
+          href="{{ item.href }}"
+          class="sidebar-nav__item{% if current_nav == item.key %} is-current{% endif %}"
+          {% if current_nav == item.key %}aria-current="page"{% endif %}
+        >
+          <span class="sidebar-nav__label">{{ item.label }}</span>
+          <span class="sidebar-nav__meta">{{ item.meta }}</span>
+        </a>
+      {% endfor %}
+    </nav>
+
+    <section class="sidebar-panel">
+      <p class="sidebar-panel__label">Session</p>
+      <div class="state-cluster">
+        <span class="state-chip state-chip--active">Same-host visibility</span>
+        <span class="state-chip">Signed in as {{ admin.username }}</span>
+      </div>
+      <p class="sidebar-panel__copy">
+        Shared shell is locked to the validated redesign graph and keeps alert and operational signals distinct.
+      </p>
+    </section>
+
+    <section class="sidebar-panel sidebar-panel--muted">
+      <p class="sidebar-panel__label">Foundation</p>
+      <div class="state-cluster">
+        <span class="state-chip">Light mode baseline</span>
+        <span class="state-chip">Desktop-first shell</span>
+      </div>
+      <p class="sidebar-panel__copy">
+        Navigation, workspace hierarchy, and explicit degraded or empty states are owned here.
+      </p>
+    </section>
+
+    <form method="post" action="/logout" class="logout-form">
+      <input type="hidden" name="csrf_token" value="{{ admin.csrf_token }}">
+      <button type="submit" class="button button-secondary">Logout</button>
+    </form>
+  </div>
+</aside>
+
+<button type="button" class="shell-backdrop" data-drawer-close aria-hidden="true" tabindex="-1"></button>
