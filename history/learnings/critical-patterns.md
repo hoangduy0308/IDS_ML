@@ -68,3 +68,12 @@ The service unit became safer only after runtime values were centralized and pre
 The operator console only became safely production-ready once normal startup stopped creating or mutating schema implicitly and shifted all shape-changing actions into explicit operator commands such as `migrate` and `bootstrap-admin`. For same-host services with local persistent state, mixing inspection and mutation inside the runtime path makes readiness impossible to reason about and hides broken upgrades until production. Future hardening work should keep runtime verify-only and move bootstrap/migration/recovery into explicit maintenance entrypoints.
 
 **Full entry:** history/learnings/20260329-operator-console-production-hardening.md
+
+## [20260329] Keep Production Model Selection On One Activation Contract
+**Category:** pattern
+**Feature:** ids-model-bundle-promotion-hardening
+**Tags:** [model-bundle, compatibility, activation, deployment]
+
+The IDS model lifecycle only became safe once production stopped accepting independent model/schema/threshold overrides and instead resolved one versioned bundle manifest through one host-local activation record. Split path inputs looked flexible but left a real drift seam where the runtime could score with one bundle while silently consuming schema or threshold from another. Future single-host ML deployments should keep production selection on one activation contract and fail closed if that contract cannot be verified.
+
+**Full entry:** history/learnings/20260329-model-bundle-promotion-hardening.md

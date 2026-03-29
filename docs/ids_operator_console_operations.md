@@ -9,6 +9,8 @@
   - `X-Forwarded-For`
 - Public origin is declared explicitly with `IDS_OPERATOR_CONSOLE_PUBLIC_BASE_URL`
 
+The operator console does not own model promotion state. It is visibility-first for the live sensor runtime and reads active-bundle metadata from ingested sensor summaries.
+
 ## Required Files
 
 - Env file: `/etc/ids-operator-console/ids-operator-console.env`
@@ -16,6 +18,19 @@
 - Optional Telegram bot token file: `/etc/ids-operator-console/telegram-bot-token.secret`
 
 The repo does not store secret material. Backup/restore only records secret references.
+
+## Model bundle visibility boundary
+
+This feature adds read-only visibility for the active model bundle. The console is expected to surface:
+
+- active bundle name/version
+- activated timestamp
+- compatibility state
+- rollback target from the latest live sensor summary
+
+Promotion and rollback remain explicit CLI operations outside the web UI:
+
+- [ids_model_bundle_manage.py](F:/Work/IDS_ML_New/scripts/ids_model_bundle_manage.py)
 
 ## Fresh Bootstrap
 
@@ -51,6 +66,8 @@ python scripts/ids_operator_console_manage.py \
   --json smoke
 ```
 
+`smoke` verifies the wired runtime contract of the console itself. Active bundle visibility appears in `/readyz` and the dashboard after the console has ingested at least one live sensor summary containing an `active_bundle` block.
+
 ## Upgrade From V1
 
 1. Stop the service if it is already running.
@@ -74,6 +91,8 @@ python scripts/ids_operator_console_manage.py \
 5. Run preflight or restart the service.
 6. Run `smoke` and verify `/readyz` returns ready.
 
+For bundle visibility, also verify that `/readyz` contains `components.active_bundle` and that the dashboard shows the current bundle identity once fresh sensor summaries have been ingested.
+
 ## Backup
 
 Online backup is allowed:
@@ -90,6 +109,8 @@ The backup artifact contains:
 - `manifest.json`
 - config values needed for restore drill validation
 - secret references only
+
+If the database already contains ingested live sensor summaries, the backup also preserves the last known active bundle visibility state stored in those summary rows. The backup does not replace the live sensor activation record itself.
 
 ## Restore Drill
 
@@ -115,6 +136,16 @@ python scripts/ids_operator_console_manage.py \
 4. Run smoke before restarting traffic.
 5. Start the service and verify `/readyz`.
 
+After restore, treat the console and the live sensor as separate readiness domains:
+
+- console restore proves the web/database contract is healthy
+- live sensor must still re-validate `/var/lib/ids-live-sensor/active_bundle.json` before the host is considered fully ready for IDS scoring
+
+If you expect bundle visibility immediately after restore, make sure either:
+
+- the restored database already contains recent summary rows with `active_bundle`, or
+- the live sensor is restarted and allowed to emit a fresh summary after its own preflight succeeds
+
 ## Retention
 
 Prune old backup directories by keeping the newest N:
@@ -136,4 +167,16 @@ python scripts/ids_operator_console_manage.py \
 - root redirect is wired to `/login`
 - config/schema/admin bootstrap contract is still valid
 
+For this feature, operators should also inspect the `/readyz` payload body and confirm:
+
+- `components.active_bundle.ok` reflects whether a summary-backed active bundle state is currently available
+- `components.active_bundle.state.active_bundle_name` matches the sensor summary when one has been ingested
+
 If smoke fails, treat that as a deployment blocker rather than a warning.
+
+## Example operator checks
+
+- run `python scripts/ids_operator_console_manage.py --database-path ... --json smoke`
+- inspect `/readyz` for `components.active_bundle`
+- verify the dashboard `Sensor Health` section shows active bundle, bundle status, activated-at, and rollback target
+- confirm live sensor summaries are still being ingested into the console database

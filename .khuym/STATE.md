@@ -1,78 +1,44 @@
-STATUS: swarming-in-progress
+STATUS: feature-complete
 FEATURE: ids-model-bundle-promotion-hardening
 EPIC: ids_ml_new-hup
-ACTIVE_SKILL: khuym:swarming
+ACTIVE_SKILL: khuym:compounding
 DATE: 2026-03-29
 
-Swarm Result:
-- Discovery written: history/ids-model-bundle-promotion-hardening/discovery.md
-- Approach written: history/ids-model-bundle-promotion-hardening/approach.md
-- Validation written: history/ids-model-bundle-promotion-hardening/validation.md
-- Beads created: ids_ml_new-hup, ids_ml_new-hup.1, ids_ml_new-hup.2, ids_ml_new-hup.3, ids_ml_new-hup.4, ids_ml_new-hup.5
-- Dependency graph corrected so foundational bead `ids_ml_new-hup.1` is ready and unblocks `ids_ml_new-hup.2` + `ids_ml_new-hup.3`
-- HIGH-risk spikes created and closed YES:
+Feature Result:
+- Exploring complete with locked decisions in history/ids-model-bundle-promotion-hardening/CONTEXT.md
+- Planning complete with discovery/approach artifacts and bead graph
+- Validating complete with HIGH-risk spikes:
   - ids_ml_new-tz9
   - ids_ml_new-a8t
   - ids_ml_new-d85
-- Gate 2 approved by user
+- Swarming complete with beads closed:
+  - ids_ml_new-hup.1
+  - ids_ml_new-hup.2
+  - ids_ml_new-hup.3
+  - ids_ml_new-hup.4
+  - ids_ml_new-hup.5
+- Reviewing complete with no remaining P1/P2 findings
+- Compounding complete with learning note:
+  - history/learnings/20260329-model-bundle-promotion-hardening.md
 
-Active Workers:
-- FuchsiaIsland — implementing `ids_ml_new-hup.4`
+Delivered Capabilities:
+- Versioned model bundle manifest and compatibility validation
+- Atomic activation record for active bundle selection and previous known-good rollback
+- Explicit bundle lifecycle CLI for verify/promote/activate/rollback/status
+- Fail-closed live sensor runtime and preflight wiring to activation-path contract
+- Active bundle visibility in live sensor summaries, readiness, and operator console dashboard
+- Same-host runbooks for promote, rollback, and restore expectations
 
 Verification:
-Planning inputs carried forward:
-- history/learnings/critical-patterns.md
-- history/learnings/20260328-adapter-rollback-contract.md
-- history/learnings/20260328-live-sensor-runtime-contracts.md
-- history/learnings/20260328-operator-console-runtime-wiring.md
-- history/learnings/20260329-operator-console-production-hardening.md
+- python -m py_compile scripts/ids_model_bundle.py scripts/ids_model_bundle_manage.py scripts/ids_inference.py scripts/package_final_model.py scripts/ids_live_sensor.py scripts/ids_live_sensor_preflight.py scripts/ids_live_sensor_sinks.py scripts/ids_operator_console/health.py scripts/ids_operator_console/web.py tests/test_ids_model_bundle.py tests/test_ids_inference.py tests/test_ids_model_bundle_manage.py tests/test_ids_live_sensor.py tests/test_ids_live_sensor_preflight.py tests/test_ids_live_sensor_sinks.py tests/test_ids_operator_console_ingest.py tests/test_ids_operator_console_web.py tests/test_ids_operator_console_ops.py
+- python -m pytest -q tests/test_ids_model_bundle.py tests/test_ids_inference.py tests/test_ids_model_bundle_manage.py tests/test_ids_live_sensor.py tests/test_ids_live_sensor_preflight.py tests/test_ids_live_sensor_sinks.py tests/test_ids_operator_console_ingest.py tests/test_ids_operator_console_web.py tests/test_ids_operator_console_ops.py
+- Result: 50 passed
 
-Execution checkpoints:
-- history/ids-model-bundle-promotion-hardening/CONTEXT.md
-- history/ids-model-bundle-promotion-hardening/discovery.md
-- history/ids-model-bundle-promotion-hardening/approach.md
-- artifacts/final_model/catboost_full_data_v1/model_bundle.json
-- scripts/package_final_model.py
-- scripts/ids_inference.py
-- scripts/ids_live_sensor.py
-- scripts/ids_live_sensor_preflight.py
-- scripts/ids_live_sensor_sinks.py
-- scripts/ids_operator_console_manage.py
-- deploy/systemd/ids-live-sensor.service
-- bv --robot-plan
-- bv --robot-insights
-- bv --robot-suggest
-- bv --robot-priority
-- br ready --json
-- br show ids_ml_new-hup --json
-- br show ids_ml_new-hup.1 --json
-- br show ids_ml_new-hup.2 --json
-- br show ids_ml_new-hup.3 --json
-- br show ids_ml_new-hup.4 --json
-- br show ids_ml_new-hup.5 --json
-- mail thread `ids_ml_new-hup` started
-- `ids_ml_new-hup.1` completed and committed
-- `ids_ml_new-hup.3` completed and committed
-- `ids_ml_new-hup.2` completed and committed
-- `ids_ml_new-hup.4` claimed with file reservations
-- bead `.3` verification passed:
-  - `python -m py_compile scripts/ids_model_bundle.py scripts/ids_inference.py scripts/package_final_model.py tests/test_ids_model_bundle.py tests/test_ids_inference.py`
-  - `python -m pytest -q tests/test_ids_model_bundle.py tests/test_ids_inference.py`
-  - `python -m py_compile scripts/ids_live_sensor.py scripts/ids_live_sensor_preflight.py tests/test_ids_live_sensor.py tests/test_ids_live_sensor_preflight.py`
-  - `python -m pytest -q tests/test_ids_live_sensor.py tests/test_ids_live_sensor_preflight.py`
-- bead `.2` verification passed:
-  - `python -m py_compile scripts/ids_model_bundle.py scripts/ids_model_bundle_manage.py tests/test_ids_model_bundle.py tests/test_ids_model_bundle_manage.py`
-  - `python -m pytest -q tests/test_ids_model_bundle.py tests/test_ids_model_bundle_manage.py`
-- bead `.4` verification passed:
-  - `python -m py_compile scripts/ids_live_sensor_sinks.py scripts/ids_operator_console/health.py scripts/ids_operator_console/web.py tests/test_ids_live_sensor_sinks.py tests/test_ids_operator_console_web.py tests/test_ids_operator_console_ingest.py`
-  - `python -m pytest -q tests/test_ids_live_sensor_sinks.py tests/test_ids_operator_console_ingest.py tests/test_ids_operator_console_web.py`
-
-Execution Summary:
-- Validation complete; execution approved
-- Completed beads: `ids_ml_new-hup.1`, `ids_ml_new-hup.3`, `ids_ml_new-hup.2`
-- Current active bead: `ids_ml_new-hup.4`
-- Next ready bead after `.4`: `ids_ml_new-hup.5`
+Workflow Verification:
+- Chain followed: exploring -> planning -> validating -> swarming -> reviewing -> compounding
+- No phase skipped
+- No open ready beads remain: br ready --json => []
+- Epic closed: ids_ml_new-hup
 
 Handoff:
-- Swarming in progress
-- Downstream after all beads close: `khuym:reviewing`
+- Feature complete

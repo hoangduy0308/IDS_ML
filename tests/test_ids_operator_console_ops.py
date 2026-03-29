@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import json
+import os
 import sys
 
 import pytest
@@ -13,7 +14,9 @@ if str(REPO_ROOT) not in sys.path:
 
 import scripts.ids_operator_console_manage as manage  # noqa: E402
 import scripts.ids_operator_console_preflight as preflight  # noqa: E402
+from scripts.ids_operator_console.config import load_operator_console_config  # noqa: E402
 from scripts.ids_operator_console.db import OperatorStore  # noqa: E402
+from scripts.ids_operator_console.ops import run_smoke_checks  # noqa: E402
 from scripts.ids_operator_console_preflight import (  # noqa: E402
     OperatorConsolePreflightConfig,
     validate_preflight,
@@ -133,6 +136,24 @@ def test_manage_backup_restore_retention_and_smoke(tmp_path: Path, capsys: pytes
         ]
     )
     capsys.readouterr()
+    store = OperatorStore.open(db_path)
+    try:
+        store.store_summary(
+            summary_ts="2026-03-29T01:00:00+00:00",
+            payload={
+                "window_seconds": 60,
+                "alert_count": 0,
+                "anomaly_count": 0,
+                "active_bundle": {
+                    "active_bundle_name": "bundle-a",
+                    "compatibility_status": "compatible",
+                    "activated_at": "2026-03-29T00:55:00+00:00",
+                    "previous_bundle_name": "bundle-prev",
+                },
+            },
+        )
+    finally:
+        store.close()
 
     monkeypatch.setenv("IDS_OPERATOR_CONSOLE_ENVIRONMENT", "production")
     monkeypatch.setenv("IDS_OPERATOR_CONSOLE_PUBLIC_BASE_URL", "https://console.example")
@@ -190,6 +211,24 @@ def test_manage_backup_restore_retention_and_smoke(tmp_path: Path, capsys: pytes
     assert restore_rc == 0
     assert restore_payload["schema_state"] == "current"
     assert restore_payload["admin_count"] == 1
+    restored_store = OperatorStore.open(restored_db)
+    try:
+        restored_summary = restored_store.list_recent_summaries(limit=1)[0]
+    finally:
+        restored_store.close()
+    restored_payload_json = json.loads(restored_summary["payload_json"])
+    assert restored_payload_json["active_bundle"]["active_bundle_name"] == "bundle-a"
+    assert restored_payload_json["active_bundle"]["previous_bundle_name"] == "bundle-prev"
+
+    restored_env = dict(os.environ)
+    restored_env["IDS_OPERATOR_CONSOLE_DATABASE_PATH"] = str(restored_db)
+    restored_config = load_operator_console_config(environ=restored_env, repo_root=REPO_ROOT)
+    restored_smoke = run_smoke_checks(restored_config)
+    assert restored_smoke.readiness_payload["components"]["active_bundle"]["ok"] is True
+    assert (
+        restored_smoke.readiness_payload["components"]["active_bundle"]["state"]["active_bundle_name"]
+        == "bundle-a"
+    )
 
     smoke_rc = manage.main(["--database-path", str(db_path), "--json", "smoke"])
     smoke_payload = json.loads(capsys.readouterr().out)

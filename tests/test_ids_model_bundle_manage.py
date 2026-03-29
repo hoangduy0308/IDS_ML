@@ -155,3 +155,50 @@ def test_manage_rollback_fails_without_previous_known_good(
 
     with pytest.raises(SystemExit, match="previous known-good bundle"):
         manage.main(["--activation-path", str(activation_path), "rollback"])
+
+
+def test_manage_failed_promote_preserves_previous_active_bundle(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    activation_path = tmp_path / "active_bundle.json"
+    bundle_a = write_bundle(tmp_path / "bundle-a", bundle_name="bundle-a", threshold=0.5)
+    bundle_b = write_bundle(tmp_path / "bundle-b", bundle_name="bundle-b", threshold=0.7)
+
+    manage.main(
+        [
+            "--activation-path",
+            str(activation_path),
+            "--json",
+            "promote",
+            "--bundle-root",
+            str(bundle_a),
+        ]
+    )
+    capsys.readouterr()
+
+    bundle_b_manifest_path = bundle_b / "model_bundle.json"
+    bundle_b_payload = json.loads(bundle_b_manifest_path.read_text(encoding="utf-8"))
+    bundle_b_payload["compatibility"]["inference_contract"]["version"] = "ids_binary_classifier.v999"
+    bundle_b_manifest_path.write_text(
+        json.dumps(bundle_b_payload),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(SystemExit, match="Unsupported inference contract version"):
+        manage.main(
+            [
+                "--activation-path",
+                str(activation_path),
+                "promote",
+                "--bundle-root",
+                str(bundle_b),
+            ]
+        )
+
+    status_rc = manage.main(["--activation-path", str(activation_path), "--json", "status"])
+    status_payload = json.loads(capsys.readouterr().out)
+
+    assert status_rc == 0
+    assert status_payload["active_bundle_name"] == "bundle-a"
+    assert "previous_bundle_name" not in status_payload
