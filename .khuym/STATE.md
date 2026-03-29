@@ -17,7 +17,7 @@ Swarm Result:
 - Gate 2 approved by user
 
 Active Workers:
-- FuchsiaIsland — implementing `ids_ml_new-hup.3`
+- FuchsiaIsland — implementing `ids_ml_new-hup.2`
 
 Verification:
 Planning inputs carried forward:
@@ -52,18 +52,23 @@ Execution checkpoints:
 - br show ids_ml_new-hup.5 --json
 - mail thread `ids_ml_new-hup` started
 - `ids_ml_new-hup.1` completed and committed
-- `ids_ml_new-hup.3` claimed with file reservations
+- `ids_ml_new-hup.3` completed and committed
+- `ids_ml_new-hup.2` claimed with file reservations
 - bead `.3` verification passed:
   - `python -m py_compile scripts/ids_model_bundle.py scripts/ids_inference.py scripts/package_final_model.py tests/test_ids_model_bundle.py tests/test_ids_inference.py`
   - `python -m pytest -q tests/test_ids_model_bundle.py tests/test_ids_inference.py`
   - `python -m py_compile scripts/ids_live_sensor.py scripts/ids_live_sensor_preflight.py tests/test_ids_live_sensor.py tests/test_ids_live_sensor_preflight.py`
   - `python -m pytest -q tests/test_ids_live_sensor.py tests/test_ids_live_sensor_preflight.py`
+- bead `.2` verification passed:
+  - `python -m py_compile scripts/ids_model_bundle.py scripts/ids_model_bundle_manage.py tests/test_ids_model_bundle.py tests/test_ids_model_bundle_manage.py`
+  - `python -m pytest -q tests/test_ids_model_bundle.py tests/test_ids_model_bundle_manage.py`
 
 Execution Summary:
 - Validation complete; execution approved
 - Completed beads: `ids_ml_new-hup.1`
-- Current active bead: `ids_ml_new-hup.3`
-- Next ready beads after `.3`: `ids_ml_new-hup.2`, `ids_ml_new-hup.4`
+- Completed beads: `ids_ml_new-hup.1`, `ids_ml_new-hup.3`
+- Current active bead: `ids_ml_new-hup.2`
+- Next ready bead after `.2`: `ids_ml_new-hup.4`
 
 Handoff:
 - Swarming in progress
