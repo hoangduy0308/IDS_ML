@@ -95,3 +95,12 @@ Canonical stack commands are contracts, not convenience wrappers. If `bootstrap`
 Expected contract failures in stack-level health and operations commands should surface as structured degraded payloads, not raw tracebacks, and default output must stay secret-safe. Secret-bearing argv, sensitive notification metadata, and similar details should require explicit operator intent rather than appearing in routine health output. Future runtime CLIs should fail closed, emit machine-readable degraded state, and redact by default.
 
 **Full entry:** history/learnings/20260329-same-host-stack-runtime-hardening.md
+
+## [20260330] Use Live Bead State And Commit History To Rescue A Stalled Swarm
+**Category:** failure
+**Feature:** ids-operator-console-ui-redesign
+**Tags:** [agent-coordination, swarming, recovery]
+
+This UI redesign hit repeated worker startup/progress drift even though the validated graph, reservations, and repository state still allowed safe forward movement. The reliable rescue path was to stop trusting missing chat acknowledgments, release stale reservations, reset the bead state when necessary, and verify recovery from `br show`, real commits, and passing tests. Future swarms should time-box silent workers and recover from live execution state rather than waiting indefinitely on stuck status loops.
+
+**Full entry:** history/learnings/20260330-agent-coordination-ui-redesign.md
