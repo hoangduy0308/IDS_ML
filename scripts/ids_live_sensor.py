@@ -19,6 +19,7 @@ from scripts.ids_feature_contract import FlowFeatureContract
 from scripts.ids_inference import DEFAULT_FEATURE_COLUMNS_PATH, DEFAULT_MODEL_PATH, DEFAULT_THRESHOLD, build_inferencer
 from scripts.ids_live_capture import (
     CaptureBacklogExceededError,
+    CaptureFailure,
     ClosedCaptureWindow,
     DumpcapCaptureConfig,
     RollingDumpcapCaptureManager,
@@ -35,6 +36,7 @@ from scripts.ids_live_sensor_sinks import (
     DEFAULT_QUARANTINE_OUTPUT_PATH,
     DEFAULT_SUMMARY_OUTPUT_PATH,
     LiveSensorLocalSink,
+    default_summary_output_stream,
 )
 from scripts.ids_realtime_pipeline import (
     DEFAULT_FLUSH_INTERVAL_SECONDS,
@@ -62,6 +64,7 @@ class LiveSensorDaemonConfig:
     max_pending_windows: int = DEFAULT_MAX_PENDING_WINDOWS
     capture_buffer_megabytes: int = DEFAULT_CAPTURE_BUFFER_MEGABYTES
     update_interval_seconds: float = DEFAULT_UPDATE_INTERVAL_SECONDS
+    dumpcap_binary: str = "dumpcap"
     extractor_command_prefix: tuple[str, ...] = DEFAULT_EXTRACTOR_COMMAND_PREFIX
     adapter_profile_id: str = DEFAULT_ADAPTER_PROFILE_ID
     alerts_output_path: Path = DEFAULT_ALERTS_OUTPUT_PATH
@@ -107,6 +110,8 @@ class LiveSensorDaemonConfig:
             raise ValueError("adapter_profile_id must not be blank")
         if not self.extractor_command_prefix:
             raise ValueError("extractor_command_prefix must not be blank")
+        if not self.dumpcap_binary.strip():
+            raise ValueError("dumpcap_binary must not be blank")
 
 
 @dataclass
@@ -117,6 +122,15 @@ class LiveSensorDaemonSummary:
     recoverable_window_errors: int = 0
     recoverable_quarantines: int = 0
     benign_predictions: int = 0
+
+
+class CaptureSessionFatalError(RuntimeError):
+    def __init__(self, failure: CaptureFailure) -> None:
+        self.failure = failure
+        super().__init__(
+            "fatal dumpcap exit "
+            f"(stage={failure.stage}, returncode={failure.returncode}, reason={failure.reason})"
+        )
 
 
 class LiveSensorDaemon:
@@ -140,6 +154,7 @@ class LiveSensorDaemon:
             max_pending_windows=config.max_pending_windows,
             capture_buffer_megabytes=config.capture_buffer_megabytes,
             update_interval_seconds=config.update_interval_seconds,
+            dumpcap_binary=config.dumpcap_binary,
         )
         self.capture_manager = capture_manager or RollingDumpcapCaptureManager(
             capture_config,
@@ -168,6 +183,7 @@ class LiveSensorDaemon:
             alerts_output_path=config.alerts_output_path,
             quarantine_output_path=config.quarantine_output_path,
             summary_output_path=config.summary_output_path,
+            summary_output_stream=default_summary_output_stream(),
         )
         self._pending_windows: deque[ClosedCaptureWindow] = deque()
         self._summary = LiveSensorDaemonSummary()
@@ -247,11 +263,19 @@ class LiveSensorDaemon:
             popen_factory=popen_factory,
         )
         reader = notification_reader or self._default_notification_reader
+        observed_lines: list[str] = []
         try:
             for line in reader(process):
+                if self.capture_manager.parse_closed_window_notification(str(line)) is None:
+                    observed_lines.append(line)
                 self.enqueue_notification_line(line)
                 self.process_pending_windows()
             self.process_pending_windows()
+            failure = self._classify_capture_session_exit(process, observed_lines)
+            if failure.is_fatal:
+                self._summary.restartable_failures += 1
+                self.close(reason="capture-failure")
+                raise CaptureSessionFatalError(failure)
             return self.close()
         finally:
             if process.poll() is None:
@@ -260,9 +284,27 @@ class LiveSensorDaemon:
                 except Exception:
                     pass
 
-    def close(self) -> dict[str, Any]:
-        summary = self.sink.close()
+    def close(self, *, reason: str = "close") -> dict[str, Any]:
+        self._finalize_runtime(reason="runtime-finalize")
+        summary = self.sink.close(reason=reason)
         return summary
+
+    def _classify_capture_session_exit(
+        self,
+        process: subprocess.Popen[str],
+        observed_lines: Sequence[str],
+    ) -> CaptureFailure:
+        returncode = process.wait()
+        stderr_lines = [line for line in observed_lines if str(line).strip()]
+        if process.stderr is not None:
+            remaining_stderr = process.stderr.read()
+            if remaining_stderr:
+                stderr_lines.append(remaining_stderr)
+        return self.capture_manager.classify_capture_failure(
+            stage="runtime",
+            returncode=returncode,
+            stderr="\n".join(stderr_lines),
+        )
 
     def _apply_bridge_result(self, result: BridgeWindowResult) -> None:
         for error in result.window_errors:
@@ -277,17 +319,37 @@ class LiveSensorDaemon:
                 record_index=adapted.get("record_index"),
                 now=self.time_source(),
             )
-            for quarantine in runtime_quarantines:
-                self.sink.record_quarantine(quarantine)
-            for alert in runtime_alerts:
-                if alert["is_alert"]:
-                    self.sink.record_alert(alert)
-                else:
-                    self.sink.record_benign_prediction()
-                    self._summary.benign_predictions += 1
-            if flushed:
-                self.sink.capture_summary(reason="runtime-flush")
-        runtime_alerts, runtime_quarantines, flushed = self.runtime_runner.finalize()
+            self._record_runtime_results(
+                runtime_alerts,
+                runtime_quarantines,
+                flushed=flushed,
+                summary_reason="runtime-flush",
+            )
+        runtime_alerts, flushed = self.runtime_runner.flush_if_due(now=self.time_source())
+        self._record_runtime_results(
+            runtime_alerts,
+            (),
+            flushed=flushed,
+            summary_reason="runtime-flush",
+        )
+
+    def _finalize_runtime(self, *, reason: str) -> None:
+        runtime_alerts, flushed = self.runtime_runner.finalize()
+        self._record_runtime_results(
+            runtime_alerts,
+            (),
+            flushed=flushed,
+            summary_reason=reason,
+        )
+
+    def _record_runtime_results(
+        self,
+        runtime_alerts: Iterable[dict[str, Any]],
+        runtime_quarantines: Iterable[dict[str, Any]],
+        *,
+        flushed: bool,
+        summary_reason: str,
+    ) -> None:
         for quarantine in runtime_quarantines:
             self.sink.record_quarantine(quarantine)
         for alert in runtime_alerts:
@@ -297,7 +359,7 @@ class LiveSensorDaemon:
                 self.sink.record_benign_prediction()
                 self._summary.benign_predictions += 1
         if flushed:
-            self.sink.capture_summary(reason="runtime-finalize")
+            self.sink.capture_summary(reason=summary_reason)
 
     def _cleanup_window_artifacts(
         self,
@@ -367,6 +429,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=float,
         default=DEFAULT_UPDATE_INTERVAL_SECONDS,
     )
+    parser.add_argument("--dumpcap-binary", default="dumpcap")
     parser.add_argument(
         "--extractor-command-prefix",
         nargs="+",
@@ -405,6 +468,7 @@ def build_daemon_from_args(args: argparse.Namespace) -> LiveSensorDaemon:
         max_pending_windows=args.max_pending_windows,
         capture_buffer_megabytes=args.capture_buffer_megabytes,
         update_interval_seconds=args.update_interval_seconds,
+        dumpcap_binary=args.dumpcap_binary,
         extractor_command_prefix=tuple(args.extractor_command_prefix),
         adapter_profile_id=args.adapter_profile_id,
         alerts_output_path=args.alerts_output_path,

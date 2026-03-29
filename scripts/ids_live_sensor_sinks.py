@@ -4,8 +4,9 @@ import json
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+import sys
 import tempfile
-from typing import Any, Callable, Iterable, Mapping
+from typing import Any, Callable, Iterable, Mapping, TextIO
 
 
 DEFAULT_ALERTS_OUTPUT_PATH = Path("ids_live_alerts.jsonl")
@@ -85,6 +86,14 @@ def _write_jsonl_records(path: Path, records: Iterable[Mapping[str, Any]]) -> No
         for record in records:
             handle.write(json.dumps(dict(record), ensure_ascii=False))
             handle.write("\n")
+
+
+def _append_jsonl_record(path: Path, record: Mapping[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8", newline="\n") as handle:
+        handle.write(json.dumps(dict(record), ensure_ascii=False))
+        handle.write("\n")
+        handle.flush()
 
 
 def _reserve_staged_path(final_path: Path, *, suffix: str) -> Path:
@@ -209,6 +218,13 @@ def render_journald_summary(event: Mapping[str, Any]) -> str:
     return " ".join(parts)
 
 
+def emit_summary_line(stream: TextIO, event: Mapping[str, Any]) -> str:
+    line = render_journald_summary(event)
+    stream.write(f"{line}\n")
+    stream.flush()
+    return line
+
+
 class LiveSensorLocalSink:
     def __init__(
         self,
@@ -217,6 +233,7 @@ class LiveSensorLocalSink:
         quarantine_output_path: Path | None = None,
         summary_output_path: Path | None = None,
         timestamp_source: Callable[[], str] | None = None,
+        summary_output_stream: TextIO | None = None,
     ) -> None:
         (
             self.alerts_output_path,
@@ -228,20 +245,20 @@ class LiveSensorLocalSink:
             summary_output_path=summary_output_path,
         )
         self._timestamp_source = timestamp_source
-        self._alert_records: list[dict[str, Any]] = []
-        self._quarantine_records: list[dict[str, Any]] = []
-        self._summary_events: list[dict[str, Any]] = []
+        self._summary_output_stream = summary_output_stream
         self._summary = LiveSensorSinkSummary()
         self._closed = False
 
     def record_alert(self, event: Mapping[str, Any]) -> None:
         self._ensure_open()
-        self._alert_records.append(dict(event))
+        payload = dict(event)
+        _append_jsonl_record(self.alerts_output_path, payload)
         self._summary.alert_records += 1
 
     def record_quarantine(self, event: Mapping[str, Any]) -> None:
         self._ensure_open()
-        self._quarantine_records.append(dict(event))
+        payload = dict(event)
+        _append_jsonl_record(self.quarantine_output_path, payload)
         self._summary.quarantine_records += 1
 
     def record_benign_prediction(self, count: int = 1) -> None:
@@ -303,7 +320,10 @@ class LiveSensorLocalSink:
             timestamp_source=self._timestamp_source,
         )
         event["journald_message"] = render_journald_summary(event)
-        self._summary_events.append(event)
+        if self.summary_output_path is not None:
+            _append_jsonl_record(self.summary_output_path, event)
+        if self._summary_output_stream is not None:
+            event["journald_message"] = emit_summary_line(self._summary_output_stream, event)
         return event
 
     def snapshot_summary(self) -> dict[str, Any]:
@@ -317,49 +337,12 @@ class LiveSensorLocalSink:
 
     def flush(self) -> dict[str, Any]:
         self._ensure_open()
-        if not self._summary_events:
-            self.capture_summary(reason="flush")
+        return self.capture_summary(reason="flush")
 
-        staged_paths: list[tuple[Path, Path]] = []
-        try:
-            alerts_temp_path = _reserve_staged_path(
-                self.alerts_output_path,
-                suffix=f"{self.alerts_output_path.suffix}.tmp"
-                if self.alerts_output_path.suffix
-                else ".tmp",
-            )
-            _write_jsonl_records(alerts_temp_path, self._alert_records)
-            staged_paths.append((alerts_temp_path, self.alerts_output_path))
-
-            quarantine_temp_path = _reserve_staged_path(
-                self.quarantine_output_path,
-                suffix=f"{self.quarantine_output_path.suffix}.tmp"
-                if self.quarantine_output_path.suffix
-                else ".tmp",
-            )
-            _write_jsonl_records(quarantine_temp_path, self._quarantine_records)
-            staged_paths.append((quarantine_temp_path, self.quarantine_output_path))
-
-            if self.summary_output_path is not None:
-                summary_temp_path = _reserve_staged_path(
-                    self.summary_output_path,
-                    suffix=f"{self.summary_output_path.suffix}.tmp"
-                    if self.summary_output_path.suffix
-                    else ".tmp",
-                )
-                _write_jsonl_records(summary_temp_path, self._summary_events)
-                staged_paths.append((summary_temp_path, self.summary_output_path))
-
-            _promote_staged_output_paths_transactionally(staged_paths)
-        except BaseException:
-            _cleanup_staged_paths(temp_path for temp_path, _ in staged_paths)
-            raise
-        return self.snapshot_summary()
-
-    def close(self) -> dict[str, Any]:
+    def close(self, *, reason: str = "close") -> dict[str, Any]:
         if self._closed:
             return self.snapshot_summary()
-        summary = self.flush()
+        summary = self.capture_summary(reason=reason)
         self._closed = True
         return summary
 
@@ -382,3 +365,7 @@ def write_summary_snapshot(
     reason: str = "periodic",
 ) -> dict[str, Any]:
     return sink.capture_summary(reason=reason)
+
+
+def default_summary_output_stream() -> TextIO:
+    return sys.stdout

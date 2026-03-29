@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 from pathlib import Path
 import sys
@@ -14,6 +15,7 @@ if str(REPO_ROOT) not in sys.path:
 from scripts.ids_live_capture import CaptureBacklogExceededError, ClosedCaptureWindow  # noqa: E402
 from scripts.ids_live_flow_bridge import BridgeWindowResult  # noqa: E402
 from scripts.ids_live_sensor import (  # noqa: E402
+    CaptureSessionFatalError,
     DEFAULT_CAPTURE_WINDOW_DURATION_SECONDS,
     LiveSensorDaemon,
     LiveSensorDaemonConfig,
@@ -32,6 +34,7 @@ class RecordingRuntimeRunner:
     def __init__(self) -> None:
         self.ingested: list[tuple[int | None, dict[str, object]]] = []
         self.finalize_calls = 0
+        self.flush_if_due_calls = 0
 
     def ingest_record(
         self,
@@ -55,9 +58,13 @@ class RecordingRuntimeRunner:
             False,
         )
 
-    def finalize(self) -> tuple[list[dict[str, object]], list[dict[str, object]], bool]:
+    def finalize(self) -> tuple[list[dict[str, object]], bool]:
         self.finalize_calls += 1
-        return [], [], False
+        return [], False
+
+    def flush_if_due(self, *, now: float | None = None) -> tuple[list[dict[str, object]], bool]:
+        self.flush_if_due_calls += 1
+        return [], False
 
 
 class RecordingBridge:
@@ -190,6 +197,38 @@ class RecordingSink:
         return self.capture_summary(reason="close")
 
 
+class FakeStderr:
+    def __init__(self, trailing_text: str = "") -> None:
+        self._trailing_text = trailing_text
+
+    def read(self) -> str:
+        value = self._trailing_text
+        self._trailing_text = ""
+        return value
+
+
+class FakeProcess:
+    def __init__(self, *, returncode: int, trailing_stderr: str = "") -> None:
+        self._returncode = returncode
+        self._waited = False
+        self._terminated = False
+        self.stderr = FakeStderr(trailing_stderr)
+
+    def wait(self) -> int:
+        self._waited = True
+        return self._returncode
+
+    def poll(self) -> int | None:
+        if self._waited:
+            return self._returncode
+        if self._terminated:
+            return 0
+        return None
+
+    def terminate(self) -> None:
+        self._terminated = True
+
+
 def make_config(tmp_path: Path, **overrides: object) -> LiveSensorDaemonConfig:
     kwargs = {
         "spool_dir": tmp_path / "spool",
@@ -218,10 +257,12 @@ def test_daemon_config_wires_capture_window_duration_and_support_modules(tmp_pat
 def test_daemon_processes_windows_in_order_and_cleans_spool_artifacts(tmp_path: Path) -> None:
     bridge = RecordingBridge()
     runtime = RecordingRuntimeRunner()
+    summary_stream = io.StringIO()
     sink = LiveSensorLocalSink(
         alerts_output_path=tmp_path / "alerts.jsonl",
         quarantine_output_path=tmp_path / "quarantine.jsonl",
         summary_output_path=tmp_path / "summary.jsonl",
+        summary_output_stream=summary_stream,
     )
     daemon = LiveSensorDaemon(
         make_config(tmp_path),
@@ -248,7 +289,8 @@ def test_daemon_processes_windows_in_order_and_cleans_spool_artifacts(tmp_path: 
 
     assert bridge.window_sequences == [0, 1]
     assert len(processed) == 2
-    assert runtime.finalize_calls == 2
+    assert runtime.finalize_calls == 1
+    assert runtime.flush_if_due_calls == 2
     assert summary["alert_records"] == 1
     assert summary["quarantine_records"] == 1
     assert summary["benign_predictions"] == 1
@@ -262,6 +304,8 @@ def test_daemon_processes_windows_in_order_and_cleans_spool_artifacts(tmp_path: 
     queue_depths = [event["latest_queue_depth"] for event in summary_events]
     assert queue_depths[:2] == [1, 2]
     assert queue_depths[-1] == 0
+    emitted_lines = [line for line in summary_stream.getvalue().splitlines() if line.strip()]
+    assert emitted_lines[-1] == summary["journald_message"]
 
 
 def test_daemon_raises_when_pending_windows_exceed_ceiling(tmp_path: Path) -> None:
@@ -317,6 +361,7 @@ def test_daemon_serve_notification_lines_handles_window_errors_and_quarantines(
     assert summary.processed_windows == 3
     assert summary.benign_predictions == 1
     assert bridge.window_sequences == [0, 1, 2]
+    assert runtime.finalize_calls == 1
 
     persisted_summaries = load_jsonl(tmp_path / "summary.jsonl")
     assert any(event["reason"] == "window-processed" for event in persisted_summaries)
@@ -326,3 +371,88 @@ def test_daemon_serve_notification_lines_handles_window_errors_and_quarantines(
     )
     assert len(load_jsonl(tmp_path / "quarantine.jsonl")) == 1
     assert len(load_jsonl(tmp_path / "alerts.jsonl")) == 1
+
+
+def test_serve_capture_session_raises_on_fatal_dumpcap_exit(tmp_path: Path) -> None:
+    bridge = RecordingBridge()
+    runtime = RecordingRuntimeRunner()
+    sink = LiveSensorLocalSink(
+        alerts_output_path=tmp_path / "alerts.jsonl",
+        quarantine_output_path=tmp_path / "quarantine.jsonl",
+        summary_output_path=tmp_path / "summary.jsonl",
+    )
+    daemon = LiveSensorDaemon(
+        make_config(tmp_path),
+        bridge=bridge,
+        runtime_runner=runtime,
+        sink=sink,
+    )
+
+    lines = [
+        f"dumpcap: file closed {daemon.capture_manager.window_path_for_sequence(0)}",
+    ]
+
+    def popen_factory(*args: object, **kwargs: object) -> FakeProcess:
+        return FakeProcess(returncode=1)
+
+    with pytest.raises(CaptureSessionFatalError, match="fatal dumpcap exit") as exc_info:
+        daemon.serve_capture_session(
+            popen_factory=popen_factory,  # type: ignore[arg-type]
+            notification_reader=lambda process: iter(lines),
+        )
+
+    assert exc_info.value.failure.is_fatal is True
+    assert runtime.finalize_calls == 1
+    assert len(load_jsonl(tmp_path / "alerts.jsonl")) == 0
+    summaries = load_jsonl(tmp_path / "summary.jsonl")
+    assert summaries[-1]["reason"] == "capture-failure"
+
+
+def test_serve_capture_session_returns_cleanly_on_recoverable_dumpcap_exit(tmp_path: Path) -> None:
+    bridge = RecordingBridge()
+    runtime = RecordingRuntimeRunner()
+    sink = LiveSensorLocalSink(
+        alerts_output_path=tmp_path / "alerts.jsonl",
+        quarantine_output_path=tmp_path / "quarantine.jsonl",
+        summary_output_path=tmp_path / "summary.jsonl",
+    )
+    daemon = LiveSensorDaemon(
+        make_config(tmp_path),
+        bridge=bridge,
+        runtime_runner=runtime,
+        sink=sink,
+    )
+
+    lines = [
+        f"dumpcap: file closed {daemon.capture_manager.window_path_for_sequence(0)}",
+        "dumpcap: capture stopped by request",
+    ]
+
+    def popen_factory(*args: object, **kwargs: object) -> FakeProcess:
+        return FakeProcess(returncode=0)
+
+    summary = daemon.serve_capture_session(
+        popen_factory=popen_factory,  # type: ignore[arg-type]
+        notification_reader=lambda process: iter(lines),
+    )
+
+    assert summary["reason"] == "close"
+    assert runtime.finalize_calls == 1
+    assert len(load_jsonl(tmp_path / "summary.jsonl")) >= 2
+
+
+def test_service_unit_keeps_preflight_and_stdout_journal_contract() -> None:
+    service_path = REPO_ROOT / "deploy" / "systemd" / "ids-live-sensor.service"
+    content = service_path.read_text(encoding="utf-8")
+
+    assert "IDS_LIVE_SENSOR_DUMPCAP_BINARY=" in content
+    assert "IDS_LIVE_SENSOR_JAVA_BINARY=" in content
+    assert "IDS_LIVE_SENSOR_EXTRACTOR_BINARY=" in content
+    assert "IDS_LIVE_SENSOR_JNETPCAP_PATH=" in content
+    assert "ids_live_sensor_preflight.py" in content
+    assert '--dumpcap-binary ${IDS_LIVE_SENSOR_DUMPCAP_BINARY}' in content
+    assert '--interface "$IDS_LIVE_SENSOR_INTERFACE"' in content
+    assert '--dumpcap-binary "$IDS_LIVE_SENSOR_DUMPCAP_BINARY"' in content
+    assert '--extractor-command-prefix "$IDS_LIVE_SENSOR_EXTRACTOR_BINARY"' in content
+    assert "StandardOutput=journal" in content
+    assert "StandardError=journal" in content

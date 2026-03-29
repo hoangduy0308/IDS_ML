@@ -1,0 +1,422 @@
+﻿diff --git a/scripts/ids_live_sensor.py b/scripts/ids_live_sensor.py
+index 1660f5f..500ea80 100644
+--- a/scripts/ids_live_sensor.py
++++ b/scripts/ids_live_sensor.py
+@@ -19,6 +19,7 @@ from scripts.ids_feature_contract import FlowFeatureContract
+ from scripts.ids_inference import DEFAULT_FEATURE_COLUMNS_PATH, DEFAULT_MODEL_PATH, DEFAULT_THRESHOLD, build_inferencer
+ from scripts.ids_live_capture import (
+     CaptureBacklogExceededError,
++    CaptureFailure,
+     ClosedCaptureWindow,
+     DumpcapCaptureConfig,
+     RollingDumpcapCaptureManager,
+@@ -119,6 +120,15 @@ class LiveSensorDaemonSummary:
+     benign_predictions: int = 0
+ 
+ 
++class CaptureSessionFatalError(RuntimeError):
++    def __init__(self, failure: CaptureFailure) -> None:
++        self.failure = failure
++        super().__init__(
++            "fatal dumpcap exit "
++            f"(stage={failure.stage}, returncode={failure.returncode}, reason={failure.reason})"
++        )
++
++
+ class LiveSensorDaemon:
+     def __init__(
+         self,
+@@ -247,11 +257,19 @@ class LiveSensorDaemon:
+             popen_factory=popen_factory,
+         )
+         reader = notification_reader or self._default_notification_reader
++        observed_lines: list[str] = []
+         try:
+             for line in reader(process):
++                if self.capture_manager.parse_closed_window_notification(str(line)) is None:
++                    observed_lines.append(line)
+                 self.enqueue_notification_line(line)
+                 self.process_pending_windows()
+             self.process_pending_windows()
++            failure = self._classify_capture_session_exit(process, observed_lines)
++            if failure.is_fatal:
++                self._summary.restartable_failures += 1
++                self.sink.close(reason="capture-failure")
++                raise CaptureSessionFatalError(failure)
+             return self.close()
+         finally:
+             if process.poll() is None:
+@@ -264,6 +282,23 @@ class LiveSensorDaemon:
+         summary = self.sink.close()
+         return summary
+ 
++    def _classify_capture_session_exit(
++        self,
++        process: subprocess.Popen[str],
++        observed_lines: Sequence[str],
++    ) -> CaptureFailure:
++        returncode = process.wait()
++        stderr_lines = [line for line in observed_lines if str(line).strip()]
++        if process.stderr is not None:
++            remaining_stderr = process.stderr.read()
++            if remaining_stderr:
++                stderr_lines.append(remaining_stderr)
++        return self.capture_manager.classify_capture_failure(
++            stage="runtime",
++            returncode=returncode,
++            stderr="\n".join(stderr_lines),
++        )
++
+     def _apply_bridge_result(self, result: BridgeWindowResult) -> None:
+         for error in result.window_errors:
+             self.sink.record_extractor_failure(str(error.get("reason", "window_error")))
+diff --git a/scripts/ids_live_sensor_sinks.py b/scripts/ids_live_sensor_sinks.py
+index 5aee3cf..09aef04 100644
+--- a/scripts/ids_live_sensor_sinks.py
++++ b/scripts/ids_live_sensor_sinks.py
+@@ -87,6 +87,14 @@ def _write_jsonl_records(path: Path, records: Iterable[Mapping[str, Any]]) -> No
+             handle.write("\n")
+ 
+ 
++def _append_jsonl_record(path: Path, record: Mapping[str, Any]) -> None:
++    path.parent.mkdir(parents=True, exist_ok=True)
++    with path.open("a", encoding="utf-8", newline="\n") as handle:
++        handle.write(json.dumps(dict(record), ensure_ascii=False))
++        handle.write("\n")
++        handle.flush()
++
++
+ def _reserve_staged_path(final_path: Path, *, suffix: str) -> Path:
+     final_path.parent.mkdir(parents=True, exist_ok=True)
+     handle = tempfile.NamedTemporaryFile(
+@@ -228,20 +236,19 @@ class LiveSensorLocalSink:
+             summary_output_path=summary_output_path,
+         )
+         self._timestamp_source = timestamp_source
+-        self._alert_records: list[dict[str, Any]] = []
+-        self._quarantine_records: list[dict[str, Any]] = []
+-        self._summary_events: list[dict[str, Any]] = []
+         self._summary = LiveSensorSinkSummary()
+         self._closed = False
+ 
+     def record_alert(self, event: Mapping[str, Any]) -> None:
+         self._ensure_open()
+-        self._alert_records.append(dict(event))
++        payload = dict(event)
++        _append_jsonl_record(self.alerts_output_path, payload)
+         self._summary.alert_records += 1
+ 
+     def record_quarantine(self, event: Mapping[str, Any]) -> None:
+         self._ensure_open()
+-        self._quarantine_records.append(dict(event))
++        payload = dict(event)
++        _append_jsonl_record(self.quarantine_output_path, payload)
+         self._summary.quarantine_records += 1
+ 
+     def record_benign_prediction(self, count: int = 1) -> None:
+@@ -303,7 +310,8 @@ class LiveSensorLocalSink:
+             timestamp_source=self._timestamp_source,
+         )
+         event["journald_message"] = render_journald_summary(event)
+-        self._summary_events.append(event)
++        if self.summary_output_path is not None:
++            _append_jsonl_record(self.summary_output_path, event)
+         return event
+ 
+     def snapshot_summary(self) -> dict[str, Any]:
+@@ -317,49 +325,12 @@ class LiveSensorLocalSink:
+ 
+     def flush(self) -> dict[str, Any]:
+         self._ensure_open()
+-        if not self._summary_events:
+-            self.capture_summary(reason="flush")
++        return self.capture_summary(reason="flush")
+ 
+-        staged_paths: list[tuple[Path, Path]] = []
+-        try:
+-            alerts_temp_path = _reserve_staged_path(
+-                self.alerts_output_path,
+-                suffix=f"{self.alerts_output_path.suffix}.tmp"
+-                if self.alerts_output_path.suffix
+-                else ".tmp",
+-            )
+-            _write_jsonl_records(alerts_temp_path, self._alert_records)
+-            staged_paths.append((alerts_temp_path, self.alerts_output_path))
+-
+-            quarantine_temp_path = _reserve_staged_path(
+-                self.quarantine_output_path,
+-                suffix=f"{self.quarantine_output_path.suffix}.tmp"
+-                if self.quarantine_output_path.suffix
+-                else ".tmp",
+-            )
+-            _write_jsonl_records(quarantine_temp_path, self._quarantine_records)
+-            staged_paths.append((quarantine_temp_path, self.quarantine_output_path))
+-
+-            if self.summary_output_path is not None:
+-                summary_temp_path = _reserve_staged_path(
+-                    self.summary_output_path,
+-                    suffix=f"{self.summary_output_path.suffix}.tmp"
+-                    if self.summary_output_path.suffix
+-                    else ".tmp",
+-                )
+-                _write_jsonl_records(summary_temp_path, self._summary_events)
+-                staged_paths.append((summary_temp_path, self.summary_output_path))
+-
+-            _promote_staged_output_paths_transactionally(staged_paths)
+-        except BaseException:
+-            _cleanup_staged_paths(temp_path for temp_path, _ in staged_paths)
+-            raise
+-        return self.snapshot_summary()
+-
+-    def close(self) -> dict[str, Any]:
++    def close(self, *, reason: str = "close") -> dict[str, Any]:
+         if self._closed:
+             return self.snapshot_summary()
+-        summary = self.flush()
++        summary = self.capture_summary(reason=reason)
+         self._closed = True
+         return summary
+ 
+diff --git a/tests/test_ids_live_sensor.py b/tests/test_ids_live_sensor.py
+index 5493c35..901da78 100644
+--- a/tests/test_ids_live_sensor.py
++++ b/tests/test_ids_live_sensor.py
+@@ -14,6 +14,7 @@ if str(REPO_ROOT) not in sys.path:
+ from scripts.ids_live_capture import CaptureBacklogExceededError, ClosedCaptureWindow  # noqa: E402
+ from scripts.ids_live_flow_bridge import BridgeWindowResult  # noqa: E402
+ from scripts.ids_live_sensor import (  # noqa: E402
++    CaptureSessionFatalError,
+     DEFAULT_CAPTURE_WINDOW_DURATION_SECONDS,
+     LiveSensorDaemon,
+     LiveSensorDaemonConfig,
+@@ -190,6 +191,38 @@ class RecordingSink:
+         return self.capture_summary(reason="close")
+ 
+ 
++class FakeStderr:
++    def __init__(self, trailing_text: str = "") -> None:
++        self._trailing_text = trailing_text
++
++    def read(self) -> str:
++        value = self._trailing_text
++        self._trailing_text = ""
++        return value
++
++
++class FakeProcess:
++    def __init__(self, *, returncode: int, trailing_stderr: str = "") -> None:
++        self._returncode = returncode
++        self._waited = False
++        self._terminated = False
++        self.stderr = FakeStderr(trailing_stderr)
++
++    def wait(self) -> int:
++        self._waited = True
++        return self._returncode
++
++    def poll(self) -> int | None:
++        if self._waited:
++            return self._returncode
++        if self._terminated:
++            return 0
++        return None
++
++    def terminate(self) -> None:
++        self._terminated = True
++
++
+ def make_config(tmp_path: Path, **overrides: object) -> LiveSensorDaemonConfig:
+     kwargs = {
+         "spool_dir": tmp_path / "spool",
+@@ -326,3 +359,71 @@ def test_daemon_serve_notification_lines_handles_window_errors_and_quarantines(
+     )
+     assert len(load_jsonl(tmp_path / "quarantine.jsonl")) == 1
+     assert len(load_jsonl(tmp_path / "alerts.jsonl")) == 1
++
++
++def test_serve_capture_session_raises_on_fatal_dumpcap_exit(tmp_path: Path) -> None:
++    bridge = RecordingBridge()
++    runtime = RecordingRuntimeRunner()
++    sink = LiveSensorLocalSink(
++        alerts_output_path=tmp_path / "alerts.jsonl",
++        quarantine_output_path=tmp_path / "quarantine.jsonl",
++        summary_output_path=tmp_path / "summary.jsonl",
++    )
++    daemon = LiveSensorDaemon(
++        make_config(tmp_path),
++        bridge=bridge,
++        runtime_runner=runtime,
++        sink=sink,
++    )
++
++    lines = [
++        f"dumpcap: file closed {daemon.capture_manager.window_path_for_sequence(0)}",
++    ]
++
++    def popen_factory(*args: object, **kwargs: object) -> FakeProcess:
++        return FakeProcess(returncode=1)
++
++    with pytest.raises(CaptureSessionFatalError, match="fatal dumpcap exit") as exc_info:
++        daemon.serve_capture_session(
++            popen_factory=popen_factory,  # type: ignore[arg-type]
++            notification_reader=lambda process: iter(lines),
++        )
++
++    assert exc_info.value.failure.is_fatal is True
++    assert runtime.finalize_calls == 1
++    assert len(load_jsonl(tmp_path / "alerts.jsonl")) == 0
++    summaries = load_jsonl(tmp_path / "summary.jsonl")
++    assert summaries[-1]["reason"] == "capture-failure"
++
++
++def test_serve_capture_session_returns_cleanly_on_recoverable_dumpcap_exit(tmp_path: Path) -> None:
++    bridge = RecordingBridge()
++    runtime = RecordingRuntimeRunner()
++    sink = LiveSensorLocalSink(
++        alerts_output_path=tmp_path / "alerts.jsonl",
++        quarantine_output_path=tmp_path / "quarantine.jsonl",
++        summary_output_path=tmp_path / "summary.jsonl",
++    )
++    daemon = LiveSensorDaemon(
++        make_config(tmp_path),
++        bridge=bridge,
++        runtime_runner=runtime,
++        sink=sink,
++    )
++
++    lines = [
++        f"dumpcap: file closed {daemon.capture_manager.window_path_for_sequence(0)}",
++        "dumpcap: capture stopped by request",
++    ]
++
++    def popen_factory(*args: object, **kwargs: object) -> FakeProcess:
++        return FakeProcess(returncode=0)
++
++    summary = daemon.serve_capture_session(
++        popen_factory=popen_factory,  # type: ignore[arg-type]
++        notification_reader=lambda process: iter(lines),
++    )
++
++    assert summary["reason"] == "close"
++    assert runtime.finalize_calls == 1
++    assert len(load_jsonl(tmp_path / "summary.jsonl")) >= 2
+diff --git a/tests/test_ids_live_sensor_e2e.py b/tests/test_ids_live_sensor_e2e.py
+index a4182ea..52616b1 100644
+--- a/tests/test_ids_live_sensor_e2e.py
++++ b/tests/test_ids_live_sensor_e2e.py
+@@ -182,7 +182,7 @@ def test_ids_live_sensor_e2e_drives_alert_benign_quarantine_and_handoff(tmp_path
+     assert summary["alert_records"] == 1
+     assert summary["quarantine_records"] == 1
+     assert summary["benign_predictions"] == 1
+-    assert summary["reason"] == "snapshot"
++    assert summary["reason"] == "close"
+     assert summary["latest_queue_depth"] == 0
+ 
+     alerts = load_jsonl(tmp_path / "alerts.jsonl")
+diff --git a/tests/test_ids_live_sensor_sinks.py b/tests/test_ids_live_sensor_sinks.py
+index 226476a..fd69a40 100644
+--- a/tests/test_ids_live_sensor_sinks.py
++++ b/tests/test_ids_live_sensor_sinks.py
+@@ -51,6 +51,13 @@ def test_sink_persists_alerts_quarantines_and_summary(tmp_path: Path) -> None:
+         pending_window_count=2,
+     )
+ 
++    assert load_jsonl(tmp_path / "alerts.jsonl") == [
++        {"event_type": "model_prediction", "record_index": 0, "is_alert": True}
++    ]
++    assert load_jsonl(tmp_path / "quarantine.jsonl") == [
++        {"event_type": "schema_anomaly", "reason": "invalid_json", "record_index": 1}
++    ]
++
+     snapshot = sink.capture_summary(reason="periodic")
+     summary = sink.close()
+ 
+@@ -74,9 +81,10 @@ def test_sink_persists_alerts_quarantines_and_summary(tmp_path: Path) -> None:
+     assert summary["latest_extractor_runtime_seconds"] == 0.42
+     assert summary["total_extractor_runtime_seconds"] == 0.42
+     assert summary["processed_windows"] == 1
+-    assert summary["reason"] == "snapshot"
++    assert summary["reason"] == "close"
+     assert summary["journald_message"] == render_journald_summary(summary)
+-    assert summaries == [snapshot]
++    assert summaries[0] == snapshot
++    assert summaries[-1]["reason"] == "close"
+     assert "queue_depth=4" in snapshot["journald_message"]
+     assert "oldest_pending_window_age_seconds=1.250" in snapshot["journald_message"]
+     assert "extractor_runtime_seconds=0.420" in snapshot["journald_message"]
+@@ -102,50 +110,39 @@ def test_sink_rejects_directory_outputs_and_path_collisions(tmp_path: Path) -> N
+         )
+ 
+ 
+-def test_sink_close_rolls_back_on_promotion_failure(
+-    tmp_path: Path,
+-    monkeypatch: pytest.MonkeyPatch,
+-) -> None:
++def test_sink_preserves_history_across_restart_and_close(tmp_path: Path) -> None:
+     alerts_path = tmp_path / "alerts.jsonl"
+     quarantine_path = tmp_path / "quarantine.jsonl"
+     summary_path = tmp_path / "summary.jsonl"
+-    original_alerts = json.dumps({"existing": "alerts"}) + "\n"
+-    original_quarantine = json.dumps({"existing": "quarantine"}) + "\n"
+-    original_summary = json.dumps({"existing": "summary"}) + "\n"
+-    alerts_path.write_text(original_alerts, encoding="utf-8")
+-    quarantine_path.write_text(original_quarantine, encoding="utf-8")
+-    summary_path.write_text(original_summary, encoding="utf-8")
+ 
+-    sink = LiveSensorLocalSink(
++    first = LiveSensorLocalSink(
+         alerts_output_path=alerts_path,
+         quarantine_output_path=quarantine_path,
+         summary_output_path=summary_path,
++        timestamp_source=lambda: "2026-03-28T03:00:00+00:00",
+     )
+-    sink.record_alert({"event_type": "model_prediction", "record_index": 0, "is_alert": False})
+-    sink.record_quarantine({"event_type": "schema_anomaly", "reason": "bad_record"})
+-    sink.capture_summary(reason="periodic")
+-
+-    original_replace = Path.replace
+-    replace_calls = 0
+-
+-    def fail_second_promotion(self: Path, target: Path) -> Path:
+-        nonlocal replace_calls
+-        if target in (alerts_path, quarantine_path, summary_path):
+-            replace_calls += 1
+-            if replace_calls == 2:
+-                raise OSError("promotion exploded")
+-        return original_replace(self, target)
+-
+-    monkeypatch.setattr(Path, "replace", fail_second_promotion)
+-
+-    with pytest.raises(OSError, match="promotion exploded"):
+-        sink.close()
+-
+-    assert alerts_path.read_text(encoding="utf-8") == original_alerts
+-    assert quarantine_path.read_text(encoding="utf-8") == original_quarantine
+-    assert summary_path.read_text(encoding="utf-8") == original_summary
+-    assert list(tmp_path.glob(".*.tmp")) == []
+-    assert list(tmp_path.glob(".*.bak")) == []
++    first.record_alert({"event_type": "model_prediction", "record_index": 0, "is_alert": True})
++    first.record_quarantine({"event_type": "schema_anomaly", "reason": "bad_record"})
++    first.capture_summary(reason="periodic")
++    first.close()
++
++    second = LiveSensorLocalSink(
++        alerts_output_path=alerts_path,
++        quarantine_output_path=quarantine_path,
++        summary_output_path=summary_path,
++        timestamp_source=lambda: "2026-03-28T03:05:00+00:00",
++    )
++    second.record_alert({"event_type": "model_prediction", "record_index": 1, "is_alert": False})
++    second.capture_summary(reason="periodic")
++    second.close()
++
++    alerts = load_jsonl(alerts_path)
++    quarantines = load_jsonl(quarantine_path)
++    summaries = load_jsonl(summary_path)
++
++    assert [event["record_index"] for event in alerts] == [0, 1]
++    assert len(quarantines) == 1
++    assert [event["reason"] for event in summaries] == ["periodic", "close", "periodic", "close"]
+ 
+ 
+ def test_sink_snapshot_is_available_without_flushing(tmp_path: Path) -> None:

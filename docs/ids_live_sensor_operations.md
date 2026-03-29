@@ -23,7 +23,7 @@ Before the daemon starts, the deployment must verify:
 - the configured NIC name is correct
 - the spool and log directories are writable
 
-The sample service unit uses an explicit preflight command so the service fails fast if any of those requirements are missing.
+The sample service unit uses [ids_live_sensor_preflight.py](F:/Work/IDS_ML_New/scripts/ids_live_sensor_preflight.py) as an explicit preflight command so the service fails fast if any of those requirements are missing.
 
 ## Recommended paths
 
@@ -45,6 +45,8 @@ The sample service is designed to run as a supervisor-managed daemon:
 - explicit preflight checks before `ExecStart`
 
 `StateDirectory=` and `LogsDirectory=` are used so the service can own its local storage roots without relying on ad hoc bootstrap logic.
+
+The sample unit also keeps one source of truth for deployment paths and helper binaries by declaring them as environment variables and consuming those same values in both `ExecStartPre=` and `ExecStart=`.
 
 ## Runtime behavior
 
@@ -69,9 +71,9 @@ Operator expectations:
 The sensor keeps two operator-facing traces:
 
 - JSONL files for alerts, quarantines, and summaries
-- journald-friendly text summaries for quick inspection
+- stdout summary lines collected by journald for quick inspection
 
-The journal message should remain short and operational, while the JSONL files remain the durable record.
+The journal message should remain short and operational, while the JSONL files remain the durable record. The implementation formats the summary line once, appends the full JSONL summary, then writes the compact line to stdout so systemd can ship it to journald.
 
 ## Preflight details
 
@@ -85,7 +87,7 @@ The preflight check should fail if any of the following are missing:
 - a writable spool directory
 - a writable log directory
 
-If you need more elaborate setup logic, keep it in an explicit helper script or explicit shell invocation. Do not bury shell assumptions inside `ExecStart=`.
+If you need more elaborate setup logic, keep it in an explicit helper script such as [ids_live_sensor_preflight.py](F:/Work/IDS_ML_New/scripts/ids_live_sensor_preflight.py). Do not bury setup assumptions inside the main daemon code.
 
 ## Deferred features
 
@@ -102,7 +104,6 @@ Those are separate features and should not be confused with the local IDS sensor
 Useful checks during deployment and debugging:
 
 - verify the unit file content with `systemctl cat ids-live-sensor`
-- verify preflight binaries with `command -v dumpcap`, `command -v java`, and `command -v Cmd`
+- verify the exact configured binary paths still exist and are executable
 - verify the local outputs are writable and rotating as expected
 - inspect journald for the compact summary line when the daemon flushes telemetry
-

@@ -55,6 +55,12 @@ The daemon keeps the capture, bridge, runtime, and sink contracts separate so th
 - adapter/runtime record problems are quarantined
 - benign predictions are counted, not persisted as full records
 
+The runtime layer is not forced to finalize on every closed capture window.
+
+- each adapted record still gives the runtime a chance to flush on its own batch-size or flush-interval controls
+- the daemon only forces a final runtime drain when the session closes or fails
+- that keeps the latency model aligned with `capture window + extractor runtime + runtime flush interval`
+
 ## Flow semantics
 
 The sensor only promotes closed-window output into the model path.
@@ -73,7 +79,7 @@ The sensor writes three local output streams:
 
 - alert JSONL
 - quarantine JSONL
-- summary JSONL plus journald-friendly summary lines
+- summary JSONL plus compact stdout summary lines collected by journald
 
 The local sink is the source of truth for v1. It records:
 
@@ -84,6 +90,12 @@ The local sink is the source of truth for v1. It records:
 - extractor failures
 - queue depth and oldest-pending-window age
 - runtime and capture-window telemetry
+
+Summary formatting is separate from summary transport:
+
+- JSONL summaries are durable forensic artifacts
+- compact summary lines are emitted to stdout
+- the sample systemd unit routes stdout/stderr into journald for quick inspection
 
 ## Dependency and preflight contract
 
@@ -98,7 +110,7 @@ Required runtime pieces:
 - the final model bundle
 - writable spool and log paths
 
-The sample service unit in [deploy/systemd/ids-live-sensor.service](F:/Work/IDS_ML_New/deploy/systemd/ids-live-sensor.service) uses an explicit preflight check so deployment fails early if one of those dependencies is missing.
+The sample service unit in [deploy/systemd/ids-live-sensor.service](F:/Work/IDS_ML_New/deploy/systemd/ids-live-sensor.service) calls [ids_live_sensor_preflight.py](F:/Work/IDS_ML_New/scripts/ids_live_sensor_preflight.py) so deployment fails early if one of those dependencies is missing.
 
 ## Filesystem layout
 
@@ -141,4 +153,3 @@ These remain out of scope for this feature:
 - [scripts/ids_realtime_pipeline.py](F:/Work/IDS_ML_New/scripts/ids_realtime_pipeline.py)
 - [docs/ids_realtime_pipeline_architecture.md](F:/Work/IDS_ML_New/docs/ids_realtime_pipeline_architecture.md)
 - [docs/ids_record_adapter_architecture.md](F:/Work/IDS_ML_New/docs/ids_record_adapter_architecture.md)
-

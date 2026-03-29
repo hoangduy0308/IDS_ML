@@ -114,6 +114,84 @@ def test_bridge_surfaces_window_stage_error_when_extractor_fails(tmp_path: Path)
     assert error["extractor_output_path"].endswith("_Flow.csv")
 
 
+def test_bridge_surfaces_window_stage_error_when_extractor_runner_raises(tmp_path: Path) -> None:
+    window = make_window(tmp_path)
+
+    def fake_runner(
+        command: list[str] | tuple[str, ...],
+        window_arg: ClosedCaptureWindow,
+        output_path: Path,
+    ) -> ExtractorRunResult:
+        raise RuntimeError("boom")
+
+    bridge = LiveFlowBridge(
+        LiveFlowBridgeConfig(extractor_command_prefix=("cfm", "Cmd")),
+        extractor_runner=fake_runner,
+    )
+
+    result = bridge.bridge_window(window, output_dir=tmp_path / "flows")
+
+    assert result.adapted_records == ()
+    assert result.adapter_quarantines == ()
+    assert len(result.window_errors) == 1
+    error = result.window_errors[0]
+    assert error["stage"] == "extractor"
+    assert error["reason"] == "extractor_runner_failed"
+    assert error["stderr"] == "boom"
+    assert error["extractor_output_path"].endswith("_Flow.csv")
+
+
+def test_bridge_surfaces_window_stage_error_when_extractor_output_is_missing(tmp_path: Path) -> None:
+    window = make_window(tmp_path)
+
+    def fake_runner(
+        command: list[str] | tuple[str, ...],
+        window_arg: ClosedCaptureWindow,
+        output_path: Path,
+    ) -> ExtractorRunResult:
+        return ExtractorRunResult(returncode=0, stdout="ok", stderr="")
+
+    bridge = LiveFlowBridge(
+        LiveFlowBridgeConfig(extractor_command_prefix=("cfm", "Cmd")),
+        extractor_runner=fake_runner,
+    )
+
+    result = bridge.bridge_window(window, output_dir=tmp_path / "flows")
+
+    assert len(result.window_errors) == 1
+    error = result.window_errors[0]
+    assert error["stage"] == "output"
+    assert error["reason"] == "missing_extractor_output"
+    assert error["window_path"] == str(window.path)
+    assert error["extractor_output_path"].endswith("_Flow.csv")
+
+
+def test_bridge_surfaces_window_stage_error_when_extractor_output_is_invalid(tmp_path: Path) -> None:
+    window = make_window(tmp_path)
+
+    def fake_runner(
+        command: list[str] | tuple[str, ...],
+        window_arg: ClosedCaptureWindow,
+        output_path: Path,
+    ) -> ExtractorRunResult:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text("", encoding="utf-8")
+        return ExtractorRunResult(returncode=0, stdout="ok", stderr="")
+
+    bridge = LiveFlowBridge(
+        LiveFlowBridgeConfig(extractor_command_prefix=("cfm", "Cmd")),
+        extractor_runner=fake_runner,
+    )
+
+    result = bridge.bridge_window(window, output_dir=tmp_path / "flows")
+
+    assert len(result.window_errors) == 1
+    error = result.window_errors[0]
+    assert error["stage"] == "output"
+    assert error["reason"] == "invalid_extractor_output"
+    assert error["extractor_output_path"].endswith("_Flow.csv")
+
+
 def test_bridge_emits_adapter_quarantine_for_bad_extractor_rows(tmp_path: Path) -> None:
     window = make_window(tmp_path)
     bad_row = load_primary_sample_row()
@@ -144,6 +222,37 @@ def test_bridge_emits_adapter_quarantine_for_bad_extractor_rows(tmp_path: Path) 
     assert quarantine["extractor_output_path"].endswith("_Flow.csv")
 
 
+def test_bridge_surfaces_unknown_adapter_profile_with_window_stage_error(tmp_path: Path) -> None:
+    window = make_window(tmp_path)
+
+    def fake_runner(
+        command: list[str] | tuple[str, ...],
+        window_arg: ClosedCaptureWindow,
+        output_path: Path,
+    ) -> ExtractorRunResult:
+        write_csv_output(output_path, [load_primary_sample_row()])
+        return ExtractorRunResult(returncode=0, stdout="ok", stderr="")
+
+    bridge = LiveFlowBridge(
+        LiveFlowBridgeConfig(
+            extractor_command_prefix=("cfm", "Cmd"),
+            adapter_profile_id="unknown_profile",
+        ),
+        extractor_runner=fake_runner,
+    )
+
+    result = bridge.bridge_window(window, output_dir=tmp_path / "flows")
+
+    assert result.adapted_records == ()
+    assert result.adapter_quarantines == ()
+    assert len(result.window_errors) == 1
+    error = result.window_errors[0]
+    assert error["stage"] == "adapter"
+    assert error["reason"] == "unknown_adapter_profile"
+    assert error["window_path"] == str(window.path)
+    assert error["extractor_output_path"].endswith("_Flow.csv")
+
+
 def test_bridge_write_result_jsonl_matches_demo_artifact_shape(tmp_path: Path) -> None:
     window = make_window(tmp_path)
 
@@ -167,4 +276,3 @@ def test_bridge_write_result_jsonl_matches_demo_artifact_shape(tmp_path: Path) -
     demo_lines = [json.loads(line) for line in demo_path.read_text(encoding="utf-8").splitlines()]
     assert demo_lines[0]["event_type"] == "bridge_record"
     assert demo_lines[0]["record"]["adapter_profile"] == "cicflowmeter_primary_v1"
-

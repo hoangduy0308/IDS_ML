@@ -1,22 +1,30 @@
 from __future__ import annotations
 
+import csv
+import io
 import json
 from pathlib import Path
 import sys
+
+import pandas as pd
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from scripts.ids_feature_contract import FlowFeatureContract  # noqa: E402
+from scripts.ids_inference import DEFAULT_FEATURE_COLUMNS_PATH  # noqa: E402
 from scripts.ids_live_capture import ClosedCaptureWindow  # noqa: E402
 from scripts.ids_live_flow_bridge import (  # noqa: E402
     BridgeWindowResult,
+    ExtractorRunResult,
     LiveFlowBridge,
     LiveFlowBridgeConfig,
 )
 from scripts.ids_live_sensor import LiveSensorDaemon, LiveSensorDaemonConfig  # noqa: E402
 from scripts.ids_live_sensor_sinks import LiveSensorLocalSink  # noqa: E402
+from scripts.ids_realtime_pipeline import RealtimePipelineRunner  # noqa: E402
 
 
 def load_jsonl(path: Path) -> list[dict[str, object]]:
@@ -24,45 +32,59 @@ def load_jsonl(path: Path) -> list[dict[str, object]]:
         return [json.loads(line) for line in handle if line.strip()]
 
 
-class ScriptedRuntimeRunner:
-    def __init__(self) -> None:
-        self.ingested: list[tuple[int | None, float]] = []
-        self.finalize_calls = 0
+def load_primary_sample_row() -> dict[str, object]:
+    sample_path = REPO_ROOT / "artifacts" / "demo" / "ids_record_adapter_primary_sample.jsonl"
+    first_line = sample_path.read_text(encoding="utf-8").splitlines()[0]
+    return json.loads(first_line)
 
-    def ingest_record(
-        self,
-        record: dict[str, object],
-        *,
-        record_index: int | None,
-        now: float | None = None,
-    ) -> tuple[list[dict[str, object]], list[dict[str, object]], bool]:
-        flow_duration = float(record["Flow Duration"])
-        self.ingested.append((record_index, flow_duration))
-        is_alert = flow_duration >= 50.0
-        return (
-            [
+
+def write_csv_output(path: Path, rows: list[dict[str, object]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+class DeterministicInferencer:
+    def predict(self, frame: pd.DataFrame, *, include_input: bool = False) -> pd.DataFrame:
+        records: list[dict[str, object]] = []
+        for _, row in frame.iterrows():
+            flow_duration = float(row["Flow Duration"])
+            is_alert = flow_duration >= 50.0
+            records.append(
                 {
-                    "event_type": "model_prediction",
-                    "record_index": record_index,
+                    "attack_score": flow_duration / 100.0,
+                    "predicted_label": "attack" if is_alert else "benign",
                     "is_alert": is_alert,
-                    "threshold": 50.0,
+                    "threshold": 0.5,
                 }
-            ],
-            [],
-            False,
+            )
+        return pd.DataFrame.from_records(records)
+
+
+class RecordingBridge(LiveFlowBridge):
+    def __init__(self, fixtures_by_sequence: dict[int, list[dict[str, object]]]) -> None:
+        self.window_sequences: list[int] = []
+        self.result_handoff_paths: list[Path] = []
+
+        def fake_runner(
+            command: list[str] | tuple[str, ...],
+            window: ClosedCaptureWindow,
+            output_path: Path,
+        ) -> ExtractorRunResult:
+            sequence_number = window.sequence_number or 0
+            self.window_sequences.append(sequence_number)
+            rows = fixtures_by_sequence[sequence_number]
+            window.path.parent.mkdir(parents=True, exist_ok=True)
+            window.path.write_text("closed capture window\n", encoding="utf-8")
+            write_csv_output(output_path, rows)
+            return ExtractorRunResult(returncode=0, stdout="ok", stderr="")
+
+        super().__init__(
+            LiveFlowBridgeConfig(extractor_command_prefix=("Cmd",)),
+            extractor_runner=fake_runner,
         )
-
-    def finalize(self) -> tuple[list[dict[str, object]], list[dict[str, object]], bool]:
-        self.finalize_calls += 1
-        return [], [], False
-
-
-class FixtureBridge:
-    def __init__(self, fixture_events: list[dict[str, object]], handoff_dir: Path) -> None:
-        self.fixture_events = fixture_events
-        self.handoff_dir = handoff_dir
-        self.window_sequences: list[int | None] = []
-        self.handoff_writer = LiveFlowBridge(LiveFlowBridgeConfig())
 
     def bridge_window(
         self,
@@ -70,59 +92,10 @@ class FixtureBridge:
         *,
         output_dir: Path | None = None,
     ) -> BridgeWindowResult:
-        sequence_number = window.sequence_number or 0
-        self.window_sequences.append(sequence_number)
-        fixture = self.fixture_events[sequence_number]
-        extractor_output_path = Path(output_dir or window.path.parent) / (
-            f"{window.path.stem}_Flow.csv"
-        )
-        extractor_output_path.parent.mkdir(parents=True, exist_ok=True)
-        window.path.parent.mkdir(parents=True, exist_ok=True)
-        window.path.write_text("closed capture window\n", encoding="utf-8")
-        extractor_output_path.write_text("flow export\n", encoding="utf-8")
-
-        if fixture["event_type"] == "bridge_record":
-            result = BridgeWindowResult(
-                window=window,
-                extractor_output_path=extractor_output_path,
-                command=("Cmd",),
-                adapted_records=(
-                    {
-                        "event_type": "bridge_record",
-                        "window_path": str(window.path),
-                        "extractor_output_path": str(extractor_output_path),
-                        "record_index": fixture["record_index"],
-                        "profile": fixture["profile"],
-                        "record": dict(fixture["record"]),
-                    },
-                ),
-                adapter_quarantines=(),
-                window_errors=(),
-            )
-        else:
-            result = BridgeWindowResult(
-                window=window,
-                extractor_output_path=extractor_output_path,
-                command=("Cmd",),
-                adapted_records=(),
-                adapter_quarantines=(
-                    {
-                        "event_type": "adapter_quarantine",
-                        "profile": fixture["profile"],
-                        "reason": fixture["reason"],
-                        "record_index": fixture["record_index"],
-                        "window_path": str(window.path),
-                        "extractor_output_path": str(extractor_output_path),
-                    },
-                ),
-                window_errors=(),
-            )
-
-        self.handoff_dir.mkdir(parents=True, exist_ok=True)
-        self.handoff_writer.write_result_jsonl(
-            result,
-            self.handoff_dir / f"{window.path.stem}.jsonl",
-        )
+        result = super().bridge_window(window, output_dir=output_dir)
+        handoff_path = (output_dir or window.path.parent) / f"{window.path.stem}.jsonl"
+        self.write_result_jsonl(result, handoff_path)
+        self.result_handoff_paths.append(handoff_path)
         return result
 
 
@@ -132,76 +105,94 @@ def make_config(tmp_path: Path, **overrides: object) -> LiveSensorDaemonConfig:
         "alerts_output_path": tmp_path / "alerts.jsonl",
         "quarantine_output_path": tmp_path / "quarantine.jsonl",
         "summary_output_path": tmp_path / "summary.jsonl",
+        "max_batch_size": 2,
+        "flush_interval_seconds": 60.0,
     }
     kwargs.update(overrides)
     return LiveSensorDaemonConfig(**kwargs)
 
 
-def test_ids_live_sensor_e2e_drives_alert_benign_quarantine_and_handoff(tmp_path: Path) -> None:
-    fixture_path = REPO_ROOT / "artifacts" / "demo" / "ids_live_sensor_e2e_sample.jsonl"
-    fixture_events = load_jsonl(fixture_path)
+def test_ids_live_sensor_e2e_uses_real_bridge_and_runtime_handoff(tmp_path: Path) -> None:
+    base_row = load_primary_sample_row()
+    alert_row = dict(base_row)
+    alert_row["FlowDuration"] = 80.0
+    benign_row = dict(base_row)
+    benign_row["FlowDuration"] = 10.0
+    second_alert_row = dict(base_row)
+    second_alert_row["FlowDuration"] = 90.0
+    quarantine_row = dict(base_row)
+    quarantine_row["FlowDuration"] = "bad"
 
-    bridge = FixtureBridge(fixture_events, handoff_dir=tmp_path / "handoff")
-    runtime = ScriptedRuntimeRunner()
+    bridge = RecordingBridge(
+        {
+            0: [alert_row],
+            1: [benign_row],
+            2: [second_alert_row],
+            3: [quarantine_row],
+        }
+    )
+    runtime = RealtimePipelineRunner(
+        contract=FlowFeatureContract.from_feature_file(DEFAULT_FEATURE_COLUMNS_PATH),
+        inferencer=DeterministicInferencer(),
+        max_batch_size=2,
+        flush_interval_seconds=60.0,
+    )
+    summary_stream = io.StringIO()
     sink = LiveSensorLocalSink(
         alerts_output_path=tmp_path / "alerts.jsonl",
         quarantine_output_path=tmp_path / "quarantine.jsonl",
         summary_output_path=tmp_path / "summary.jsonl",
         timestamp_source=lambda: "2026-03-28T03:00:00+00:00",
+        summary_output_stream=summary_stream,
     )
     daemon = LiveSensorDaemon(
-        make_config(tmp_path, max_pending_windows=3),
+        make_config(tmp_path, max_pending_windows=4),
         bridge=bridge,
         runtime_runner=runtime,
         sink=sink,
     )
 
-    window0 = daemon.enqueue_notification_line(
-        f"dumpcap: file closed {daemon.capture_manager.window_path_for_sequence(0)}",
-        observed_at=10.0,
-    )
-    window1 = daemon.enqueue_notification_line(
-        f"dumpcap: file closed {daemon.capture_manager.window_path_for_sequence(1)}",
-        observed_at=11.0,
-    )
-    window2 = daemon.enqueue_notification_line(
-        f"dumpcap: file closed {daemon.capture_manager.window_path_for_sequence(2)}",
-        observed_at=12.0,
-    )
+    windows = [
+        daemon.enqueue_notification_line(
+            f"dumpcap: file closed {daemon.capture_manager.window_path_for_sequence(index)}",
+            observed_at=10.0 + index,
+        )
+        for index in range(4)
+    ]
 
     processed = daemon.process_pending_windows()
     summary = daemon.close()
 
-    assert window0 is not None
-    assert window1 is not None
-    assert window2 is not None
-    assert bridge.window_sequences == [0, 1, 2]
-    assert [entry[0] for entry in runtime.ingested] == [0, 1]
-    assert len(processed) == 3
-    assert summary["processed_windows"] == 3
-    assert summary["alert_records"] == 1
+    assert all(window is not None for window in windows)
+    assert bridge.window_sequences == [0, 1, 2, 3]
+    assert len(processed) == 4
+    assert summary["processed_windows"] == 4
+    assert summary["alert_records"] == 2
     assert summary["quarantine_records"] == 1
     assert summary["benign_predictions"] == 1
-    assert summary["reason"] == "snapshot"
-    assert summary["latest_queue_depth"] == 0
+    assert summary["reason"] == "close"
 
     alerts = load_jsonl(tmp_path / "alerts.jsonl")
     quarantines = load_jsonl(tmp_path / "quarantine.jsonl")
     summaries = load_jsonl(tmp_path / "summary.jsonl")
+    handoffs = [load_jsonl(path) for path in bridge.result_handoff_paths]
+    emitted_lines = [line for line in summary_stream.getvalue().splitlines() if line.strip()]
 
-    assert len(alerts) == 1
+    assert len(alerts) == 2
+    assert sum(1 for event in alerts if event["is_alert"] is True) == 2
     assert len(quarantines) == 1
-    assert any(event["reason"] == "window-enqueued" for event in summaries)
-    assert any(event["reason"] == "window-processed" for event in summaries)
-    assert (tmp_path / "handoff" / f"{window0.path.stem}.jsonl").exists()
-    assert (tmp_path / "handoff" / f"{window1.path.stem}.jsonl").exists()
-    assert (tmp_path / "handoff" / f"{window2.path.stem}.jsonl").exists()
-    assert not window0.path.exists()
-    assert not window1.path.exists()
-    assert not window2.path.exists()
-    assert not (tmp_path / "spool" / "flows" / f"{window0.path.stem}_Flow.csv").exists()
-    assert not (tmp_path / "spool" / "flows" / f"{window1.path.stem}_Flow.csv").exists()
-    assert not (tmp_path / "spool" / "flows" / f"{window2.path.stem}_Flow.csv").exists()
+    assert quarantines[0]["reason"] == "non_numeric_required_features"
+    assert any(event["reason"] == "runtime-flush" for event in summaries)
+    assert any(event["reason"] == "runtime-finalize" for event in summaries)
+    assert summaries[-1]["reason"] == "close"
+    assert emitted_lines[-1] == summary["journald_message"]
+    assert handoffs[0][0]["event_type"] == "bridge_record"
+    assert handoffs[-1][0]["event_type"] == "adapter_quarantine"
+
+    for window in windows:
+        assert window is not None
+        assert not window.path.exists()
+        assert not (tmp_path / "spool" / "flows" / f"{window.path.stem}_Flow.csv").exists()
 
 
 def test_demo_fixture_has_bridge_alert_benign_and_quarantine_variants() -> None:
