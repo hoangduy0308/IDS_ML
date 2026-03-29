@@ -353,6 +353,8 @@ def test_daemon_processes_windows_in_order_and_cleans_spool_artifacts(tmp_path: 
     assert summary["quarantine_records"] == 1
     assert summary["benign_predictions"] == 1
     assert summary["processed_windows"] == 2
+    assert summary["active_bundle"]["active_bundle_name"] == "bundle-under-test"
+    assert summary["active_bundle"]["compatibility_status"] == "compatible"
     assert not window0.path.exists()
     assert not window1.path.exists()
     assert not (tmp_path / "spool" / "flows" / "eth0-window-00000_Flow.csv").exists()
@@ -364,6 +366,7 @@ def test_daemon_processes_windows_in_order_and_cleans_spool_artifacts(tmp_path: 
     assert queue_depths[-1] == 0
     emitted_lines = [line for line in summary_stream.getvalue().splitlines() if line.strip()]
     assert emitted_lines[-1] == summary["journald_message"]
+    assert "active_bundle=bundle-under-test" in summary["journald_message"]
 
 
 def test_daemon_raises_when_pending_windows_exceed_ceiling(tmp_path: Path) -> None:
@@ -545,6 +548,7 @@ def test_daemon_uses_activation_contract_for_runtime_wiring(
     assert loaded_models == [(tmp_path / "bundle" / "model.cbm").resolve()]
     assert observed_feature_paths == [(tmp_path / "bundle" / "feature_columns.json").resolve()]
     assert daemon.config.activation_path == (tmp_path / "active_bundle.json").resolve()
+    assert daemon.sink.snapshot_summary()["active_bundle"]["active_bundle_name"] == "bundle-under-test"
 
 
 def test_daemon_fails_closed_when_activation_contract_missing(tmp_path: Path) -> None:

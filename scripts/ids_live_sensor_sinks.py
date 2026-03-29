@@ -24,6 +24,19 @@ class LiveSensorWindowTelemetry:
     processed_window_count: int = 0
 
 
+@dataclass(frozen=True)
+class LiveSensorActiveBundleState:
+    activation_path: str
+    active_bundle_root: str
+    active_bundle_name: str
+    compatibility_status: str
+    verification_status: str
+    manifest_version: int | None = None
+    activated_at: str | None = None
+    previous_bundle_root: str | None = None
+    previous_bundle_name: str | None = None
+
+
 @dataclass
 class LiveSensorSinkSummary:
     alert_records: int = 0
@@ -38,6 +51,7 @@ class LiveSensorSinkSummary:
     total_extractor_runtime_seconds: float = 0.0
     window_telemetry: LiveSensorWindowTelemetry | None = None
     extractor_failure_reasons: list[str] = field(default_factory=list)
+    active_bundle_state: LiveSensorActiveBundleState | None = None
 
 
 def _validate_output_path(path: Path) -> None:
@@ -196,6 +210,8 @@ def _summary_event_from_snapshot(
         event["window_telemetry"] = asdict(telemetry)
     if summary.extractor_failure_reasons:
         event["extractor_failure_reasons"] = list(summary.extractor_failure_reasons)
+    if summary.active_bundle_state is not None:
+        event["active_bundle"] = asdict(summary.active_bundle_state)
     return event
 
 
@@ -215,6 +231,12 @@ def render_journald_summary(event: Mapping[str, Any]) -> str:
         f"processed_windows={event.get('processed_windows', 0)}",
         f"extractor_failures={event.get('extractor_failures', 0)}",
     ]
+    active_bundle = event.get("active_bundle")
+    if isinstance(active_bundle, dict):
+        parts.append(f"active_bundle={active_bundle.get('active_bundle_name', 'unknown')}")
+        parts.append(
+            f"bundle_status={active_bundle.get('compatibility_status', 'unknown')}"
+        )
     return " ".join(parts)
 
 
@@ -311,6 +333,34 @@ class LiveSensorLocalSink:
         self._summary.total_extractor_runtime_seconds += telemetry.extractor_runtime_seconds
         self._summary.processed_windows += telemetry.processed_window_count
         return telemetry
+
+    def set_active_bundle_state(
+        self,
+        *,
+        activation_path: str,
+        active_bundle_root: str,
+        active_bundle_name: str,
+        compatibility_status: str,
+        verification_status: str,
+        manifest_version: int | None = None,
+        activated_at: str | None = None,
+        previous_bundle_root: str | None = None,
+        previous_bundle_name: str | None = None,
+    ) -> LiveSensorActiveBundleState:
+        self._ensure_open()
+        state = LiveSensorActiveBundleState(
+            activation_path=str(activation_path),
+            active_bundle_root=str(active_bundle_root),
+            active_bundle_name=str(active_bundle_name),
+            compatibility_status=str(compatibility_status),
+            verification_status=str(verification_status),
+            manifest_version=manifest_version,
+            activated_at=activated_at,
+            previous_bundle_root=previous_bundle_root,
+            previous_bundle_name=previous_bundle_name,
+        )
+        self._summary.active_bundle_state = state
+        return state
 
     def capture_summary(self, *, reason: str = "periodic") -> dict[str, Any]:
         self._ensure_open()

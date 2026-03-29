@@ -63,6 +63,12 @@ def test_sensor_output_ingest_handles_append_restart_partial_and_replace(tmp_pat
             "timestamp": "2026-03-28T14:45:02+00:00",
             "alert_records": 1,
             "quarantine_records": 1,
+            "active_bundle": {
+                "active_bundle_name": "bundle-a",
+                "compatibility_status": "compatible",
+                "activated_at": "2026-03-28T14:40:00+00:00",
+                "previous_bundle_name": "bundle-prev",
+            },
         },
     )
 
@@ -83,6 +89,10 @@ def test_sensor_output_ingest_handles_append_restart_partial_and_replace(tmp_pat
         assert _table_count(store, "alerts") == 1
         assert _table_count(store, "anomalies") == 1
         assert _table_count(store, "summaries") == 1
+        summary_row = store.list_recent_summaries(limit=1)[0]
+        payload = json.loads(summary_row["payload_json"])
+        assert payload["active_bundle"]["active_bundle_name"] == "bundle-a"
+        assert payload["active_bundle"]["previous_bundle_name"] == "bundle-prev"
 
         second_run = ingestor.run_once()
         assert second_run.alerts_ingested == 0
@@ -154,4 +164,3 @@ def test_sensor_output_ingest_handles_append_restart_partial_and_replace(tmp_pat
         assert _table_count(store, "alerts") == 4
     finally:
         store.close()
-

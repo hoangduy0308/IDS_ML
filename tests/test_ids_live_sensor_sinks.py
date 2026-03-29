@@ -53,6 +53,16 @@ def test_sink_persists_alerts_quarantines_and_summary(tmp_path: Path) -> None:
         capture_window_seconds=2.0,
         pending_window_count=2,
     )
+    sink.set_active_bundle_state(
+        activation_path="/var/lib/ids-live-sensor/active_bundle.json",
+        active_bundle_root="/opt/ids_ml_new/artifacts/final_model/catboost_full_data_v1",
+        active_bundle_name="catboost_full_data_v1",
+        compatibility_status="compatible",
+        verification_status="verified",
+        manifest_version=2,
+        activated_at="2026-03-28T02:59:00+00:00",
+        previous_bundle_name="catboost_full_data_v0",
+    )
 
     assert load_jsonl(tmp_path / "alerts.jsonl") == [
         {"event_type": "model_prediction", "record_index": 0, "is_alert": True}
@@ -84,6 +94,8 @@ def test_sink_persists_alerts_quarantines_and_summary(tmp_path: Path) -> None:
     assert summary["latest_extractor_runtime_seconds"] == 0.42
     assert summary["total_extractor_runtime_seconds"] == 0.42
     assert summary["processed_windows"] == 1
+    assert summary["active_bundle"]["active_bundle_name"] == "catboost_full_data_v1"
+    assert summary["active_bundle"]["previous_bundle_name"] == "catboost_full_data_v0"
     assert summary["reason"] == "close"
     assert summary["journald_message"] == render_journald_summary(summary)
     assert summaries[0] == snapshot
@@ -91,6 +103,7 @@ def test_sink_persists_alerts_quarantines_and_summary(tmp_path: Path) -> None:
     assert "queue_depth=4" in snapshot["journald_message"]
     assert "oldest_pending_window_age_seconds=1.250" in snapshot["journald_message"]
     assert "extractor_runtime_seconds=0.420" in snapshot["journald_message"]
+    assert "active_bundle=catboost_full_data_v1" in snapshot["journald_message"]
     assert summary["latest_queue_depth"] == 4
     emitted_lines = [line for line in summary_stream.getvalue().splitlines() if line.strip()]
     assert emitted_lines == [snapshot["journald_message"], summary["journald_message"]]

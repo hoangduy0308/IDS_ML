@@ -17,7 +17,7 @@ if __package__ in (None, ""):
 
 from scripts.ids_feature_contract import FlowFeatureContract
 from scripts.ids_inference import IDSInferencer, build_model_config
-from scripts.ids_model_bundle import DEFAULT_ACTIVATION_RECORD_NAME
+from scripts.ids_model_bundle import DEFAULT_ACTIVATION_RECORD_NAME, build_bundle_status_payload
 from scripts.ids_live_capture import (
     CaptureBacklogExceededError,
     CaptureFailure,
@@ -176,6 +176,20 @@ class LiveSensorDaemon:
             summary_output_path=config.summary_output_path,
             summary_output_stream=default_summary_output_stream(),
         )
+        if hasattr(self.sink, "set_active_bundle_state"):
+            active_bundle = build_bundle_status_payload(config.activation_path)
+            if active_bundle.get("runtime_ready"):
+                self.sink.set_active_bundle_state(
+                    activation_path=active_bundle["activation_path"],
+                    active_bundle_root=active_bundle["active_bundle_root"],
+                    active_bundle_name=active_bundle["active_bundle_name"],
+                    compatibility_status="compatible",
+                    verification_status=str(active_bundle.get("verification_status", "verified")),
+                    manifest_version=active_bundle.get("manifest_version"),
+                    activated_at=active_bundle.get("activated_at"),
+                    previous_bundle_root=active_bundle.get("previous_bundle_root"),
+                    previous_bundle_name=active_bundle.get("previous_bundle_name"),
+                )
         self._pending_windows: deque[ClosedCaptureWindow] = deque()
         self._summary = LiveSensorDaemonSummary()
         self._flow_output_dir = self.config.spool_dir / DEFAULT_FLOW_OUTPUT_DIRNAME

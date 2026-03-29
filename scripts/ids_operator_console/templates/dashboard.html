@@ -30,6 +30,22 @@
         <dt>Window Seconds</dt>
         <dd>{{ health.window_seconds or "N/A" }}</dd>
       </div>
+      <div>
+        <dt>Active Bundle</dt>
+        <dd>{{ health.active_bundle.active_bundle_name if health.active_bundle else "N/A" }}</dd>
+      </div>
+      <div>
+        <dt>Bundle Status</dt>
+        <dd>{{ health.active_bundle.compatibility_status if health.active_bundle else "unknown" }}</dd>
+      </div>
+      <div>
+        <dt>Activated At</dt>
+        <dd>{{ health.active_bundle.activated_at if health.active_bundle else "N/A" }}</dd>
+      </div>
+      <div>
+        <dt>Rollback Target</dt>
+        <dd>{{ health.active_bundle.previous_bundle_name if health.active_bundle and health.active_bundle.previous_bundle_name else "none" }}</dd>
+      </div>
     </dl>
   </article>
 

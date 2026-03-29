@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+import json
 
 from .config import OperatorConsoleConfig
+from .db import open_existing_operator_store
 from .migrations import inspect_operator_store
 
 
@@ -27,6 +29,34 @@ def build_liveness_payload(config: OperatorConsoleConfig) -> dict[str, Any]:
     }
 
 
+def _decode_payload(raw_payload: Any) -> dict[str, Any]:
+    if isinstance(raw_payload, dict):
+        return dict(raw_payload)
+    if isinstance(raw_payload, str):
+        try:
+            parsed = json.loads(raw_payload)
+        except json.JSONDecodeError:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
+def _load_latest_active_bundle_state(config: OperatorConsoleConfig) -> dict[str, Any] | None:
+    try:
+        store = open_existing_operator_store(config.database_path)
+    except Exception:
+        return None
+    try:
+        summaries = store.list_recent_summaries(limit=1)
+    finally:
+        store.close()
+    if not summaries:
+        return None
+    payload = _decode_payload(summaries[0].get("payload_json"))
+    active_bundle = payload.get("active_bundle")
+    return dict(active_bundle) if isinstance(active_bundle, dict) else None
+
+
 def build_readiness_payload(config: OperatorConsoleConfig) -> dict[str, Any]:
     inspection = inspect_operator_store(config.database_path)
     data_paths = {
@@ -41,6 +71,7 @@ def build_readiness_payload(config: OperatorConsoleConfig) -> dict[str, Any]:
     except ValueError:
         config_ok = False
 
+    active_bundle_state = _load_latest_active_bundle_state(config)
     ready = config_ok and inspection.runtime_ready and data_path_ok
     return {
         "status": "ok" if ready else "degraded",
@@ -72,6 +103,10 @@ def build_readiness_payload(config: OperatorConsoleConfig) -> dict[str, Any]:
             "data_paths": {
                 "ok": data_path_ok,
                 "streams": data_paths,
+            },
+            "active_bundle": {
+                "ok": active_bundle_state is not None,
+                "state": active_bundle_state,
             },
         },
     }

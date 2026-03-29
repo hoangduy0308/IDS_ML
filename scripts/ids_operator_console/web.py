@@ -55,6 +55,7 @@ def _prepare_health_snapshot(summaries: list[dict[str, Any]]) -> dict[str, Any]:
             "alert_count": 0,
             "anomaly_count": 0,
             "window_seconds": None,
+            "active_bundle": None,
             "source": {},
         }
 
@@ -66,6 +67,7 @@ def _prepare_health_snapshot(summaries: list[dict[str, Any]]) -> dict[str, Any]:
         "alert_count": payload.get("alert_count", 0),
         "anomaly_count": payload.get("anomaly_count", 0),
         "window_seconds": payload.get("window_seconds"),
+        "active_bundle": payload.get("active_bundle"),
         "source": payload,
     }
 

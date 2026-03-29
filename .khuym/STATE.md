@@ -17,7 +17,7 @@ Swarm Result:
 - Gate 2 approved by user
 
 Active Workers:
-- FuchsiaIsland — implementing `ids_ml_new-hup.2`
+- FuchsiaIsland — implementing `ids_ml_new-hup.4`
 
 Verification:
 Planning inputs carried forward:
@@ -53,7 +53,8 @@ Execution checkpoints:
 - mail thread `ids_ml_new-hup` started
 - `ids_ml_new-hup.1` completed and committed
 - `ids_ml_new-hup.3` completed and committed
-- `ids_ml_new-hup.2` claimed with file reservations
+- `ids_ml_new-hup.2` completed and committed
+- `ids_ml_new-hup.4` claimed with file reservations
 - bead `.3` verification passed:
   - `python -m py_compile scripts/ids_model_bundle.py scripts/ids_inference.py scripts/package_final_model.py tests/test_ids_model_bundle.py tests/test_ids_inference.py`
   - `python -m pytest -q tests/test_ids_model_bundle.py tests/test_ids_inference.py`
@@ -62,13 +63,15 @@ Execution checkpoints:
 - bead `.2` verification passed:
   - `python -m py_compile scripts/ids_model_bundle.py scripts/ids_model_bundle_manage.py tests/test_ids_model_bundle.py tests/test_ids_model_bundle_manage.py`
   - `python -m pytest -q tests/test_ids_model_bundle.py tests/test_ids_model_bundle_manage.py`
+- bead `.4` verification passed:
+  - `python -m py_compile scripts/ids_live_sensor_sinks.py scripts/ids_operator_console/health.py scripts/ids_operator_console/web.py tests/test_ids_live_sensor_sinks.py tests/test_ids_operator_console_web.py tests/test_ids_operator_console_ingest.py`
+  - `python -m pytest -q tests/test_ids_live_sensor_sinks.py tests/test_ids_operator_console_ingest.py tests/test_ids_operator_console_web.py`
 
 Execution Summary:
 - Validation complete; execution approved
-- Completed beads: `ids_ml_new-hup.1`
-- Completed beads: `ids_ml_new-hup.1`, `ids_ml_new-hup.3`
-- Current active bead: `ids_ml_new-hup.2`
-- Next ready bead after `.2`: `ids_ml_new-hup.4`
+- Completed beads: `ids_ml_new-hup.1`, `ids_ml_new-hup.3`, `ids_ml_new-hup.2`
+- Current active bead: `ids_ml_new-hup.4`
+- Next ready bead after `.4`: `ids_ml_new-hup.5`
 
 Handoff:
 - Swarming in progress

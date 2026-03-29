@@ -62,7 +62,17 @@ def _build_test_app(tmp_path: Path, *, environment: str = "development") -> tupl
         )
         store.store_summary(
             summary_ts="2026-03-28T16:22:00+00:00",
-            payload={"window_seconds": 60, "alert_count": 1, "anomaly_count": 1},
+            payload={
+                "window_seconds": 60,
+                "alert_count": 1,
+                "anomaly_count": 1,
+                "active_bundle": {
+                    "active_bundle_name": "bundle-a",
+                    "compatibility_status": "compatible",
+                    "activated_at": "2026-03-28T16:00:00+00:00",
+                    "previous_bundle_name": "bundle-prev",
+                },
+            },
         )
     finally:
         store.close()
@@ -100,12 +110,15 @@ def test_dashboard_renders_combined_console_with_health_and_anomaly_lane(tmp_pat
     assert "Sensor Health" in body
     assert "Anomaly Lane" in body
     assert "schema_anomaly" in body
+    assert "bundle-a" in body
+    assert "bundle-prev" in body
 
     ready = client.get("/readyz")
     assert ready.status_code == 200
     payload = ready.json()
     assert payload["ready"] is True
     assert payload["components"]["admin_bootstrap"]["admin_count"] == 1
+    assert payload["components"]["active_bundle"]["state"]["active_bundle_name"] == "bundle-a"
 
 
 def test_alert_detail_and_sensor_aware_json_endpoints(tmp_path: Path) -> None:
