@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+{% block title %}Alerts | IDS Operator Console{% endblock %}
+{% block content %}
+{% set visible_alerts = alerts|length %}
+{% set suppressed_alerts = alerts|selectattr("suppressed")|list|length %}
+{% set new_count = alerts|selectattr("triage_status", "equalto", "new")|list|length %}
+{% set acknowledged_count = alerts|selectattr("triage_status", "equalto", "acknowledged")|list|length %}
+{% set investigating_count = alerts|selectattr("triage_status", "equalto", "investigating")|list|length %}
+{% set resolved_count = alerts|selectattr("triage_status", "equalto", "resolved")|list|length %}
+{% set false_positive_count = alerts|selectattr("triage_status", "equalto", "false_positive")|list|length %}
+<section class="hero-panel">
+  <div class="hero-copy">
+    <span class="eyebrow">Primary Triage</span>
+    <h2>Alerts</h2>
+    <p>Run the scan-fast lane here, keep suppression visible, and drop into the alert detail view only when the row warrants read depth.</p>
+    <div class="hero-badges">
+      <span class="badge badge-outline status-{{ health.status|replace('_', '-') }}">{{ health.status }}</span>
+      <span class="badge badge-outline {% if readiness.ready %}status-resolved{% else %}status-degraded{% endif %}">
+        Readiness {{ "ready" if readiness.ready else "degraded" }}
+      </span>
+    </div>
+  </div>
+  <div class="hero-metrics">
+    <article class="metric-card">
+      <span class="metric-label">Visible alerts</span>
+      <strong>{{ visible_alerts }}</strong>
+      <span class="metric-footnote">Queue count after the current filter</span>
+    </article>
+    <article class="metric-card">
+      <span class="metric-label">Suppressed</span>
+      <strong>{{ suppressed_alerts }}</strong>
+      <span class="metric-footnote">Noise retained for analyst review</span>
+    </article>
+    <article class="metric-card">
+      <span class="metric-label">Investigating</span>
+      <strong>{{ investigating_count }}</strong>
+      <span class="metric-footnote">Items already in deep-read workflow</span>
+    </article>
+    <article class="metric-card">
+      <span class="metric-label">Notification</span>
+      <strong>{{ readiness.components.notification.state }}</strong>
+      <span class="metric-footnote">Delivery health for this same-host surface</span>
+    </article>
+  </div>
+</section>
+
+<section class="workspace-grid">
+  <article class="panel panel-primary">
+    <div class="section-heading">
+      <div>
+        <span class="eyebrow">Queue</span>
+        <h3>Alert Queue</h3>
+      </div>
+      <form method="get" action="/alerts" class="inline-form" aria-label="Alert filters">
+        <label>
+          Triage status
+          <select name="status_filter">
+            <option value="">all</option>
+            {% for state in triage_states %}
+            <option value="{{ state }}" {% if status_filter == state %}selected{% endif %}>{{ state }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <button type="submit" class="button">Apply</button>
+      </form>
+    </div>
+
+    <div class="badge-group">
+      <span class="badge status-new">new {{ new_count }}</span>
+      <span class="badge status-acknowledged">acknowledged {{ acknowledged_count }}</span>
+      <span class="badge status-investigating">investigating {{ investigating_count }}</span>
+      <span class="badge status-resolved">resolved {{ resolved_count }}</span>
+      <span class="badge status-false-positive">false_positive {{ false_positive_count }}</span>
+    </div>
+
+    {% if alerts %}
+    <div class="alert-list" role="list">
+      {% for alert in alerts %}
+      <a href="/alerts/{{ alert.id }}" class="alert-card" role="listitem">
+        <div class="alert-card__top">
+          <div>
+            <span class="alert-id">Alert {{ alert.id }}</span>
+            <h4>{{ alert.src_ip or "-" }} -> {{ alert.dst_ip or "-" }}</h4>
+          </div>
+          <div class="alert-badges">
+            <span class="badge status-{{ alert.triage_status|replace('_', '-') }}">{{ alert.triage_status }}</span>
+            <span class="badge severity-{{ (alert.severity or 'unknown')|lower }}">{{ alert.severity or "unknown" }}</span>
+            {% if alert.suppressed %}
+            <span class="badge badge-muted">suppressed</span>
+            {% endif %}
+          </div>
+        </div>
+        <dl class="alert-meta">
+          <div>
+            <dt>Source event</dt>
+            <dd>{{ alert.source_event_id or "-" }}</dd>
+          </div>
+          <div>
+            <dt>Protocol</dt>
+            <dd>{{ alert.protocol or alert.payload.protocol or "-" }}</dd>
+          </div>
+          <div>
+            <dt>Score</dt>
+            <dd>{{ alert.payload.score if alert.payload and alert.payload.score is defined else "-" }}</dd>
+          </div>
+          <div>
+            <dt>Event time</dt>
+            <dd>{{ alert.event_ts }}</dd>
+          </div>
+        </dl>
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+      <h4>No alerts in the selected triage view.</h4>
+      <p>Change the filter or wait for the next ingest window to repopulate the queue.</p>
+    </div>
+    {% endif %}
+  </article>
+
+  <aside class="stack">
+    <article class="panel">
+      <div class="section-heading">
+        <div>
+          <span class="eyebrow">Queue Signals</span>
+          <h3>Triage Distribution</h3>
+        </div>
+      </div>
+      <dl class="metrics">
+        <div>
+          <dt>New</dt>
+          <dd>{{ new_count }}</dd>
+        </div>
+        <div>
+          <dt>Acknowledged</dt>
+          <dd>{{ acknowledged_count }}</dd>
+        </div>
+        <div>
+          <dt>Investigating</dt>
+          <dd>{{ investigating_count }}</dd>
+        </div>
+        <div>
+          <dt>Resolved</dt>
+          <dd>{{ resolved_count }}</dd>
+        </div>
+        <div>
+          <dt>False Positive</dt>
+          <dd>{{ false_positive_count }}</dd>
+        </div>
+        <div>
+          <dt>Suppressed</dt>
+          <dd>{{ suppressed_alerts }}</dd>
+        </div>
+      </dl>
+    </article>
+
+    <article class="panel">
+      <div class="section-heading">
+        <div>
+          <span class="eyebrow">Runtime Context</span>
+          <h3>Health In Parallel</h3>
+        </div>
+      </div>
+      <dl class="metrics">
+        <div>
+          <dt>Status</dt>
+          <dd>{{ health.status }}</dd>
+        </div>
+        <div>
+          <dt>Latest Summary</dt>
+          <dd>{{ health.summary_ts or "N/A" }}</dd>
+        </div>
+        <div>
+          <dt>Alert Count</dt>
+          <dd>{{ health.alert_count }}</dd>
+        </div>
+        <div>
+          <dt>Anomaly Count</dt>
+          <dd>{{ health.anomaly_count }}</dd>
+        </div>
+        <div>
+          <dt>Active Bundle</dt>
+          <dd>{{ health.active_bundle.active_bundle_name if health.active_bundle else "N/A" }}</dd>
+        </div>
+      </dl>
+    </article>
+  </aside>
+</section>
+{% endblock %}

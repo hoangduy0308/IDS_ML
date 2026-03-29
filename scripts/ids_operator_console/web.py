@@ -136,6 +136,32 @@ def create_operator_console_web_app(
             "triage_states": ALERT_TRIAGE_STATES,
             "generated_at": _format_utc_now(),
             "public_base_url": config.public_base_url,
+            "primary_nav": [
+                {
+                    "key": "overview",
+                    "label": "Overview",
+                    "href": "/overview",
+                    "meta": "Alert pressure and runtime health",
+                },
+                {
+                    "key": "alerts",
+                    "label": "Alerts",
+                    "href": "/alerts",
+                    "meta": "Primary triage lane",
+                },
+                {
+                    "key": "operations",
+                    "label": "Operations",
+                    "href": "/operations",
+                    "meta": "Anomaly and readiness lane",
+                },
+                {
+                    "key": "reports",
+                    "label": "Reports",
+                    "href": "/reports",
+                    "meta": "History, windows, and summaries",
+                },
+            ],
             **context,
         }
         return templates.TemplateResponse(
@@ -159,12 +185,12 @@ def create_operator_console_web_app(
         redirect = require_authenticated_redirect(request, login_path="/login")
         if redirect is not None:
             return redirect
-        return RedirectResponse(url="/dashboard", status_code=status.HTTP_303_SEE_OTHER)
+        return RedirectResponse(url="/overview", status_code=status.HTTP_303_SEE_OTHER)
 
     @app.get("/login", response_class=HTMLResponse)
     def login_page(request: Request) -> Response:
         if current_admin(request) is not None:
-            return RedirectResponse(url="/dashboard", status_code=status.HTTP_303_SEE_OTHER)
+            return RedirectResponse(url="/overview", status_code=status.HTTP_303_SEE_OTHER)
         return render_template(request, "login.html", login_error=None)
 
     @app.post("/login", response_class=HTMLResponse)
@@ -190,7 +216,7 @@ def create_operator_console_web_app(
                 "login.html",
                 login_error="Invalid username or password.",
             )
-        return RedirectResponse(url="/dashboard", status_code=status.HTTP_303_SEE_OTHER)
+        return RedirectResponse(url="/overview", status_code=status.HTTP_303_SEE_OTHER)
 
     @app.post("/logout")
     async def logout_submit(
@@ -201,8 +227,51 @@ def create_operator_console_web_app(
         logout_admin(request)
         return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
 
+    @app.get("/overview", response_class=HTMLResponse)
+    def overview_page(request: Request) -> Response:
+        redirect = require_authenticated_redirect(request, login_path="/login")
+        if redirect is not None:
+            return redirect
+
+        runtime_store = _open_store()
+        try:
+            alerts = list_alerts_for_triage(
+                runtime_store,
+                include_suppressed=True,
+                limit=8,
+            )
+            anomalies = _with_decoded_payload(runtime_store.list_anomalies(limit=100))
+            summaries = _with_decoded_payload(runtime_store.list_recent_summaries(limit=30))
+        finally:
+            if store is None:
+                runtime_store.close()
+        health = _prepare_health_snapshot(summaries)
+        readiness = build_readiness_payload(config)
+        return render_template(
+            request,
+            "overview.html",
+            alerts=alerts,
+            anomalies=anomalies,
+            summaries=summaries,
+            health=health,
+            readiness=readiness,
+            page_key="overview",
+            page_meta={
+                "eyebrow": "Operator Surface",
+                "title": "Overview",
+                "summary": "Balance alert pressure with runtime health before dropping into triage or operations.",
+            },
+        )
+
     @app.get("/dashboard", response_class=HTMLResponse)
-    def dashboard(request: Request, status_filter: str | None = None) -> Response:
+    def dashboard_redirect(request: Request) -> Response:
+        redirect = require_authenticated_redirect(request, login_path="/login")
+        if redirect is not None:
+            return redirect
+        return RedirectResponse(url="/overview", status_code=status.HTTP_303_SEE_OTHER)
+
+    @app.get("/alerts", response_class=HTMLResponse)
+    def alerts_page(request: Request, status_filter: str | None = None) -> Response:
         redirect = require_authenticated_redirect(request, login_path="/login")
         if redirect is not None:
             return redirect
@@ -218,22 +287,26 @@ def create_operator_console_web_app(
                 include_suppressed=True,
                 limit=200,
             )
-            anomalies = _with_decoded_payload(runtime_store.list_anomalies(limit=100))
             summaries = _with_decoded_payload(runtime_store.list_recent_summaries(limit=30))
         finally:
             if store is None:
                 runtime_store.close()
+
         health = _prepare_health_snapshot(summaries)
         readiness = build_readiness_payload(config)
         return render_template(
             request,
-            "dashboard.html",
+            "alerts.html",
             alerts=alerts,
-            anomalies=anomalies,
-            summaries=summaries,
             health=health,
             readiness=readiness,
             status_filter=status_filter,
+            page_key="alerts",
+            page_meta={
+                "eyebrow": "Primary Triage",
+                "title": "Alerts",
+                "summary": "Scan the live queue fast, keep suppression visible, and jump into deep investigation only when needed.",
+            },
         )
 
     @app.get("/alerts/{alert_id}", response_class=HTMLResponse)
@@ -257,29 +330,13 @@ def create_operator_console_web_app(
             "alert_detail.html",
             alert=alert,
             timeline=timeline,
+            page_key="detail",
+            page_meta={
+                "eyebrow": "Investigation",
+                "title": "Alert Detail",
+                "summary": "Read deep on triage status, evidence, and investigation notes.",
+            },
         )
-
-    @app.post("/alerts/{alert_id}/status")
-    async def alert_update_status(
-        request: Request,
-        alert_id: int,
-        to_status: str = Form(...),
-        csrf_token: str = Form(""),
-    ) -> RedirectResponse:
-        validate_csrf_form(request, {"csrf_token": csrf_token})
-        admin = require_authenticated_api(request)
-        runtime_store = _open_store()
-        try:
-            transition_alert_status(
-                runtime_store,
-                alert_id=alert_id,
-                to_status=to_status,
-                changed_by=admin.username,
-            )
-        finally:
-            if store is None:
-                runtime_store.close()
-        return RedirectResponse(url=f"/alerts/{alert_id}", status_code=status.HTTP_303_SEE_OTHER)
 
     @app.post("/alerts/{alert_id}/notes")
     async def alert_add_note(
@@ -303,18 +360,61 @@ def create_operator_console_web_app(
                 runtime_store.close()
         return RedirectResponse(url=f"/alerts/{alert_id}", status_code=status.HTTP_303_SEE_OTHER)
 
-    @app.get("/anomalies", response_class=HTMLResponse)
-    def anomalies_page(request: Request) -> Response:
+    @app.post("/alerts/{alert_id}/status")
+    async def alert_update_status(
+        request: Request,
+        alert_id: int,
+        to_status: str = Form(...),
+        csrf_token: str = Form(""),
+    ) -> RedirectResponse:
+        validate_csrf_form(request, {"csrf_token": csrf_token})
+        admin = require_authenticated_api(request)
+        runtime_store = _open_store()
+        try:
+            transition_alert_status(
+                runtime_store,
+                alert_id=alert_id,
+                to_status=to_status,
+                changed_by=admin.username,
+            )
+        finally:
+            if store is None:
+                runtime_store.close()
+        return RedirectResponse(url=f"/alerts/{alert_id}", status_code=status.HTTP_303_SEE_OTHER)
+
+    @app.get("/operations", response_class=HTMLResponse)
+    def operations_page(request: Request) -> Response:
         redirect = require_authenticated_redirect(request, login_path="/login")
         if redirect is not None:
             return redirect
         runtime_store = _open_store()
         try:
             anomalies = _with_decoded_payload(runtime_store.list_anomalies(limit=200))
+            summaries = _with_decoded_payload(runtime_store.list_recent_summaries(limit=30))
         finally:
             if store is None:
                 runtime_store.close()
-        return render_template(request, "anomalies.html", anomalies=anomalies)
+
+        return render_template(
+            request,
+            "anomalies.html",
+            anomalies=anomalies,
+            health=_prepare_health_snapshot(summaries),
+            readiness=build_readiness_payload(config),
+            page_key="operations",
+            page_meta={
+                "eyebrow": "Operations",
+                "title": "Operations",
+                "summary": "Keep schema anomalies, readiness drift, and runtime posture separate from alert triage.",
+            },
+        )
+
+    @app.get("/anomalies", response_class=HTMLResponse)
+    def anomalies_redirect(request: Request) -> Response:
+        redirect = require_authenticated_redirect(request, login_path="/login")
+        if redirect is not None:
+            return redirect
+        return RedirectResponse(url="/operations", status_code=status.HTTP_303_SEE_OTHER)
 
     @app.get("/reports", response_class=HTMLResponse)
     def reports_page(request: Request) -> Response:
@@ -327,7 +427,17 @@ def create_operator_console_web_app(
         finally:
             if store is None:
                 runtime_store.close()
-        return render_template(request, "reports.html", summaries=summaries)
+        return render_template(
+            request,
+            "reports.html",
+            summaries=summaries,
+            page_key="reports",
+            page_meta={
+                "eyebrow": "Reports",
+                "title": "Reports",
+                "summary": "Review monitoring windows, alert volume, and anomaly history.",
+            },
+        )
 
     @app.get("/api/v1/console/snapshot", response_class=JSONResponse)
     def api_console_snapshot(
