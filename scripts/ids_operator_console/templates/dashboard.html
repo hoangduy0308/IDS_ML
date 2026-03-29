@@ -1,105 +1,214 @@
 {% extends "base.html" %}
 {% block title %}Dashboard | IDS Operator Console{% endblock %}
 {% block content %}
-<section class="panel">
-  <h2>Combined Console</h2>
-  <p>Central triage lane for model alerts with separate anomaly visibility.</p>
+{% set visible_alerts = alerts|length %}
+{% set suppressed_alerts = alerts|selectattr("suppressed")|list|length %}
+{% set new_count = alerts|selectattr("triage_status", "equalto", "new")|list|length %}
+{% set acknowledged_count = alerts|selectattr("triage_status", "equalto", "acknowledged")|list|length %}
+{% set investigating_count = alerts|selectattr("triage_status", "equalto", "investigating")|list|length %}
+{% set resolved_count = alerts|selectattr("triage_status", "equalto", "resolved")|list|length %}
+{% set false_positive_count = alerts|selectattr("triage_status", "equalto", "false_positive")|list|length %}
+<section class="hero-panel">
+  <div class="hero-copy">
+    <span class="eyebrow">Combined Console</span>
+    <h2>Combined Console</h2>
+    <p>Central triage lane for model alerts with separate anomaly visibility.</p>
+    <div class="hero-badges">
+      <span class="badge badge-outline {% if readiness.ready %}status-resolved{% else %}status-degraded{% endif %}">
+        Core readiness {{ "ready" if readiness.ready else "degraded" }}
+      </span>
+      <span class="badge badge-outline status-{{ health.status|replace('_', '-') }}">{{ health.status }}</span>
+      <span class="badge badge-outline status-{{ readiness.components.notification.state|replace('_', '-') }}">
+        Notification {{ readiness.components.notification.state }}
+      </span>
+    </div>
+  </div>
+  <div class="hero-metrics">
+    <article class="metric-card">
+      <span class="metric-label">Visible alerts</span>
+      <strong>{{ visible_alerts }}</strong>
+      <span class="metric-footnote">Current queue after filter</span>
+    </article>
+    <article class="metric-card">
+      <span class="metric-label">Suppressed</span>
+      <strong>{{ suppressed_alerts }}</strong>
+      <span class="metric-footnote">Noise retained for review</span>
+    </article>
+    <article class="metric-card">
+      <span class="metric-label">Anomalies</span>
+      <strong>{{ anomalies|length }}</strong>
+      <span class="metric-footnote">Tracked outside attack triage</span>
+    </article>
+    <article class="metric-card">
+      <span class="metric-label">Active bundle</span>
+      <strong>{{ health.active_bundle.active_bundle_name if health.active_bundle else "N/A" }}</strong>
+      <span class="metric-footnote">{{ health.active_bundle.compatibility_status if health.active_bundle else "unknown" }}</span>
+    </article>
+  </div>
 </section>
 
-<section class="grid two-col">
-  <article class="panel">
-    <h3>Sensor Health</h3>
-    <dl class="metrics">
+<section class="workspace-grid">
+  <article class="panel panel-primary">
+    <div class="section-heading">
       <div>
-        <dt>Status</dt>
-        <dd>{{ health.status }}</dd>
+        <span class="eyebrow">Action Surface</span>
+        <h3>Alert Queue</h3>
       </div>
-      <div>
-        <dt>Latest Summary</dt>
-        <dd>{{ health.summary_ts or "N/A" }}</dd>
-      </div>
-      <div>
-        <dt>Alert Count</dt>
-        <dd>{{ health.alert_count }}</dd>
-      </div>
-      <div>
-        <dt>Anomaly Count</dt>
-        <dd>{{ health.anomaly_count }}</dd>
-      </div>
-      <div>
-        <dt>Window Seconds</dt>
-        <dd>{{ health.window_seconds or "N/A" }}</dd>
-      </div>
-      <div>
-        <dt>Active Bundle</dt>
-        <dd>{{ health.active_bundle.active_bundle_name if health.active_bundle else "N/A" }}</dd>
-      </div>
-      <div>
-        <dt>Bundle Status</dt>
-        <dd>{{ health.active_bundle.compatibility_status if health.active_bundle else "unknown" }}</dd>
-      </div>
-      <div>
-        <dt>Activated At</dt>
-        <dd>{{ health.active_bundle.activated_at if health.active_bundle else "N/A" }}</dd>
-      </div>
-      <div>
-        <dt>Rollback Target</dt>
-        <dd>{{ health.active_bundle.previous_bundle_name if health.active_bundle and health.active_bundle.previous_bundle_name else "none" }}</dd>
-      </div>
-    </dl>
-  </article>
+      <form method="get" action="/dashboard" class="inline-form" aria-label="Alert filters">
+        <label>
+          Triage status
+          <select name="status_filter">
+            <option value="">all</option>
+            {% for state in triage_states %}
+            <option value="{{ state }}" {% if status_filter == state %}selected{% endif %}>{{ state }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <button type="submit" class="button">Apply</button>
+      </form>
+    </div>
 
-  <article class="panel">
-    <h3>Alert Queue</h3>
-    <form method="get" action="/dashboard" class="inline-form">
-      <label>
-        Triage status
-        <select name="status_filter">
-          <option value="">all</option>
-          {% for state in triage_states %}
-          <option value="{{ state }}" {% if status_filter == state %}selected{% endif %}>{{ state }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <button type="submit">Apply</button>
-    </form>
+    <div class="badge-group">
+      <span class="badge status-new">new {{ new_count }}</span>
+      <span class="badge status-acknowledged">acknowledged {{ acknowledged_count }}</span>
+      <span class="badge status-investigating">investigating {{ investigating_count }}</span>
+      <span class="badge status-resolved">resolved {{ resolved_count }}</span>
+      <span class="badge status-false-positive">false_positive {{ false_positive_count }}</span>
+    </div>
 
     {% if alerts %}
-    <table>
-      <thead>
-        <tr>
-          <th>ID</th>
-          <th>Status</th>
-          <th>Severity</th>
-          <th>Source</th>
-          <th>Suppressed</th>
-          <th>Event Time</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for alert in alerts %}
-        <tr>
-          <td><a href="/alerts/{{ alert.id }}">{{ alert.id }}</a></td>
-          <td>{{ alert.triage_status }}</td>
-          <td>{{ alert.severity or "unknown" }}</td>
-          <td>{{ alert.src_ip or "-" }}</td>
-          <td>{{ "yes" if alert.suppressed else "no" }}</td>
-          <td>{{ alert.event_ts }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <div class="alert-list" role="list">
+      {% for alert in alerts %}
+      <a href="/alerts/{{ alert.id }}" class="alert-card" role="listitem">
+        <div class="alert-card__top">
+          <div>
+            <span class="alert-id">Alert {{ alert.id }}</span>
+            <h4>{{ alert.src_ip or "-" }} -> {{ alert.dst_ip or "-" }}</h4>
+          </div>
+          <div class="alert-badges">
+            <span class="badge status-{{ alert.triage_status|replace('_', '-') }}">{{ alert.triage_status }}</span>
+            <span class="badge severity-{{ (alert.severity or 'unknown')|lower }}">{{ alert.severity or "unknown" }}</span>
+            {% if alert.suppressed %}
+            <span class="badge badge-muted">suppressed</span>
+            {% endif %}
+          </div>
+        </div>
+        <dl class="alert-meta">
+          <div>
+            <dt>Source event</dt>
+            <dd>{{ alert.source_event_id or "-" }}</dd>
+          </div>
+          <div>
+            <dt>Protocol</dt>
+            <dd>{{ alert.protocol or alert.payload.protocol or "-" }}</dd>
+          </div>
+          <div>
+            <dt>Score</dt>
+            <dd>{{ alert.payload.score if alert.payload and alert.payload.score is defined else "-" }}</dd>
+          </div>
+          <div>
+            <dt>Event time</dt>
+            <dd>{{ alert.event_ts }}</dd>
+          </div>
+        </dl>
+      </a>
+      {% endfor %}
+    </div>
     {% else %}
-    <p>No alerts in the selected triage view.</p>
+    <div class="empty-state">
+      <h4>No alerts in the selected triage view.</h4>
+      <p>Change the filter or wait for the next ingest window to repopulate the queue.</p>
+    </div>
     {% endif %}
   </article>
+
+  <aside class="stack">
+    <article class="panel">
+      <div class="section-heading">
+        <div>
+          <span class="eyebrow">Runtime</span>
+          <h3>Sensor Health</h3>
+        </div>
+      </div>
+      <dl class="metrics">
+        <div>
+          <dt>Status</dt>
+          <dd>{{ health.status }}</dd>
+        </div>
+        <div>
+          <dt>Latest Summary</dt>
+          <dd>{{ health.summary_ts or "N/A" }}</dd>
+        </div>
+        <div>
+          <dt>Alert Count</dt>
+          <dd>{{ health.alert_count }}</dd>
+        </div>
+        <div>
+          <dt>Anomaly Count</dt>
+          <dd>{{ health.anomaly_count }}</dd>
+        </div>
+        <div>
+          <dt>Window Seconds</dt>
+          <dd>{{ health.window_seconds or "N/A" }}</dd>
+        </div>
+        <div>
+          <dt>Active Bundle</dt>
+          <dd>{{ health.active_bundle.active_bundle_name if health.active_bundle else "N/A" }}</dd>
+        </div>
+        <div>
+          <dt>Bundle Status</dt>
+          <dd>{{ health.active_bundle.compatibility_status if health.active_bundle else "unknown" }}</dd>
+        </div>
+        <div>
+          <dt>Activated At</dt>
+          <dd>{{ health.active_bundle.activated_at if health.active_bundle else "N/A" }}</dd>
+        </div>
+        <div>
+          <dt>Rollback Target</dt>
+          <dd>{{ health.active_bundle.previous_bundle_name if health.active_bundle and health.active_bundle.previous_bundle_name else "none" }}</dd>
+        </div>
+      </dl>
+    </article>
+
+    <article class="panel">
+      <div class="section-heading">
+        <div>
+          <span class="eyebrow">Readyz</span>
+          <h3>Console Readiness</h3>
+        </div>
+      </div>
+      <div class="readiness-stack">
+        <div class="readiness-item">
+          <span>Schema</span>
+          <strong>{{ readiness.components.schema.state }}</strong>
+        </div>
+        <div class="readiness-item">
+          <span>Admin bootstrap</span>
+          <strong>{{ readiness.components.admin_bootstrap.admin_count }}</strong>
+        </div>
+        <div class="readiness-item">
+          <span>Data paths</span>
+          <strong>{{ "ok" if readiness.components.data_paths.ok else "degraded" }}</strong>
+        </div>
+        <div class="readiness-item">
+          <span>Notification</span>
+          <strong>{{ readiness.components.notification.state }}</strong>
+        </div>
+      </div>
+    </article>
+  </aside>
 </section>
 
 <section class="panel">
-  <h3>Anomaly Lane</h3>
-  <p>Operational anomalies remain separate from attack-alert triage.</p>
+  <div class="section-heading">
+    <div>
+      <span class="eyebrow">Operational Isolation</span>
+      <h3>Anomaly Lane</h3>
+    </div>
+    <p class="section-copy">Operational anomalies remain separate from attack-alert triage.</p>
+  </div>
   {% if anomalies %}
-  <table>
+  <table class="data-table">
     <thead>
       <tr>
         <th>ID</th>
@@ -120,7 +229,10 @@
     </tbody>
   </table>
   {% else %}
-  <p>No anomalies recorded.</p>
+  <div class="empty-state">
+    <h4>No anomalies recorded.</h4>
+    <p>The operational lane is clear for the current ingest horizon.</p>
+  </div>
   {% endif %}
 </section>
 {% endblock %}
