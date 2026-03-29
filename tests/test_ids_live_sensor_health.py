@@ -119,6 +119,13 @@ def append_summary_event(
         handle.write("\n")
 
 
+def append_raw_summary_line(summary_output_path: Path, raw_line: str) -> None:
+    summary_output_path.parent.mkdir(parents=True, exist_ok=True)
+    with summary_output_path.open("a", encoding="utf-8", newline="\n") as handle:
+        handle.write(raw_line)
+        handle.write("\n")
+
+
 def test_build_live_sensor_health_payload_reports_healthy_matching_evidence(tmp_path: Path) -> None:
     config, bundle_root = make_config(tmp_path)
     append_summary_event(
@@ -126,7 +133,7 @@ def test_build_live_sensor_health_payload_reports_healthy_matching_evidence(tmp_
         activation_path=config.activation_path,
         bundle_root=bundle_root,
         bundle_name="bundle-under-test",
-        timestamp="2026-03-29T03:01:00+00:00",
+        timestamp="2026-03-29T03:01:00Z",
     )
 
     payload = build_live_sensor_health_payload(
@@ -144,6 +151,23 @@ def test_build_live_sensor_health_payload_reports_healthy_matching_evidence(tmp_
     assert runtime_evidence["latest_summary"]["active_bundle"]["active_bundle_name"] == "bundle-under-test"
 
 
+def test_build_live_sensor_health_payload_rejects_empty_summary_file(tmp_path: Path) -> None:
+    config, _ = make_config(tmp_path)
+    config.summary_output_path.parent.mkdir(parents=True, exist_ok=True)
+    config.summary_output_path.write_text("\n\n", encoding="utf-8")
+
+    payload = build_live_sensor_health_payload(
+        config,
+        now=datetime(2026, 3, 29, 3, 2, 0, tzinfo=timezone.utc),
+    )
+
+    assert payload["ready"] is False
+    runtime_evidence = payload["components"]["runtime_evidence"]
+    assert runtime_evidence["ok"] is False
+    assert runtime_evidence["state"] == "missing"
+    assert runtime_evidence["detail"] == "summary output exists but contains no events"
+
+
 def test_build_live_sensor_health_payload_rejects_missing_summary_evidence(tmp_path: Path) -> None:
     config, _ = make_config(tmp_path)
 
@@ -157,6 +181,95 @@ def test_build_live_sensor_health_payload_rejects_missing_summary_evidence(tmp_p
     assert runtime_evidence["ok"] is False
     assert runtime_evidence["state"] == "missing"
     assert runtime_evidence["detail"] == "summary output not found"
+
+
+def test_build_live_sensor_health_payload_rejects_unexpected_summary_event(tmp_path: Path) -> None:
+    config, bundle_root = make_config(tmp_path)
+    append_raw_summary_line(
+        config.summary_output_path,
+        json.dumps(
+            {
+                "event_type": "something_else",
+                "timestamp": "2026-03-29T03:01:00+00:00",
+                "active_bundle": {
+                    "activation_path": str(config.activation_path.resolve()),
+                    "active_bundle_root": str(bundle_root.resolve()),
+                    "active_bundle_name": "bundle-under-test",
+                },
+            }
+        ),
+    )
+
+    payload = build_live_sensor_health_payload(
+        config,
+        now=datetime(2026, 3, 29, 3, 2, 0, tzinfo=timezone.utc),
+    )
+
+    assert payload["ready"] is False
+    runtime_evidence = payload["components"]["runtime_evidence"]
+    assert runtime_evidence["ok"] is False
+    assert runtime_evidence["state"] == "unexpected_event"
+
+
+def test_build_live_sensor_health_payload_rejects_malformed_summary_json(tmp_path: Path) -> None:
+    config, _ = make_config(tmp_path)
+    append_raw_summary_line(config.summary_output_path, "{not-json")
+
+    payload = build_live_sensor_health_payload(
+        config,
+        now=datetime(2026, 3, 29, 3, 2, 0, tzinfo=timezone.utc),
+    )
+
+    assert payload["ready"] is False
+    runtime_evidence = payload["components"]["runtime_evidence"]
+    assert runtime_evidence["ok"] is False
+    assert runtime_evidence["state"] == "malformed"
+    assert "Expecting property name enclosed in double quotes" in runtime_evidence["detail"]
+
+
+def test_build_live_sensor_health_payload_rejects_invalid_summary_timestamp(tmp_path: Path) -> None:
+    config, bundle_root = make_config(tmp_path)
+    append_summary_event(
+        config.summary_output_path,
+        activation_path=config.activation_path,
+        bundle_root=bundle_root,
+        bundle_name="bundle-under-test",
+        timestamp="not-a-timestamp",
+    )
+
+    payload = build_live_sensor_health_payload(
+        config,
+        now=datetime(2026, 3, 29, 3, 2, 0, tzinfo=timezone.utc),
+    )
+
+    assert payload["ready"] is False
+    runtime_evidence = payload["components"]["runtime_evidence"]
+    assert runtime_evidence["ok"] is False
+    assert runtime_evidence["state"] == "malformed"
+    assert runtime_evidence["detail"] == "latest summary event timestamp is missing or invalid"
+
+
+def test_build_live_sensor_health_payload_rejects_capture_failure_summary(tmp_path: Path) -> None:
+    config, bundle_root = make_config(tmp_path)
+    append_summary_event(
+        config.summary_output_path,
+        activation_path=config.activation_path,
+        bundle_root=bundle_root,
+        bundle_name="bundle-under-test",
+        timestamp="2026-03-29T03:01:00+00:00",
+        reason="capture-failure",
+    )
+
+    payload = build_live_sensor_health_payload(
+        config,
+        now=datetime(2026, 3, 29, 3, 2, 0, tzinfo=timezone.utc),
+    )
+
+    assert payload["ready"] is False
+    runtime_evidence = payload["components"]["runtime_evidence"]
+    assert runtime_evidence["ok"] is False
+    assert runtime_evidence["state"] == "capture_failure"
+    assert runtime_evidence["detail"] == "latest summary event reports capture-failure"
 
 
 def test_build_live_sensor_health_payload_rejects_stale_summary_evidence(tmp_path: Path) -> None:
@@ -202,3 +315,171 @@ def test_build_live_sensor_health_payload_rejects_mismatched_bundle_evidence(tmp
     assert runtime_evidence["ok"] is False
     assert runtime_evidence["state"] == "mismatch"
     assert str(bundle_root) in runtime_evidence["detail"]
+
+
+def test_build_live_sensor_health_payload_handles_empty_summary_file(tmp_path: Path) -> None:
+    config, _ = make_config(tmp_path)
+    config.summary_output_path.parent.mkdir(parents=True, exist_ok=True)
+    config.summary_output_path.write_text("", encoding="utf-8")
+
+    payload = build_live_sensor_health_payload(
+        config,
+        now=datetime(2026, 3, 29, 3, 2, 0, tzinfo=timezone.utc),
+    )
+
+    runtime_evidence = payload["components"]["runtime_evidence"]
+    assert payload["ready"] is False
+    assert runtime_evidence["state"] == "missing"
+    assert runtime_evidence["detail"] == "summary output exists but contains no events"
+
+
+def test_build_live_sensor_health_payload_rejects_unexpected_event_type(tmp_path: Path) -> None:
+    config, bundle_root = make_config(tmp_path)
+    append_summary_event(
+        config.summary_output_path,
+        activation_path=config.activation_path,
+        bundle_root=bundle_root,
+        bundle_name="bundle-under-test",
+        timestamp="2026-03-29T03:01:00+00:00",
+    )
+    payload = json.loads(config.summary_output_path.read_text(encoding="utf-8").strip())
+    payload["event_type"] = "other_event"
+    config.summary_output_path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+
+    result = build_live_sensor_health_payload(
+        config,
+        now=datetime(2026, 3, 29, 3, 2, 0, tzinfo=timezone.utc),
+    )
+
+    runtime_evidence = result["components"]["runtime_evidence"]
+    assert result["ready"] is False
+    assert runtime_evidence["state"] == "unexpected_event"
+    assert "not a live_sensor_summary" in runtime_evidence["detail"]
+
+
+def test_build_live_sensor_health_payload_rejects_malformed_summary_json(tmp_path: Path) -> None:
+    config, _ = make_config(tmp_path)
+    config.summary_output_path.parent.mkdir(parents=True, exist_ok=True)
+    config.summary_output_path.write_text("{bad-json\n", encoding="utf-8")
+
+    payload = build_live_sensor_health_payload(
+        config,
+        now=datetime(2026, 3, 29, 3, 2, 0, tzinfo=timezone.utc),
+    )
+
+    runtime_evidence = payload["components"]["runtime_evidence"]
+    assert payload["ready"] is False
+    assert runtime_evidence["state"] == "malformed"
+    assert "Expecting property name enclosed in double quotes" in runtime_evidence["detail"]
+
+
+def test_build_live_sensor_health_payload_rejects_invalid_timestamp(tmp_path: Path) -> None:
+    config, bundle_root = make_config(tmp_path)
+    append_summary_event(
+        config.summary_output_path,
+        activation_path=config.activation_path,
+        bundle_root=bundle_root,
+        bundle_name="bundle-under-test",
+        timestamp="not-a-timestamp",
+    )
+
+    payload = build_live_sensor_health_payload(
+        config,
+        now=datetime(2026, 3, 29, 3, 2, 0, tzinfo=timezone.utc),
+    )
+
+    runtime_evidence = payload["components"]["runtime_evidence"]
+    assert payload["ready"] is False
+    assert runtime_evidence["state"] == "malformed"
+    assert runtime_evidence["detail"] == "latest summary event timestamp is missing or invalid"
+
+
+def test_build_live_sensor_health_payload_rejects_capture_failure_event(tmp_path: Path) -> None:
+    config, bundle_root = make_config(tmp_path)
+    append_summary_event(
+        config.summary_output_path,
+        activation_path=config.activation_path,
+        bundle_root=bundle_root,
+        bundle_name="bundle-under-test",
+        timestamp="2026-03-29T03:01:00+00:00",
+        reason="capture-failure",
+    )
+
+    payload = build_live_sensor_health_payload(
+        config,
+        now=datetime(2026, 3, 29, 3, 2, 0, tzinfo=timezone.utc),
+    )
+
+    runtime_evidence = payload["components"]["runtime_evidence"]
+    assert payload["ready"] is False
+    assert runtime_evidence["state"] == "capture_failure"
+    assert runtime_evidence["detail"] == "latest summary event reports capture-failure"
+
+
+def test_build_live_sensor_health_payload_handles_invalid_activation_contract(tmp_path: Path) -> None:
+    config, bundle_root = make_config(tmp_path)
+    append_summary_event(
+        config.summary_output_path,
+        activation_path=config.activation_path,
+        bundle_root=bundle_root,
+        bundle_name="bundle-under-test",
+        timestamp="2026-03-29T03:01:00+00:00",
+    )
+    config.activation_path.write_text("{bad-json\n", encoding="utf-8")
+
+    payload = build_live_sensor_health_payload(
+        config,
+        now=datetime(2026, 3, 29, 3, 2, 0, tzinfo=timezone.utc),
+    )
+
+    assert payload["ready"] is False
+    assert payload["components"]["activation_contract"]["state"] == "invalid"
+    assert payload["components"]["runtime_evidence"]["state"] == "current"
+
+
+def test_build_live_sensor_health_payload_normalizes_z_suffix_timestamps(tmp_path: Path) -> None:
+    config, bundle_root = make_config(tmp_path)
+    append_summary_event(
+        config.summary_output_path,
+        activation_path=config.activation_path,
+        bundle_root=bundle_root,
+        bundle_name="bundle-under-test",
+        timestamp="2026-03-29T03:01:00Z",
+    )
+
+    payload = build_live_sensor_health_payload(
+        config,
+        now=datetime(2026, 3, 29, 3, 2, 0, tzinfo=timezone.utc),
+    )
+
+    runtime_evidence = payload["components"]["runtime_evidence"]
+    assert payload["ready"] is True
+    assert runtime_evidence["state"] == "current"
+    assert runtime_evidence["timestamp"] == "2026-03-29T03:01:00+00:00"
+
+
+def test_build_live_sensor_health_payload_rejects_invalid_activation_contract_even_with_current_summary(
+    tmp_path: Path,
+) -> None:
+    config, bundle_root = make_config(tmp_path)
+    config.activation_path.write_text("{not-json", encoding="utf-8")
+    append_summary_event(
+        config.summary_output_path,
+        activation_path=config.activation_path,
+        bundle_root=bundle_root,
+        bundle_name="bundle-under-test",
+        timestamp="2026-03-29T03:01:00+00:00",
+    )
+
+    payload = build_live_sensor_health_payload(
+        config,
+        now=datetime(2026, 3, 29, 3, 2, 0, tzinfo=timezone.utc),
+    )
+
+    assert payload["ready"] is False
+    activation_contract = payload["components"]["activation_contract"]
+    assert activation_contract["ok"] is False
+    assert activation_contract["state"] == "invalid"
+    runtime_evidence = payload["components"]["runtime_evidence"]
+    assert runtime_evidence["ok"] is True
+    assert runtime_evidence["state"] == "current"

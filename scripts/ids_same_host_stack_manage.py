@@ -197,7 +197,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "bootstrap":
         payload = run_stack_bootstrap(config)
         _print_payload(payload, as_json=args.json_output)
-        return 0
+        return 0 if payload.get("bootstrap_ready") else 2
 
     if args.command == "status":
         payload = build_stack_status_payload(config)

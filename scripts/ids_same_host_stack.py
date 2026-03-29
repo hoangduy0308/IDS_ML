@@ -75,6 +75,38 @@ class SameHostStackConfig:
     admin_password_file: Path | None = None
 
 
+def _build_failure_payload(exc: Exception, **payload: Any) -> dict[str, Any]:
+    payload["error_type"] = type(exc).__name__
+    payload["detail"] = str(exc)
+    return payload
+
+
+def _build_failure_component(
+    *,
+    exc: Exception,
+    state: str,
+    payload: dict[str, Any] | None = None,
+    detail: str | None = None,
+    **extra: Any,
+) -> dict[str, Any]:
+    component: dict[str, Any] = {
+        "ok": False,
+        "state": state,
+        "detail": str(exc) if detail is None else detail,
+        "payload": _build_failure_payload(exc, **(payload or {})),
+    }
+    component.update(extra)
+    return component
+
+
+def _path_state_from_exception(exc: Exception) -> str:
+    if isinstance(exc, FileNotFoundError):
+        return "missing"
+    if isinstance(exc, PermissionError):
+        return "permission_denied"
+    return "invalid"
+
+
 def _require_existing_file(path: Path, *, name: str, executable: bool = False) -> Path:
     resolved = Path(path).resolve()
     if not resolved.is_absolute():
@@ -204,7 +236,14 @@ def _default_proxy_checker(url: str, timeout_seconds: float) -> tuple[int, str |
 
 
 def _build_bundle_component(config: SameHostStackConfig) -> dict[str, Any]:
-    payload = build_bundle_status_payload(Path(config.activation_path).resolve())
+    try:
+        payload = build_bundle_status_payload(Path(config.activation_path).resolve())
+    except Exception as exc:
+        return _build_failure_component(
+            exc=exc,
+            state="invalid",
+            payload={"activation_path": str(Path(config.activation_path).resolve())},
+        )
     ok = bool(payload.get("runtime_ready"))
     return {
         "ok": ok,
@@ -215,14 +254,24 @@ def _build_bundle_component(config: SameHostStackConfig) -> dict[str, Any]:
 
 
 def _build_live_sensor_component(config: SameHostStackConfig) -> dict[str, Any]:
-    payload = build_live_sensor_health_payload(
-        LiveSensorHealthConfig(
-            activation_path=config.activation_path,
-            summary_output_path=config.summary_output_path,
-            freshness_window_seconds=config.sensor_freshness_window_seconds,
-        ),
-        now=datetime.now(timezone.utc),
-    )
+    try:
+        payload = build_live_sensor_health_payload(
+            LiveSensorHealthConfig(
+                activation_path=config.activation_path,
+                summary_output_path=config.summary_output_path,
+                freshness_window_seconds=config.sensor_freshness_window_seconds,
+            ),
+            now=datetime.now(timezone.utc),
+        )
+    except Exception as exc:
+        return _build_failure_component(
+            exc=exc,
+            state="degraded",
+            payload={
+                "activation_path": str(Path(config.activation_path).resolve()),
+                "summary_output_path": str(Path(config.summary_output_path).resolve()),
+            },
+        )
     return {
         "ok": bool(payload.get("ready")),
         "state": "ready" if payload.get("ready") else "degraded",
@@ -232,7 +281,14 @@ def _build_live_sensor_component(config: SameHostStackConfig) -> dict[str, Any]:
 
 
 def _build_operator_status_component(config: SameHostStackConfig) -> dict[str, Any]:
-    payload = build_readiness_payload(load_stack_operator_config(config))
+    try:
+        payload = build_readiness_payload(load_stack_operator_config(config))
+    except Exception as exc:
+        return _build_failure_component(
+            exc=exc,
+            state="degraded",
+            payload={"operator_env_file": str(Path(config.operator_env_file).resolve())},
+        )
     ok = bool(payload.get("ready"))
     return {
         "ok": ok,
@@ -243,7 +299,14 @@ def _build_operator_status_component(config: SameHostStackConfig) -> dict[str, A
 
 
 def _build_operator_smoke_component(config: SameHostStackConfig) -> dict[str, Any]:
-    smoke = run_smoke_checks(load_stack_operator_config(config))
+    try:
+        smoke = run_smoke_checks(load_stack_operator_config(config))
+    except Exception as exc:
+        return _build_failure_component(
+            exc=exc,
+            state="degraded",
+            payload={"operator_env_file": str(Path(config.operator_env_file).resolve())},
+        )
     redirect_ok = smoke.redirect_status in {200, 302, 307, 308}
     ok = smoke.health_status == 200 and smoke.readiness_status == 200 and redirect_ok
     return {
@@ -260,7 +323,18 @@ def _build_operator_smoke_component(config: SameHostStackConfig) -> dict[str, An
 
 
 def _build_notification_path_component(config: SameHostStackConfig) -> dict[str, Any]:
-    payload = build_notification_component(load_stack_operator_config(config), include_sensitive=True)
+    try:
+        payload = build_notification_component(load_stack_operator_config(config), include_sensitive=False)
+    except Exception as exc:
+        return _build_failure_component(
+            exc=exc,
+            state="degraded",
+            payload={
+                "enabled": False,
+                "configured": False,
+                "operator_env_file": str(Path(config.operator_env_file).resolve()),
+            },
+        )
     enabled = bool(payload.get("enabled"))
     ok = bool(payload.get("ok")) or not enabled
     return {
@@ -439,7 +513,8 @@ def run_stack_recovery(
             }
         )
 
-    notification_is_enabled = notifications_enabled(config)
+    notification_component = _build_notification_path_component(config)
+    notification_is_enabled = bool(notification_component.get("payload", {}).get("enabled"))
     if notification_is_enabled:
         argv, result = _run_supervisor_restart(
             effective_command_runner,
@@ -453,7 +528,7 @@ def run_stack_recovery(
                 "result": result,
             }
         )
-    else:
+    elif notification_component.get("state") == "disabled":
         steps.append(
             {
                 "step": "notification_service_disabled",
@@ -463,6 +538,13 @@ def run_stack_recovery(
                     "detail": None,
                     "service": config.notification_service_name,
                 },
+            }
+        )
+    else:
+        steps.append(
+            {
+                "step": "notification_service_unavailable",
+                "result": notification_component,
             }
         )
 
@@ -703,8 +785,22 @@ def _build_live_sensor_evidence_inventory(config: SameHostStackConfig) -> dict[s
 
 
 def build_stack_restore_inventory_payload(config: SameHostStackConfig) -> dict[str, Any]:
-    bundle_inventory = _build_restore_bundle_inventory(config)
-    operator_inventory = _build_operator_restore_inventory(config)
+    try:
+        bundle_inventory = _build_restore_bundle_inventory(config)
+    except Exception as exc:
+        bundle_inventory = _build_failure_component(
+            exc=exc,
+            state="degraded",
+            payload={"activation_path": str(Path(config.activation_path).resolve())},
+        )
+    try:
+        operator_inventory = _build_operator_restore_inventory(config)
+    except Exception as exc:
+        operator_inventory = _build_failure_component(
+            exc=exc,
+            state="degraded",
+            payload={"operator_backup_dir": str(config.operator_backup_dir) if config.operator_backup_dir else None},
+        )
     evidence_inventory = _build_live_sensor_evidence_inventory(config)
     inventory_ready = bool(bundle_inventory["ok"] and operator_inventory["ok"])
     return {
@@ -782,10 +878,20 @@ def run_stack_post_restore_check(
         },
     ]
 
-    operator_config = load_stack_operator_config(config)
     notification_component: dict[str, Any]
-    if notifications_enabled(config):
-        notification_component = notification_status(operator_config)
+    notification_runtime_component = _build_notification_path_component(config)
+    notification_is_enabled = bool(notification_runtime_component.get("payload", {}).get("enabled"))
+    if notification_is_enabled:
+        try:
+            operator_config = load_stack_operator_config(config)
+            notification_component = notification_status(operator_config)
+        except Exception as exc:
+            notification_component = _build_failure_component(
+                exc=exc,
+                state="degraded",
+                payload={"operator_env_file": str(Path(config.operator_env_file).resolve())},
+                enabled=True,
+            )
         steps.append(
             {
                 "step": "notification_status",
@@ -793,22 +899,36 @@ def run_stack_post_restore_check(
             }
         )
         if int(notification_component.get("failed_count", 0)) > 0:
-            redrive_result = redrive_notification_failures(
-                operator_config,
-                limit=int(config.notification_redrive_limit),
-            )
-            notification_component = redrive_result.status
-            steps.append(
-                {
-                    "step": "notification_redrive",
-                    "result": {
-                        "redriven": redrive_result.redriven,
-                        "status": redrive_result.status,
-                    },
-                }
-            )
+            try:
+                redrive_result = redrive_notification_failures(
+                    operator_config,
+                    limit=int(config.notification_redrive_limit),
+                )
+                notification_component = redrive_result.status
+                steps.append(
+                    {
+                        "step": "notification_redrive",
+                        "result": {
+                            "redriven": redrive_result.redriven,
+                            "status": redrive_result.status,
+                        },
+                    }
+                )
+            except Exception as exc:
+                notification_component = _build_failure_component(
+                    exc=exc,
+                    state="degraded",
+                    payload={"notification_redrive_limit": int(config.notification_redrive_limit)},
+                    enabled=True,
+                )
+                steps.append(
+                    {
+                        "step": "notification_redrive",
+                        "result": notification_component,
+                    }
+                )
     else:
-        notification_component = {
+        notification_component = notification_runtime_component if notification_runtime_component.get("state") == "disabled" else {
             "ok": True,
             "state": "disabled",
             "enabled": False,
@@ -863,66 +983,167 @@ def run_stack_post_restore_check(
 
 
 def validate_stack_preflight(config: SameHostStackConfig) -> dict[str, Any]:
-    repo_root = _require_existing_directory(config.repo_root, name="repo_root")
-    python_binary = _require_existing_file(config.python_binary, name="python_binary", executable=True)
-    model_manage_entrypoint = _require_existing_file(
+    host_layout_checks: dict[str, dict[str, Any]] = {}
+
+    def check_directory(path: Path, *, name: str) -> Path | None:
+        try:
+            checked = _require_existing_directory(path, name=name)
+        except Exception as exc:
+            host_layout_checks[name] = {
+                "ok": False,
+                "state": _path_state_from_exception(exc),
+                "detail": str(exc),
+                "path": str(Path(path).resolve()),
+            }
+            return None
+        host_layout_checks[name] = {
+            "ok": True,
+            "state": "ready",
+            "detail": None,
+            "path": str(checked),
+        }
+        return checked
+
+    def check_file(path: Path, *, name: str, executable: bool = False) -> Path | None:
+        try:
+            checked = _require_existing_file(path, name=name, executable=executable)
+        except Exception as exc:
+            host_layout_checks[name] = {
+                "ok": False,
+                "state": _path_state_from_exception(exc),
+                "detail": str(exc),
+                "path": str(Path(path).resolve()),
+                "executable_required": executable,
+            }
+            return None
+        host_layout_checks[name] = {
+            "ok": True,
+            "state": "ready",
+            "detail": None,
+            "path": str(checked),
+            "executable_required": executable,
+        }
+        return checked
+
+    repo_root = check_directory(config.repo_root, name="repo_root")
+    python_binary = check_file(config.python_binary, name="python_binary", executable=True)
+    model_manage_entrypoint = check_file(
         config.model_manage_entrypoint,
         name="model_manage_entrypoint",
     )
-    operator_manage_entrypoint = _require_existing_file(
+    operator_manage_entrypoint = check_file(
         config.operator_manage_entrypoint,
         name="operator_manage_entrypoint",
     )
-    operator_server_entrypoint = _require_existing_file(
+    operator_server_entrypoint = check_file(
         config.operator_server_entrypoint,
         name="operator_server_entrypoint",
     )
-    operator_env_file = _require_existing_file(config.operator_env_file, name="operator_env_file")
+    operator_env_file = check_file(config.operator_env_file, name="operator_env_file")
 
-    operator_config = load_stack_operator_config(config)
-    bundle_status = build_bundle_status_payload(Path(config.activation_path).resolve())
-    if not bundle_status.get("runtime_ready"):
-        detail = str(bundle_status.get("detail", "activation contract is not runtime-ready"))
-        raise ValueError(detail)
+    try:
+        operator_config = load_stack_operator_config(config)
+        operator_config_component = {
+            "ok": True,
+            "status": "ready",
+            "detail": None,
+            "database_path": str(operator_config.database_path),
+            "summary_input_path": str(operator_config.summary_input_path),
+        }
+    except Exception as exc:
+        operator_config = None
+        operator_config_component = {
+            "ok": False,
+            "status": "degraded",
+            "detail": str(exc),
+            "database_path": None,
+            "summary_input_path": None,
+        }
 
-    validate_live_sensor_preflight(build_sensor_preflight_config(config))
-    validate_operator_console_preflight(build_operator_preflight_config(config))
+    bundle_status = _build_bundle_component(config)
 
-    notification_status = "enabled" if notifications_enabled(config) else "disabled"
+    try:
+        validate_live_sensor_preflight(build_sensor_preflight_config(config))
+        live_sensor_preflight = {
+            "ok": True,
+            "status": "ready",
+            "detail": None,
+            "activation_path": str(Path(config.activation_path).resolve()),
+            "summary_output_path": str(Path(config.summary_output_path).resolve()),
+        }
+    except Exception as exc:
+        live_sensor_preflight = {
+            "ok": False,
+            "status": "degraded",
+            "detail": str(exc),
+            "activation_path": str(Path(config.activation_path).resolve()),
+            "summary_output_path": str(Path(config.summary_output_path).resolve()),
+        }
+
+    try:
+        validate_operator_console_preflight(build_operator_preflight_config(config))
+        operator_console_preflight = {
+            "ok": True,
+            "status": "ready",
+            "detail": None,
+            "database_path": str(operator_config.database_path) if operator_config is not None else None,
+            "summary_input_path": str(operator_config.summary_input_path) if operator_config is not None else None,
+        }
+    except Exception as exc:
+        operator_console_preflight = {
+            "ok": False,
+            "status": "degraded",
+            "detail": str(exc),
+            "database_path": str(operator_config.database_path) if operator_config is not None else None,
+            "summary_input_path": str(operator_config.summary_input_path) if operator_config is not None else None,
+        }
+
+    notification_component = _build_notification_path_component(config)
+    notification_status = str(notification_component.get("state", "degraded"))
+    notification_payload = dict(notification_component.get("payload", {}))
+
+    ready = all(check["ok"] for check in host_layout_checks.values()) and all(
+        [
+            bundle_status["ok"],
+            live_sensor_preflight["ok"],
+            operator_console_preflight["ok"],
+            notification_component["ok"],
+        ]
+    )
     return {
-        "ready": True,
+        "ready": ready,
         "command": "preflight",
         "host_layout": {
-            "repo_root": str(repo_root),
-            "python_binary": str(python_binary),
-            "operator_env_file": str(operator_env_file),
-            "model_manage_entrypoint": str(model_manage_entrypoint),
-            "operator_manage_entrypoint": str(operator_manage_entrypoint),
-            "operator_server_entrypoint": str(operator_server_entrypoint),
+            "repo_root": str(repo_root) if repo_root is not None else str(Path(config.repo_root).resolve()),
+            "python_binary": str(python_binary) if python_binary is not None else str(Path(config.python_binary).resolve()),
+            "operator_env_file": str(operator_env_file) if operator_env_file is not None else str(Path(config.operator_env_file).resolve()),
+            "model_manage_entrypoint": str(model_manage_entrypoint) if model_manage_entrypoint is not None else str(Path(config.model_manage_entrypoint).resolve()),
+            "operator_manage_entrypoint": str(operator_manage_entrypoint) if operator_manage_entrypoint is not None else str(Path(config.operator_manage_entrypoint).resolve()),
+            "operator_server_entrypoint": str(operator_server_entrypoint) if operator_server_entrypoint is not None else str(Path(config.operator_server_entrypoint).resolve()),
             "sensor_spool_dir": str(Path(config.spool_dir).resolve()),
             "sensor_log_root": str(Path(config.summary_output_path).resolve().parent),
-            "operator_database_path": str(operator_config.database_path),
-            "operator_secret_source": str(operator_config.secret_key_source)
-            if operator_config.secret_key_source is not None
-            else "inline",
+            "operator_database_path": str(operator_config.database_path) if operator_config is not None else None,
+            "operator_secret_source": (
+                str(operator_config.secret_key_source)
+                if operator_config is not None and operator_config.secret_key_source is not None
+                else ("inline" if operator_config is not None else None)
+            ),
         },
+        "host_layout_checks": host_layout_checks,
         "components": {
             "bundle_activation": bundle_status,
-            "live_sensor_preflight": {
-                "status": "ready",
-                "activation_path": str(Path(config.activation_path).resolve()),
-                "summary_output_path": str(Path(config.summary_output_path).resolve()),
-            },
-            "operator_console_preflight": {
-                "status": "ready",
-                "database_path": str(operator_config.database_path),
-                "summary_input_path": str(operator_config.summary_input_path),
-            },
+            "operator_config": operator_config_component,
+            "live_sensor_preflight": live_sensor_preflight,
+            "operator_console_preflight": operator_console_preflight,
             "notification": {
+                "ok": notification_component["ok"],
                 "status": notification_status,
-                "enabled": notification_status == "enabled",
+                "enabled": bool(notification_payload.get("enabled")),
+                "detail": notification_component.get("detail"),
+                "payload": notification_payload,
             },
         },
+        "status": "ok" if ready else "degraded",
     }
 
 
@@ -946,6 +1167,17 @@ def prepare_host_layout(config: SameHostStackConfig) -> dict[str, Any]:
 
 
 def run_command(argv: Sequence[str]) -> str:
+    redacted_argv: list[str] = []
+    redact_next = False
+    for part in argv:
+        string_part = str(part)
+        if redact_next:
+            redacted_argv.append("***REDACTED***")
+            redact_next = False
+            continue
+        redacted_argv.append(string_part)
+        if string_part == "--password":
+            redact_next = True
     completed = subprocess.run(
         [str(part) for part in argv],
         capture_output=True,
@@ -954,7 +1186,7 @@ def run_command(argv: Sequence[str]) -> str:
     )
     if completed.returncode != 0:
         raise RuntimeError(
-            f"command failed ({completed.returncode}): {' '.join(str(part) for part in argv)}\n"
+            f"command failed ({completed.returncode}): {' '.join(redacted_argv)}\n"
             f"stdout:\n{completed.stdout}\n"
             f"stderr:\n{completed.stderr}"
         )
@@ -967,15 +1199,15 @@ def _run_json_command(command_runner: CommandRunner, argv: Sequence[str]) -> dic
 
 
 def _build_password_args(config: SameHostStackConfig) -> list[str]:
-    if bool(config.admin_password) == bool(config.admin_password_file):
-        raise ValueError("exactly one of admin_password or admin_password_file must be set")
-    if config.admin_password_file is not None:
-        password_file = _require_existing_file(
-            config.admin_password_file,
-            name="admin_password_file",
-        )
-        return ["--password-file", str(password_file)]
-    return ["--password", str(config.admin_password)]
+    if config.admin_password is not None:
+        raise ValueError("inline admin_password is not supported; use admin_password_file")
+    if config.admin_password_file is None:
+        raise ValueError("admin_password_file is required for bootstrap")
+    password_file = _require_existing_file(
+        config.admin_password_file,
+        name="admin_password_file",
+    )
+    return ["--password-file", str(password_file)]
 
 
 def _require_bootstrap_inputs(config: SameHostStackConfig) -> tuple[Path, str]:
@@ -990,6 +1222,7 @@ def run_stack_bootstrap(
     config: SameHostStackConfig,
     *,
     command_runner: CommandRunner = run_command,
+    proxy_checker: ProxyChecker = _default_proxy_checker,
 ) -> dict[str, Any]:
     candidate_bundle_root, admin_username = _require_bootstrap_inputs(config)
     operator_config = load_stack_operator_config(config)
@@ -1101,7 +1334,8 @@ def run_stack_bootstrap(
         }
     )
 
-    notification_is_enabled = notifications_enabled(config)
+    notification_runtime_component = _build_notification_path_component(config)
+    notification_is_enabled = bool(notification_runtime_component.get("payload", {}).get("enabled"))
     if notification_is_enabled:
         notification_service_command = ["systemctl", "start", config.notification_service_name]
         command_runner(notification_service_command)
@@ -1112,15 +1346,46 @@ def run_stack_bootstrap(
                 "result": {"status": "started", "service": config.notification_service_name},
             }
         )
+    elif notification_runtime_component.get("state") != "disabled":
+        steps.append(
+            {
+                "step": "notification_service_unavailable",
+                "result": notification_runtime_component,
+            }
+        )
 
+    status_payload = build_stack_status_payload(config, proxy_checker=proxy_checker)
+    smoke_payload = build_stack_smoke_payload(config, proxy_checker=proxy_checker)
+    steps.append(
+        {
+            "step": "stack_status",
+            "result": status_payload,
+        }
+    )
+    steps.append(
+        {
+            "step": "stack_smoke",
+            "result": smoke_payload,
+        }
+    )
+    proxy_component = smoke_payload.get("components", {}).get("reverse_proxy_edge_seam")
+    if proxy_component and proxy_component.get("payload", {}).get("configured"):
+        steps.append(
+            {
+                "step": "proxy_seam_smoke",
+                "result": proxy_component,
+            }
+        )
+
+    bootstrap_ready = bool(status_payload.get("ready") and smoke_payload.get("ready"))
     return {
-        "bootstrap_ready": True,
+        "bootstrap_ready": bootstrap_ready,
         "command": "bootstrap",
+        "status": "ok" if bootstrap_ready else "degraded",
         "notification_enabled": notification_is_enabled,
         "steps": steps,
-        "next_contract_steps": [
-            "stack status",
-            "stack smoke",
-            "optional reverse-proxy seam smoke when configured",
-        ],
+        "diagnosis": {
+            "status": status_payload,
+            "smoke": smoke_payload,
+        },
     }

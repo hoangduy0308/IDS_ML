@@ -1,44 +1,26 @@
-STATUS: feature-complete
-FEATURE: ids-model-bundle-promotion-hardening
-EPIC: ids_ml_new-hup
+STATUS: compounding-complete
+FEATURE: ids-same-host-stack-runtime-hardening
 ACTIVE_SKILL: khuym:compounding
 DATE: 2026-03-29
 
-Feature Result:
-- Exploring complete with locked decisions in history/ids-model-bundle-promotion-hardening/CONTEXT.md
-- Planning complete with discovery/approach artifacts and bead graph
-- Validating complete with HIGH-risk spikes:
-  - ids_ml_new-tz9
-  - ids_ml_new-a8t
-  - ids_ml_new-d85
-- Swarming complete with beads closed:
-  - ids_ml_new-hup.1
-  - ids_ml_new-hup.2
-  - ids_ml_new-hup.3
-  - ids_ml_new-hup.4
-  - ids_ml_new-hup.5
-- Reviewing complete with no remaining P1/P2 findings
-- Compounding complete with learning note:
-  - history/learnings/20260329-model-bundle-promotion-hardening.md
+Current State:
+- Feature work complete through review follow-up fixes
+- Initial implementation beads and review-generated P2 follow-up beads are all closed
+- Human UAT was skipped in this autonomous run; verification remained code/test/document-contract based
 
-Delivered Capabilities:
-- Versioned model bundle manifest and compatibility validation
-- Atomic activation record for active bundle selection and previous known-good rollback
-- Explicit bundle lifecycle CLI for verify/promote/activate/rollback/status
-- Fail-closed live sensor runtime and preflight wiring to activation-path contract
-- Active bundle visibility in live sensor summaries, readiness, and operator console dashboard
-- Same-host runbooks for promote, rollback, and restore expectations
+Artifacts:
+- history/ids-same-host-stack-runtime-hardening/STATE-final.md
+- history/learnings/20260329-same-host-stack-runtime-hardening.md
+- history/learnings/critical-patterns.md
+- .khuym/findings/learnings-candidates.md
 
 Verification:
-- python -m py_compile scripts/ids_model_bundle.py scripts/ids_model_bundle_manage.py scripts/ids_inference.py scripts/package_final_model.py scripts/ids_live_sensor.py scripts/ids_live_sensor_preflight.py scripts/ids_live_sensor_sinks.py scripts/ids_operator_console/health.py scripts/ids_operator_console/web.py tests/test_ids_model_bundle.py tests/test_ids_inference.py tests/test_ids_model_bundle_manage.py tests/test_ids_live_sensor.py tests/test_ids_live_sensor_preflight.py tests/test_ids_live_sensor_sinks.py tests/test_ids_operator_console_ingest.py tests/test_ids_operator_console_web.py tests/test_ids_operator_console_ops.py
-- python -m pytest -q tests/test_ids_model_bundle.py tests/test_ids_inference.py tests/test_ids_model_bundle_manage.py tests/test_ids_live_sensor.py tests/test_ids_live_sensor_preflight.py tests/test_ids_live_sensor_sinks.py tests/test_ids_operator_console_ingest.py tests/test_ids_operator_console_web.py tests/test_ids_operator_console_ops.py
-- Result: 50 passed
+- python -m pytest -q tests/test_ids_same_host_stack_manage.py tests/test_ids_live_sensor_health.py -> 44 passed
+- br ready --json -> []
+- bv --robot-triage -> open_count=0, actionable_count=0
 
-Workflow Verification:
-- Chain followed: exploring -> planning -> validating -> swarming -> reviewing -> compounding
-- No phase skipped
-- No open ready beads remain: br ready --json => []
-- Epic closed: ids_ml_new-hup
-
-Handoff:
-- Feature complete
+Last Compounding Run:
+- Feature: ids-same-host-stack-runtime-hardening
+- Date: 2026-03-29
+- Learnings file: history/learnings/20260329-same-host-stack-runtime-hardening.md
+- Critical promotions: 2

@@ -77,3 +77,21 @@ The operator console only became safely production-ready once normal startup sto
 The IDS model lifecycle only became safe once production stopped accepting independent model/schema/threshold overrides and instead resolved one versioned bundle manifest through one host-local activation record. Split path inputs looked flexible but left a real drift seam where the runtime could score with one bundle while silently consuming schema or threshold from another. Future single-host ML deployments should keep production selection on one activation contract and fail closed if that contract cannot be verified.
 
 **Full entry:** history/learnings/20260329-model-bundle-promotion-hardening.md
+
+## [20260329] Execute The Full Stack Lifecycle Before Returning Success
+**Category:** failure
+**Feature:** ids-same-host-stack-runtime-hardening
+**Tags:** [bootstrap, restore, verification, smoke]
+
+Canonical stack commands are contracts, not convenience wrappers. If `bootstrap`, `recover`, or `post-restore-check` claims to complete a host lifecycle, it must execute the full advertised verification sequence before returning success, including post-start readiness/smoke and any documented non-gating seam checks. Future stack orchestration work should add tests that prove every documented phase actually runs.
+
+**Full entry:** history/learnings/20260329-same-host-stack-runtime-hardening.md
+
+## [20260329] Default Stack Diagnostics To Degraded And Redacted Output
+**Category:** pattern
+**Feature:** ids-same-host-stack-runtime-hardening
+**Tags:** [diagnostics, redaction, secrets, cli]
+
+Expected contract failures in stack-level health and operations commands should surface as structured degraded payloads, not raw tracebacks, and default output must stay secret-safe. Secret-bearing argv, sensitive notification metadata, and similar details should require explicit operator intent rather than appearing in routine health output. Future runtime CLIs should fail closed, emit machine-readable degraded state, and redact by default.
+
+**Full entry:** history/learnings/20260329-same-host-stack-runtime-hardening.md

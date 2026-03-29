@@ -86,6 +86,7 @@ python /opt/ids_ml_new/scripts/ids_same_host_stack_manage.py \
 ```
 
 The bootstrap flow delegates to the existing component owners. It does not own bundle restore, console restore, or service-specific mutation logic.
+`bootstrap` does not report success until the post-start `status` and `smoke` checks run; it returns a degraded result and exit code `2` when those checks fail.
 
 ## Preflight, Status, and Smoke
 
@@ -124,6 +125,7 @@ Top-level readiness gates on:
 - notification worker only when configured and enabled
 
 The reverse proxy seam is reported but never gates top-level readiness.
+Default stack output stays redacted for notification metadata and returns degraded payloads on expected contract failures instead of raw tracebacks.
 
 ## Restart and Recovery
 
