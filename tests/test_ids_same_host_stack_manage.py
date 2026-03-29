@@ -904,3 +904,33 @@ def test_manage_main_restore_or_post_restore_prints_json_payload(
 
     assert exit_code == 0
     assert json.loads(capsys.readouterr().out)["command"] == "post-restore-check"
+
+
+def test_stack_runbook_runbook_or_docs_matches_cli_surface() -> None:
+    runbook = (REPO_ROOT / "docs" / "ids_same_host_stack_operations.md").read_text(
+        encoding="utf-8"
+    )
+
+    for command_name in (
+        "preflight",
+        "bootstrap",
+        "status",
+        "smoke",
+        "recover",
+        "restore-inventory",
+        "post-restore-check",
+    ):
+        assert f"`{command_name}`" in runbook
+
+    for failure_domain in (
+        "model_activation_contract",
+        "live_sensor_data_path",
+        "operator_visibility_path",
+        "outbound_notification_path",
+        "reverse_proxy_edge_seam",
+    ):
+        assert f"`{failure_domain}`" in runbook
+
+    assert "ids_operator_console_manage.py" in runbook
+    assert "notify-status" in runbook
+    assert "notify-redrive" in runbook
