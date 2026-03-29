@@ -145,6 +145,7 @@ def test_dashboard_renders_combined_console_with_health_and_anomaly_lane(tmp_pat
     assert payload["components"]["active_bundle"]["state"]["active_bundle_name"] == "bundle-a"
     assert payload["components"]["notification"]["state"] == "disabled"
     assert payload["components"]["notification"]["ok"] is True
+    assert payload["components"]["notification"]["target"] is None
 
 
 def test_alert_detail_and_sensor_aware_json_endpoints(tmp_path: Path) -> None:
@@ -205,3 +206,6 @@ def test_readyz_keeps_core_ready_when_notification_component_is_degraded(tmp_pat
     assert payload["components"]["notification"]["ok"] is False
     assert payload["components"]["notification"]["state"] == "degraded"
     assert payload["components"]["notification"]["failed_count"] == 1
+    assert payload["components"]["notification"]["target"] is None
+    assert payload["components"]["notification"]["last_error"]["present"] is True
+    assert "message" not in payload["components"]["notification"]["last_error"]

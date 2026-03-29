@@ -111,8 +111,11 @@ def test_deploy_artifacts_are_wired_to_proxy_and_secret_contract() -> None:
     assert "IDS_OPERATOR_CONSOLE_TELEGRAM_BOT_TOKEN_FILE" in service_text
 
     assert "ids_operator_console_manage.py --database-path \"$IDS_OPERATOR_CONSOLE_DATABASE_PATH\" notify-worker" in notify_service_text
+    assert "--iterations 1" not in notify_service_text
+    assert "notify-worker --poll-interval-seconds 30" in notify_service_text
     assert "--manage-entrypoint /opt/ids_ml_new/scripts/ids_operator_console_manage.py" in notify_service_text
     assert "IDS_OPERATOR_CONSOLE_TELEGRAM_BOT_TOKEN_FILE" in notify_service_text
+    assert "IDS_OPERATOR_CONSOLE_TELEGRAM_CHAT_ID" in notify_service_text
 
     assert "proxy_set_header Host $host;" in nginx_text
     assert "proxy_set_header X-Forwarded-Proto https;" in nginx_text
@@ -133,3 +136,55 @@ def test_preflight_rejects_notification_enabled_missing_manage_entrypoint(
 
     with pytest.raises(ValueError, match="manage_entrypoint"):
         validate_preflight(config)
+
+
+def test_preflight_rejects_chat_only_pairing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    config = _make_preflight_config(tmp_path, telegram_bot_token=None, telegram_chat_id="-100chat-only")
+    monkeypatch.setattr(preflight, "_is_executable_file", lambda path: True)
+
+    with pytest.raises(ValueError, match="must be set together"):
+        validate_preflight(config)
+
+
+def test_preflight_main_fails_closed_on_partial_env_notification_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _make_preflight_config(tmp_path)
+    monkeypatch.setattr(preflight, "_is_executable_file", lambda path: True)
+    monkeypatch.setenv("IDS_OPERATOR_CONSOLE_TELEGRAM_BOT_TOKEN", "token-only")
+    monkeypatch.delenv("IDS_OPERATOR_CONSOLE_TELEGRAM_CHAT_ID", raising=False)
+
+    with pytest.raises(ValueError, match="must be set together"):
+        preflight.main(
+            [
+                "--python-binary",
+                str(config.python_binary),
+                "--app-entrypoint",
+                str(config.app_entrypoint),
+                "--manage-entrypoint",
+                str(config.manage_entrypoint),
+                "--database-path",
+                str(config.database_path),
+                "--alerts-input-path",
+                str(config.alerts_input_path),
+                "--quarantine-input-path",
+                str(config.quarantine_input_path),
+                "--summary-input-path",
+                str(config.summary_input_path),
+                "--templates-dir",
+                str(config.templates_dir),
+                "--static-dir",
+                str(config.static_dir),
+                "--environment",
+                config.environment,
+                "--public-base-url",
+                str(config.public_base_url),
+                "--root-path",
+                config.root_path,
+                "--forwarded-allow-ips",
+                config.forwarded_allow_ips,
+                "--secret-key-file",
+                str(config.secret_key_file),
+            ]
+        )

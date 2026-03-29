@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from hashlib import sha256
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from time import sleep as runtime_sleep
 from typing import Any
 import json
 import shutil
@@ -14,7 +15,7 @@ from starlette.testclient import TestClient
 
 from .config import OperatorConsoleConfig, PLACEHOLDER_SECRET_VALUES
 from .db import open_existing_operator_store
-from .health import build_readiness_payload
+from .health import build_notification_component, build_readiness_payload
 from .migrations import assert_runtime_ready, inspect_operator_store
 from .notification_runtime import NotificationRuntimeConfig, run_notification_maintenance_cycle, run_notification_worker
 from .notifications import redrive_failed_telegram_notifications, send_telegram_message
@@ -264,8 +265,7 @@ def run_smoke_checks(config: OperatorConsoleConfig) -> SmokeResult:
 
 
 def notification_status(config: OperatorConsoleConfig) -> dict[str, Any]:
-    readiness_payload = build_readiness_payload(config)
-    return dict(readiness_payload["components"]["notification"])
+    return build_notification_component(config, include_sensitive=True)
 
 
 def _notification_runtime_config(
@@ -316,13 +316,14 @@ def run_notification_maintenance_once(config: OperatorConsoleConfig) -> dict[str
 def run_notification_worker_iterations(
     config: OperatorConsoleConfig,
     *,
-    iterations: int,
+    iterations: int | None,
     poll_interval_seconds: float = 30.0,
 ) -> dict[str, Any]:
+    sleep_fn = runtime_sleep if poll_interval_seconds > 0 else (lambda _seconds: None)
     results = run_notification_worker(
         _notification_runtime_config(config, poll_interval_seconds=poll_interval_seconds),
         iterations=iterations,
-        sleep_fn=lambda _seconds: None if poll_interval_seconds <= 0 else None,
+        sleep_fn=sleep_fn,
     )
     latest = results[-1]
     return {

@@ -270,7 +270,26 @@ def test_manage_backup_restore_retention_and_smoke(tmp_path: Path, capsys: pytes
     assert restored_smoke.readiness_payload["components"]["notification"]["enabled"] is True
     assert restored_smoke.readiness_payload["components"]["notification"]["failed_count"] == 1
     assert restored_smoke.readiness_payload["components"]["notification"]["state"] == "degraded"
+    assert restored_smoke.readiness_payload["components"]["notification"]["target"] is None
+    assert restored_smoke.readiness_payload["components"]["notification"]["last_error"]["present"] is True
+    assert "message" not in restored_smoke.readiness_payload["components"]["notification"]["last_error"]
     assert restored_smoke.readiness_payload["ready"] is True
+
+    restored_redrive_rc = manage.main(
+        [
+            "--database-path",
+            str(restored_db),
+            "--json",
+            "notify-redrive",
+            "--limit",
+            "10",
+        ]
+    )
+    restored_redrive_payload = json.loads(capsys.readouterr().out)
+    assert restored_redrive_rc == 0
+    assert restored_redrive_payload["redriven"] == 1
+    assert restored_redrive_payload["status"]["failed_count"] == 0
+    assert restored_redrive_payload["status"]["pending_count"] >= 1
 
     smoke_rc = manage.main(["--database-path", str(db_path), "--json", "smoke"])
     smoke_payload = json.loads(capsys.readouterr().out)
@@ -377,6 +396,11 @@ def test_manage_notification_commands_surface_runtime_contract(
     assert notify_status_rc == 0
     assert notify_status_payload["enabled"] is True
     assert notify_status_payload["state"] == "ok"
+    assert notify_status_payload["target"] == "-100ops"
+
+    parser = manage._build_parser()  # noqa: SLF001
+    parsed_worker_args = parser.parse_args(["--database-path", str(db_path), "notify-worker"])
+    assert parsed_worker_args.iterations is None
 
     test_send_rc = manage.main(
         ["--database-path", str(db_path), "--json", "notify-test-send", "--text", "operator ping"]
@@ -448,6 +472,7 @@ def test_manage_notification_commands_surface_runtime_contract(
     assert smoke_payload["ready"] is True
     assert smoke_payload["notification"]["enabled"] is True
     assert smoke_payload["notification"]["channel"] == "telegram"
+    assert smoke_payload["notification"]["target"] is None
 
 
 def test_manage_requires_explicit_migrate_before_bootstrap(tmp_path: Path) -> None:

@@ -66,6 +66,13 @@ def _load_runtime_config(*, database_path: Path) -> Any:
     return replace(config, database_path=database_path)
 
 
+def _optional_positive_int(value: str) -> int:
+    normalized = int(value)
+    if normalized < 1:
+        raise argparse.ArgumentTypeError("value must be >= 1")
+    return normalized
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Manage IDS operator console bootstrap and schema state.")
     parser.add_argument("--database-path", type=Path, required=True)
@@ -111,9 +118,9 @@ def _build_parser() -> argparse.ArgumentParser:
 
     notify_worker_parser = subparsers.add_parser(
         "notify-worker",
-        help="Run the notification worker loop for an explicit number of iterations.",
+        help="Run the notification worker loop; omit --iterations for long-running supervised mode.",
     )
-    notify_worker_parser.add_argument("--iterations", type=int, default=1)
+    notify_worker_parser.add_argument("--iterations", type=_optional_positive_int, default=None)
     notify_worker_parser.add_argument("--poll-interval-seconds", type=float, default=30.0)
 
     notify_redrive_parser = subparsers.add_parser(
@@ -243,7 +250,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         config = _load_runtime_config(database_path=database_path)
         result = run_notification_worker_iterations(
             config,
-            iterations=int(args.iterations),
+            iterations=args.iterations,
             poll_interval_seconds=float(args.poll_interval_seconds),
         )
         _print_payload(result, as_json=args.json_output)

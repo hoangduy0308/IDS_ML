@@ -58,7 +58,30 @@ def _load_latest_active_bundle_state(config: OperatorConsoleConfig) -> dict[str,
     return dict(active_bundle) if isinstance(active_bundle, dict) else None
 
 
-def _build_notification_component(config: OperatorConsoleConfig) -> dict[str, Any]:
+def _notification_last_error_payload(
+    last_error: dict[str, Any] | None,
+    *,
+    include_sensitive: bool,
+) -> dict[str, Any] | None:
+    if not isinstance(last_error, dict):
+        return None
+    if include_sensitive:
+        return dict(last_error)
+    payload: dict[str, Any] = {"present": True}
+    status = str(last_error.get("status") or "").strip()
+    updated_at = str(last_error.get("updated_at") or "").strip()
+    if status:
+        payload["status"] = status
+    if updated_at:
+        payload["updated_at"] = updated_at
+    return payload
+
+
+def build_notification_component(
+    config: OperatorConsoleConfig,
+    *,
+    include_sensitive: bool = False,
+) -> dict[str, Any]:
     token_present = config.telegram_bot_token is not None
     chat_present = config.telegram_chat_id is not None
     enabled = token_present and chat_present
@@ -70,7 +93,7 @@ def _build_notification_component(config: OperatorConsoleConfig) -> dict[str, An
             "enabled": False,
             "configured": False,
             "channel": "telegram",
-            "target": config.telegram_chat_id,
+            "target": config.telegram_chat_id if include_sensitive else None,
             "backlog": 0,
             "pending_count": 0,
             "retry_count": 0,
@@ -78,9 +101,10 @@ def _build_notification_component(config: OperatorConsoleConfig) -> dict[str, An
             "sent_count": 0,
             "due_count": 0,
             "oldest_due_at": None,
-            "last_error": {
-                "message": "telegram_bot_token and telegram_chat_id must be set together",
-            },
+            "last_error": _notification_last_error_payload(
+                {"message": "telegram_bot_token and telegram_chat_id must be set together"},
+                include_sensitive=include_sensitive,
+            ),
         }
     if not enabled:
         return {
@@ -109,7 +133,7 @@ def _build_notification_component(config: OperatorConsoleConfig) -> dict[str, An
             "enabled": enabled,
             "configured": configured,
             "channel": "telegram",
-            "target": config.telegram_chat_id,
+            "target": config.telegram_chat_id if include_sensitive else None,
             "backlog": 0,
             "pending_count": 0,
             "retry_count": 0,
@@ -117,7 +141,10 @@ def _build_notification_component(config: OperatorConsoleConfig) -> dict[str, An
             "sent_count": 0,
             "due_count": 0,
             "oldest_due_at": None,
-            "last_error": {"message": str(exc)},
+            "last_error": _notification_last_error_payload(
+                {"message": str(exc)},
+                include_sensitive=include_sensitive,
+            ),
         }
     try:
         runtime_status = build_notification_runtime_status(
@@ -136,7 +163,7 @@ def _build_notification_component(config: OperatorConsoleConfig) -> dict[str, An
         "enabled": runtime_status.enabled,
         "configured": runtime_status.configured,
         "channel": runtime_status.channel,
-        "target": runtime_status.target,
+        "target": runtime_status.target if include_sensitive else None,
         "backlog": backlog,
         "pending_count": runtime_status.pending_count,
         "retry_count": runtime_status.retry_count,
@@ -144,7 +171,10 @@ def _build_notification_component(config: OperatorConsoleConfig) -> dict[str, An
         "sent_count": runtime_status.sent_count,
         "due_count": runtime_status.due_count,
         "oldest_due_at": runtime_status.oldest_due_at,
-        "last_error": runtime_status.last_error,
+        "last_error": _notification_last_error_payload(
+            runtime_status.last_error,
+            include_sensitive=include_sensitive,
+        ),
     }
 
 
@@ -163,7 +193,7 @@ def build_readiness_payload(config: OperatorConsoleConfig) -> dict[str, Any]:
         config_ok = False
 
     active_bundle_state = _load_latest_active_bundle_state(config)
-    notification = _build_notification_component(config)
+    notification = build_notification_component(config)
     ready = config_ok and inspection.runtime_ready and data_path_ok
     return {
         "status": "ok" if ready else "degraded",

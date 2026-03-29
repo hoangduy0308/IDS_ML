@@ -169,10 +169,13 @@ def run_notification_worker(
     sender: TelegramSender | None = None,
     sleep_fn: Callable[[float], None] = sleep,
 ) -> list[NotificationMaintenanceCycleResult]:
+    collect_results = iterations is not None
     results: list[NotificationMaintenanceCycleResult] = []
     completed = 0
     while iterations is None or completed < iterations:
-        results.append(run_notification_maintenance_cycle(runtime_config, sender=sender))
+        result = run_notification_maintenance_cycle(runtime_config, sender=sender)
+        if collect_results:
+            results.append(result)
         completed += 1
         if iterations is not None and completed >= iterations:
             break

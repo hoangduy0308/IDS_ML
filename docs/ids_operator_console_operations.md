@@ -44,7 +44,7 @@ python scripts/ids_operator_console_manage.py \
 
 python scripts/ids_operator_console_manage.py \
   --database-path /var/lib/ids-operator-console/operator_console.db \
-  --json notify-worker --iterations 1 --poll-interval-seconds 30
+  --json notify-worker --poll-interval-seconds 30
 
 python scripts/ids_operator_console_manage.py \
   --database-path /var/lib/ids-operator-console/operator_console.db \
@@ -52,6 +52,7 @@ python scripts/ids_operator_console_manage.py \
 ```
 
 Disabled mode is explicit. If `IDS_OPERATOR_CONSOLE_TELEGRAM_BOT_TOKEN`/`_FILE` and `IDS_OPERATOR_CONSOLE_TELEGRAM_CHAT_ID` are both omitted, `notify-status` and `/readyz` report `components.notification.state=disabled` and the worker is intentionally unused.
+`notify-worker` is the supervised long-running loop; `notify-run-once` is the explicit one-shot maintenance path for drills and diagnostics.
 
 ## Model bundle visibility boundary
 
@@ -232,7 +233,8 @@ For this feature, operators should also inspect the `/readyz` payload body and c
 - `components.active_bundle.ok` reflects whether a summary-backed active bundle state is currently available
 - `components.active_bundle.state.active_bundle_name` matches the sensor summary when one has been ingested
 - `components.notification.state` is `disabled`, `ok`, or `degraded` as expected for the host
-- `components.notification.failed_count` and `components.notification.last_error` are intelligible if Telegram delivery has degraded
+- `components.notification.failed_count` stays intelligible if Telegram delivery has degraded
+- `/readyz` keeps notification detail sanitized; use `notify-status` for the full target and last-error message when debugging delivery failures
 
 If smoke fails, treat that as a deployment blocker rather than a warning.
 

@@ -139,6 +139,7 @@ def test_run_notification_worker_reuses_persisted_retry_state_across_iterations(
     )
 
     attempts = {"count": 0}
+    sleep_calls: list[float] = []
 
     def flaky_sender(_cfg: TelegramNotifierConfig, _chat_id: str, _text: str) -> str:
         attempts["count"] += 1
@@ -147,6 +148,7 @@ def test_run_notification_worker_reuses_persisted_retry_state_across_iterations(
         return "telegram-runtime-2"
 
     def release_retry_backoff(_seconds: float) -> None:
+        sleep_calls.append(_seconds)
         store = OperatorStore.open(runtime_config.database_path)
         try:
             store._connection.execute(  # noqa: SLF001
@@ -185,3 +187,21 @@ def test_run_notification_worker_reuses_persisted_retry_state_across_iterations(
     assert delivery["status"] == "sent"
     assert int(delivery["attempt_count"]) == 2
     assert delivery["provider_message_id"] == "telegram-runtime-2"
+    assert sleep_calls == [runtime_config.worker_poll_interval_seconds]
+
+
+def test_run_notification_worker_honors_poll_interval_between_iterations(tmp_path: Path) -> None:
+    runtime_config = _build_runtime_config(tmp_path, telegram=None)
+    sleep_calls: list[float] = []
+
+    results = run_notification_worker(
+        runtime_config,
+        iterations=3,
+        sleep_fn=sleep_calls.append,
+    )
+
+    assert len(results) == 3
+    assert sleep_calls == [
+        runtime_config.worker_poll_interval_seconds,
+        runtime_config.worker_poll_interval_seconds,
+    ]

@@ -8,7 +8,7 @@ This hardening pass does not turn it into an IPS/control-plane component and doe
 ## Runtime Contract
 
 - Service entrypoint: `scripts/ids_operator_console_server.py`
-- Notification worker entrypoint: `scripts/ids_operator_console_manage.py notify-worker`
+- Notification worker entrypoint: `scripts/ids_operator_console_manage.py notify-worker --poll-interval-seconds <seconds>` for supervised mode, or `notify-run-once` for a single maintenance cycle
 - Canonical app factory: `scripts/ids_operator_console/web.py:create_operator_console_web_app`
 - App topology: FastAPI + Jinja2 + SQLite, bound on loopback/internal network only
 - Edge topology: reverse proxy terminates TLS and forwards `Host`, `X-Forwarded-Proto`, and `X-Forwarded-For`
