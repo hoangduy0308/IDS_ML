@@ -13,8 +13,10 @@ if __package__ in (None, ""):
 
 from scripts.ids_same_host_stack import (  # noqa: E402
     SameHostStackConfig,
+    build_stack_restore_inventory_payload,
     build_stack_smoke_payload,
     build_stack_status_payload,
+    run_stack_post_restore_check,
     run_stack_recovery,
     run_stack_bootstrap,
     validate_stack_preflight,
@@ -100,6 +102,18 @@ def _build_parser() -> argparse.ArgumentParser:
         "recover",
         help="Run the canonical supervisor-first restart/recovery ordering and diagnosis path.",
     )
+    restore_inventory_parser = subparsers.add_parser(
+        "restore-inventory",
+        help="Check the minimum same-host restore inventory without owning restore mutations.",
+    )
+    restore_inventory_parser.add_argument("--operator-backup-dir", type=Path, required=True)
+
+    post_restore_parser = subparsers.add_parser(
+        "post-restore-check",
+        help="Run the canonical post-restore verification path after component-owned restore steps.",
+    )
+    post_restore_parser.add_argument("--operator-backup-dir", type=Path, required=True)
+    post_restore_parser.add_argument("--notification-redrive-limit", type=int, default=100)
 
     bootstrap_parser = subparsers.add_parser(
         "bootstrap",
@@ -149,6 +163,12 @@ def build_config_from_args(args: argparse.Namespace) -> SameHostStackConfig:
         sensor_freshness_window_seconds=float(args.sensor_freshness_window_seconds),
         proxy_public_url=args.proxy_public_url,
         proxy_timeout_seconds=float(args.proxy_timeout_seconds),
+        operator_backup_dir=(
+            Path(args.operator_backup_dir).resolve()
+            if getattr(args, "operator_backup_dir", None)
+            else None
+        ),
+        notification_redrive_limit=int(getattr(args, "notification_redrive_limit", 100)),
         candidate_bundle_root=(
             Path(args.candidate_bundle_root).resolve()
             if getattr(args, "candidate_bundle_root", None)
@@ -193,6 +213,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         payload = run_stack_recovery(config)
         _print_payload(payload, as_json=args.json_output)
         return 0 if payload.get("recovery_ready") else 2
+
+    if args.command == "restore-inventory":
+        payload = build_stack_restore_inventory_payload(config)
+        _print_payload(payload, as_json=args.json_output)
+        return 0 if payload.get("inventory_ready") else 2
+
+    if args.command == "post-restore-check":
+        payload = run_stack_post_restore_check(config)
+        _print_payload(payload, as_json=args.json_output)
+        return 0 if payload.get("post_restore_ready") else 2
 
     parser.error(f"unsupported command: {args.command}")
     return 2

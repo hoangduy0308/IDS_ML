@@ -21,13 +21,18 @@ from scripts.ids_live_sensor_health import (
 from scripts.ids_model_bundle import build_bundle_status_payload
 from scripts.ids_operator_console.config import (
     OperatorConsoleConfig,
+    PLACEHOLDER_SECRET_VALUES,
     load_operator_console_config,
 )
 from scripts.ids_operator_console.health import (
     build_notification_component,
     build_readiness_payload,
 )
-from scripts.ids_operator_console.ops import run_smoke_checks
+from scripts.ids_operator_console.ops import (
+    notification_status,
+    redrive_notification_failures,
+    run_smoke_checks,
+)
 from scripts.ids_operator_console_preflight import (
     OperatorConsolePreflightConfig,
     validate_preflight as validate_operator_console_preflight,
@@ -62,6 +67,8 @@ class SameHostStackConfig:
     sensor_freshness_window_seconds: float = 300.0
     proxy_public_url: str | None = None
     proxy_timeout_seconds: float = 5.0
+    operator_backup_dir: Path | None = None
+    notification_redrive_limit: int = 100
     candidate_bundle_root: Path | None = None
     admin_username: str | None = None
     admin_password: str | None = None
@@ -487,6 +494,370 @@ def run_stack_recovery(
         "diagnosis": {
             "status": status_payload,
             "smoke": smoke_payload,
+        },
+    }
+
+
+def _require_operator_backup_dir(config: SameHostStackConfig) -> Path:
+    if config.operator_backup_dir is None:
+        raise ValueError("operator_backup_dir is required for restore inventory checks")
+    resolved = Path(config.operator_backup_dir).resolve()
+    if not resolved.exists():
+        raise FileNotFoundError(f"operator_backup_dir not found: {resolved}")
+    manifest_path = resolved / "manifest.json"
+    if manifest_path.is_file():
+        return resolved
+    backup_dirs = sorted(
+        [path for path in resolved.iterdir() if path.is_dir() and path.name.startswith("backup-")],
+        key=lambda path: path.name,
+        reverse=True,
+    )
+    if not backup_dirs:
+        raise FileNotFoundError(f"operator backup manifest not found under: {resolved}")
+    return backup_dirs[0]
+
+
+def _build_restore_bundle_inventory(config: SameHostStackConfig) -> dict[str, Any]:
+    payload = build_bundle_status_payload(Path(config.activation_path).resolve())
+    referenced_bundle_roots: list[dict[str, Any]] = []
+    for field in ("active_bundle_root", "previous_bundle_root"):
+        raw_root = payload.get(field)
+        if raw_root in (None, ""):
+            continue
+        resolved_root = Path(str(raw_root)).resolve()
+        referenced_bundle_roots.append(
+            {
+                "field": field,
+                "path": str(resolved_root),
+                "exists": resolved_root.is_dir(),
+            }
+        )
+
+    ok = bool(payload.get("runtime_ready")) and all(root["exists"] for root in referenced_bundle_roots)
+    detail = None
+    if not ok:
+        detail = str(payload.get("detail", "activation contract restore inventory is incomplete"))
+        missing_root = next((root["path"] for root in referenced_bundle_roots if not root["exists"]), None)
+        if missing_root is not None:
+            detail = f"referenced bundle root missing: {missing_root}"
+    return {
+        "ok": ok,
+        "state": "ready" if ok else "degraded",
+        "detail": detail,
+        "payload": {
+            "activation_contract": payload,
+            "referenced_bundle_roots": referenced_bundle_roots,
+        },
+    }
+
+
+def _load_backup_manifest(backup_dir: Path) -> tuple[Path, dict[str, Any], Path]:
+    manifest_path = backup_dir / "manifest.json"
+    if not manifest_path.is_file():
+        raise FileNotFoundError(f"backup manifest not found: {manifest_path}")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    backup_file_name = str(manifest.get("database", {}).get("backup_file", "operator_console.db"))
+    database_backup_path = (backup_dir / backup_file_name).resolve()
+    if not database_backup_path.is_file():
+        raise FileNotFoundError(f"backup database not found: {database_backup_path}")
+    return manifest_path, manifest, database_backup_path
+
+
+def _evaluate_secret_reference(
+    reference_name: str,
+    *,
+    reference_payload: dict[str, Any],
+    current_value: str | None,
+    current_source: Path | None,
+    reject_placeholders: bool,
+) -> dict[str, Any]:
+    configured = bool(reference_payload.get("configured"))
+    source = reference_payload.get("source")
+    if not configured:
+        return {
+            "ok": True,
+            "state": "not_configured",
+            "detail": None,
+            "payload": {
+                "reference_name": reference_name,
+                "configured": False,
+                "source": source,
+            },
+        }
+    if source == "file":
+        ok = current_source is not None and Path(current_source).is_file()
+        return {
+            "ok": ok,
+            "state": "bound" if ok else "missing",
+            "detail": None if ok else f"{reference_name} file reference is not rebound on the host",
+            "payload": {
+                "reference_name": reference_name,
+                "configured": True,
+                "source": source,
+                "path": str(current_source) if current_source is not None else None,
+            },
+        }
+    normalized = None if current_value is None else str(current_value).strip()
+    ok = bool(normalized)
+    if ok and reject_placeholders:
+        ok = normalized not in PLACEHOLDER_SECRET_VALUES
+    return {
+        "ok": ok,
+        "state": "bound" if ok else "missing",
+        "detail": None if ok else f"{reference_name} env value is not rebound on the host",
+        "payload": {
+            "reference_name": reference_name,
+            "configured": True,
+            "source": source or "env",
+        },
+    }
+
+
+def _build_operator_restore_inventory(config: SameHostStackConfig) -> dict[str, Any]:
+    operator_config = load_stack_operator_config(config)
+    backup_dir = _require_operator_backup_dir(config)
+    manifest_path, manifest, database_backup_path = _load_backup_manifest(backup_dir)
+    database_path = operator_config.database_path.resolve()
+
+    secret_references = manifest.get("secret_references", {})
+    secret_key_reference = _evaluate_secret_reference(
+        "secret_key",
+        reference_payload=dict(secret_references.get("secret_key", {})),
+        current_value=operator_config.secret_key,
+        current_source=operator_config.secret_key_source,
+        reject_placeholders=True,
+    )
+    telegram_reference = _evaluate_secret_reference(
+        "telegram_bot_token",
+        reference_payload=dict(secret_references.get("telegram_bot_token", {})),
+        current_value=operator_config.telegram_bot_token,
+        current_source=operator_config.telegram_bot_token_source,
+        reject_placeholders=False,
+    )
+
+    ok = all(
+        [
+            database_path.is_file(),
+            manifest_path.is_file(),
+            database_backup_path.is_file(),
+            secret_key_reference["ok"],
+            telegram_reference["ok"],
+        ]
+    )
+    detail = None
+    if not ok:
+        if not database_path.is_file():
+            detail = f"operator database not found: {database_path}"
+        elif not database_backup_path.is_file():
+            detail = f"backup database not found: {database_backup_path}"
+        elif not secret_key_reference["ok"]:
+            detail = str(secret_key_reference["detail"])
+        elif not telegram_reference["ok"]:
+            detail = str(telegram_reference["detail"])
+        else:
+            detail = "operator restore inventory is incomplete"
+
+    return {
+        "ok": ok,
+        "state": "ready" if ok else "degraded",
+        "detail": detail,
+        "payload": {
+            "database_path": str(database_path),
+            "database_exists": database_path.is_file(),
+            "backup_dir": str(backup_dir),
+            "manifest_path": str(manifest_path),
+            "database_backup_path": str(database_backup_path),
+            "secret_references": {
+                "secret_key": secret_key_reference,
+                "telegram_bot_token": telegram_reference,
+            },
+        },
+    }
+
+
+def _build_live_sensor_evidence_inventory(config: SameHostStackConfig) -> dict[str, Any]:
+    log_root = Path(config.summary_output_path).resolve().parent
+    paths = {
+        "alerts_output_path": Path(config.alerts_output_path).resolve(),
+        "quarantine_output_path": Path(config.quarantine_output_path).resolve(),
+        "summary_output_path": Path(config.summary_output_path).resolve(),
+        "log_root": log_root,
+    }
+    return {
+        "ok": True,
+        "state": "preserve_when_practical",
+        "detail": "live-sensor JSONL outputs and logs are operator evidence, not primary restore state",
+        "gating": False,
+        "payload": {
+            "preserve_when_practical": True,
+            "primary_restore_state": False,
+            "paths": {
+                name: {
+                    "path": str(path),
+                    "exists": path.exists(),
+                }
+                for name, path in paths.items()
+            },
+        },
+    }
+
+
+def build_stack_restore_inventory_payload(config: SameHostStackConfig) -> dict[str, Any]:
+    bundle_inventory = _build_restore_bundle_inventory(config)
+    operator_inventory = _build_operator_restore_inventory(config)
+    evidence_inventory = _build_live_sensor_evidence_inventory(config)
+    inventory_ready = bool(bundle_inventory["ok"] and operator_inventory["ok"])
+    return {
+        "command": "restore-inventory",
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+        "inventory_ready": inventory_ready,
+        "status": "ok" if inventory_ready else "degraded",
+        "components": {
+            "activation_restore_state": bundle_inventory,
+            "operator_console_restore_state": operator_inventory,
+            "live_sensor_operator_evidence": evidence_inventory,
+        },
+    }
+
+
+def _build_live_sensor_revalidation_component(config: SameHostStackConfig) -> dict[str, Any]:
+    try:
+        validate_live_sensor_preflight(build_sensor_preflight_config(config))
+    except Exception as exc:
+        return {
+            "ok": False,
+            "state": "degraded",
+            "detail": str(exc),
+        }
+    return {
+        "ok": True,
+        "state": "ready",
+        "detail": None,
+    }
+
+
+def _extract_bundle_visibility(status_payload: dict[str, Any]) -> dict[str, Any]:
+    active_bundle_component = (
+        status_payload.get("components", {})
+        .get("operator_visibility_path", {})
+        .get("payload", {})
+        .get("components", {})
+        .get("active_bundle", {})
+    )
+    ok = bool(active_bundle_component.get("ok"))
+    return {
+        "ok": ok,
+        "state": "reestablished" if ok else "missing",
+        "detail": None if ok else "operator visibility does not yet expose active bundle state",
+        "payload": active_bundle_component,
+    }
+
+
+def run_stack_post_restore_check(
+    config: SameHostStackConfig,
+    *,
+    command_runner: CommandRunner | None = None,
+    proxy_checker: ProxyChecker = _default_proxy_checker,
+) -> dict[str, Any]:
+    inventory_payload = build_stack_restore_inventory_payload(config)
+    live_sensor_revalidation = _build_live_sensor_revalidation_component(config)
+    recovery_payload = run_stack_recovery(
+        config,
+        command_runner=command_runner,
+        proxy_checker=proxy_checker,
+    )
+
+    steps: list[dict[str, Any]] = [
+        {
+            "step": "restore_inventory",
+            "result": inventory_payload,
+        },
+        {
+            "step": "live_sensor_preflight_revalidation",
+            "result": live_sensor_revalidation,
+        },
+        {
+            "step": "stack_recovery",
+            "result": recovery_payload,
+        },
+    ]
+
+    operator_config = load_stack_operator_config(config)
+    notification_component: dict[str, Any]
+    if notifications_enabled(config):
+        notification_component = notification_status(operator_config)
+        steps.append(
+            {
+                "step": "notification_status",
+                "result": notification_component,
+            }
+        )
+        if int(notification_component.get("failed_count", 0)) > 0:
+            redrive_result = redrive_notification_failures(
+                operator_config,
+                limit=int(config.notification_redrive_limit),
+            )
+            notification_component = redrive_result.status
+            steps.append(
+                {
+                    "step": "notification_redrive",
+                    "result": {
+                        "redriven": redrive_result.redriven,
+                        "status": redrive_result.status,
+                    },
+                }
+            )
+    else:
+        notification_component = {
+            "ok": True,
+            "state": "disabled",
+            "enabled": False,
+        }
+        steps.append(
+            {
+                "step": "notification_disabled",
+                "result": notification_component,
+            }
+        )
+
+    final_status = build_stack_status_payload(config, proxy_checker=proxy_checker)
+    final_smoke = build_stack_smoke_payload(config, proxy_checker=proxy_checker)
+    bundle_visibility = _extract_bundle_visibility(final_status)
+    steps.append(
+        {
+            "step": "final_status",
+            "result": final_status,
+        }
+    )
+    steps.append(
+        {
+            "step": "final_smoke",
+            "result": final_smoke,
+        }
+    )
+
+    notification_ok = bool(notification_component.get("ok") or notification_component.get("state") == "disabled")
+    post_restore_ready = all(
+        [
+            inventory_payload["inventory_ready"],
+            live_sensor_revalidation["ok"],
+            recovery_payload["recovery_ready"],
+            notification_ok,
+            final_status.get("ready"),
+            final_smoke.get("ready"),
+            bundle_visibility["ok"],
+        ]
+    )
+    return {
+        "command": "post-restore-check",
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+        "post_restore_ready": post_restore_ready,
+        "status": "ok" if post_restore_ready else "degraded",
+        "steps": steps,
+        "diagnosis": {
+            "status": final_status,
+            "smoke": final_smoke,
+            "bundle_visibility_reestablished": bundle_visibility,
         },
     }
 

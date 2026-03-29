@@ -104,6 +104,38 @@ def _build_config(
     )
 
 
+def _write_backup_artifacts(
+    backup_dir: Path,
+    *,
+    database_path: Path,
+    secret_key_source: str = "file",
+    telegram_source: str | None = None,
+) -> Path:
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    backup_database = backup_dir / "operator_console.db"
+    backup_database.write_text("sqlite-backup\n", encoding="utf-8")
+    manifest = {
+        "database": {
+            "backup_file": backup_database.name,
+        },
+        "secret_references": {
+            "secret_key": {
+                "configured": True,
+                "source": secret_key_source,
+            },
+            "telegram_bot_token": {
+                "configured": telegram_source is not None,
+                "source": telegram_source,
+            },
+        },
+    }
+    manifest_path = backup_dir / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    database_path.parent.mkdir(parents=True, exist_ok=True)
+    database_path.write_text("restored-db\n", encoding="utf-8")
+    return manifest_path
+
+
 def test_validate_stack_preflight_bootstrap_or_preflight_delegates_component_contracts(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -617,3 +649,258 @@ def test_manage_main_restart_or_recovery_path_prints_json_payload(
 
     assert exit_code == 0
     assert json.loads(capsys.readouterr().out)["command"] == "recover"
+
+
+def test_build_stack_restore_inventory_restore_or_post_restore_checks_minimum_inventory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _build_config(tmp_path)
+    active_bundle_root = tmp_path / "bundles" / "active"
+    previous_bundle_root = tmp_path / "bundles" / "previous"
+    active_bundle_root.mkdir(parents=True, exist_ok=True)
+    previous_bundle_root.mkdir(parents=True, exist_ok=True)
+    backup_dir = tmp_path / "backups" / "backup-20260329T010203000000Z"
+    _write_backup_artifacts(
+        backup_dir,
+        database_path=tmp_path / "runtime" / "operator_console.db",
+    )
+    config = replace(config, operator_backup_dir=backup_dir)
+
+    monkeypatch.setattr(
+        stack,
+        "build_bundle_status_payload",
+        lambda path: {
+            "runtime_ready": True,
+            "activation_path": str(path),
+            "active_bundle_root": str(active_bundle_root),
+            "previous_bundle_root": str(previous_bundle_root),
+        },
+    )
+
+    payload = stack.build_stack_restore_inventory_payload(config)
+
+    assert payload["inventory_ready"] is True
+    assert (
+        payload["components"]["activation_restore_state"]["payload"]["referenced_bundle_roots"][0]["path"]
+        == str(active_bundle_root.resolve())
+    )
+    assert (
+        payload["components"]["operator_console_restore_state"]["payload"]["secret_references"]["secret_key"]["state"]
+        == "bound"
+    )
+    assert payload["components"]["live_sensor_operator_evidence"]["gating"] is False
+    assert (
+        payload["components"]["live_sensor_operator_evidence"]["payload"]["primary_restore_state"]
+        is False
+    )
+
+
+def test_run_stack_post_restore_check_restore_or_post_restore_redrives_notifications(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = replace(
+        _build_config(tmp_path, telegram_enabled=True),
+        operator_backup_dir=tmp_path / "backups" / "backup-20260329T010203000000Z",
+        notification_redrive_limit=7,
+    )
+
+    monkeypatch.setattr(
+        stack,
+        "build_stack_restore_inventory_payload",
+        lambda _config: {"inventory_ready": True, "command": "restore-inventory"},
+    )
+    monkeypatch.setattr(
+        stack,
+        "validate_live_sensor_preflight",
+        lambda _config: None,
+    )
+    monkeypatch.setattr(
+        stack,
+        "run_stack_recovery",
+        lambda *_args, **_kwargs: {"recovery_ready": True, "command": "recover"},
+    )
+    monkeypatch.setattr(
+        stack,
+        "notification_status",
+        lambda _config: {
+            "ok": False,
+            "enabled": True,
+            "state": "degraded",
+            "failed_count": 2,
+        },
+    )
+
+    redrive_calls: list[int] = []
+
+    monkeypatch.setattr(
+        stack,
+        "redrive_notification_failures",
+        lambda _config, limit: (
+            redrive_calls.append(limit)
+            or SimpleNamespace(
+                redriven=2,
+                status={
+                    "ok": True,
+                    "enabled": True,
+                    "state": "ok",
+                    "failed_count": 0,
+                    "pending_count": 2,
+                },
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        stack,
+        "build_stack_status_payload",
+        lambda *_args, **_kwargs: {
+            "ready": True,
+            "command": "status",
+            "components": {
+                "operator_visibility_path": {
+                    "payload": {
+                        "components": {
+                            "active_bundle": {
+                                "ok": True,
+                                "state": {
+                                    "active_bundle_name": "bundle-a",
+                                },
+                            }
+                        }
+                    }
+                }
+            },
+        },
+    )
+    monkeypatch.setattr(
+        stack,
+        "build_stack_smoke_payload",
+        lambda *_args, **_kwargs: {"ready": True, "command": "smoke"},
+    )
+
+    payload = stack.run_stack_post_restore_check(config)
+
+    assert payload["post_restore_ready"] is True
+    assert [step["step"] for step in payload["steps"]] == [
+        "restore_inventory",
+        "live_sensor_preflight_revalidation",
+        "stack_recovery",
+        "notification_status",
+        "notification_redrive",
+        "final_status",
+        "final_smoke",
+    ]
+    assert redrive_calls == [7]
+    assert payload["diagnosis"]["bundle_visibility_reestablished"]["state"] == "reestablished"
+
+
+def test_run_stack_post_restore_check_restore_or_post_restore_skips_disabled_notification(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = replace(
+        _build_config(tmp_path),
+        operator_backup_dir=tmp_path / "backups" / "backup-20260329T010203000000Z",
+    )
+
+    monkeypatch.setattr(
+        stack,
+        "build_stack_restore_inventory_payload",
+        lambda _config: {"inventory_ready": True, "command": "restore-inventory"},
+    )
+    monkeypatch.setattr(
+        stack,
+        "validate_live_sensor_preflight",
+        lambda _config: None,
+    )
+    monkeypatch.setattr(
+        stack,
+        "run_stack_recovery",
+        lambda *_args, **_kwargs: {"recovery_ready": True, "command": "recover"},
+    )
+    monkeypatch.setattr(
+        stack,
+        "build_stack_status_payload",
+        lambda *_args, **_kwargs: {
+            "ready": True,
+            "command": "status",
+            "components": {
+                "operator_visibility_path": {
+                    "payload": {
+                        "components": {
+                            "active_bundle": {
+                                "ok": True,
+                                "state": {
+                                    "active_bundle_name": "bundle-a",
+                                },
+                            }
+                        }
+                    }
+                }
+            },
+        },
+    )
+    monkeypatch.setattr(
+        stack,
+        "build_stack_smoke_payload",
+        lambda *_args, **_kwargs: {"ready": True, "command": "smoke"},
+    )
+
+    payload = stack.run_stack_post_restore_check(config)
+
+    assert payload["post_restore_ready"] is True
+    assert payload["steps"][3]["step"] == "notification_disabled"
+    assert payload["steps"][3]["result"]["state"] == "disabled"
+
+
+def test_manage_main_restore_or_post_restore_prints_json_payload(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config = _build_config(tmp_path)
+    backup_dir = tmp_path / "backups" / "backup-20260329T010203000000Z"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr(
+        manage,
+        "run_stack_post_restore_check",
+        lambda _: {"post_restore_ready": True, "command": "post-restore-check"},
+    )
+
+    exit_code = manage.main(
+        [
+            "--repo-root",
+            str(config.repo_root),
+            "--python-binary",
+            str(config.python_binary),
+            "--operator-env-file",
+            str(config.operator_env_file),
+            "--activation-path",
+            str(config.activation_path),
+            "--dumpcap-binary",
+            str(config.dumpcap_binary),
+            "--java-binary",
+            str(config.java_binary),
+            "--extractor-binary",
+            str(config.extractor_binary),
+            "--jnetpcap-path",
+            str(config.jnetpcap_path),
+            "--spool-dir",
+            str(config.spool_dir),
+            "--alerts-output-path",
+            str(config.alerts_output_path),
+            "--quarantine-output-path",
+            str(config.quarantine_output_path),
+            "--summary-output-path",
+            str(config.summary_output_path),
+            "--json",
+            "post-restore-check",
+            "--operator-backup-dir",
+            str(backup_dir),
+        ]
+    )
+
+    assert exit_code == 0
+    assert json.loads(capsys.readouterr().out)["command"] == "post-restore-check"
