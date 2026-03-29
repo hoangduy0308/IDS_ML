@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import sys
+import json
 
 import pandas as pd
 import pytest
@@ -18,6 +19,57 @@ from scripts.ids_inference import (  # noqa: E402
     build_model_config,
     main,
 )
+from scripts.ids_model_bundle import (  # noqa: E402
+    DEFAULT_ACTIVATION_RECORD_NAME,
+    ModelBundleContractError,
+    build_activation_record_payload,
+    build_feature_schema_metadata,
+    build_inference_contract_metadata,
+    write_activation_record,
+)
+
+
+def write_feature_columns(path: Path) -> None:
+    path.write_text(json.dumps({"feature_columns": ["f1", "f2"]}), encoding="utf-8")
+
+
+def write_bundle_manifest(
+    bundle_root: Path,
+    *,
+    threshold: float = 0.5,
+    positive_label: str = "Attack",
+    negative_label: str = "Benign",
+) -> None:
+    feature_columns_path = bundle_root / "feature_columns.json"
+    write_feature_columns(feature_columns_path)
+    payload = {
+        "manifest_version": 2,
+        "bundle_name": "bundle-under-test",
+        "created_at": "2026-03-29T00:00:00+07:00",
+        "model_key": "catboost_full_data",
+        "model_family": "CatBoostClassifier",
+        "model_artifact": "model.cbm",
+        "feature_columns_file": "feature_columns.json",
+        "threshold": threshold,
+        "positive_label": positive_label,
+        "negative_label": negative_label,
+        "feature_count": 2,
+        "train_rows": 123,
+        "metrics_file": "metrics.json",
+        "training_summary_file": "training_summary.json",
+        "compatibility": {
+            "feature_schema": build_feature_schema_metadata(feature_columns_path),
+            "inference_contract": build_inference_contract_metadata(
+                positive_label=positive_label,
+                negative_label=negative_label,
+                threshold=threshold,
+            ),
+        },
+    }
+    (bundle_root / "model_bundle.json").write_text(
+        json.dumps(payload),
+        encoding="utf-8",
+    )
 
 
 class DummyInferencer:
@@ -78,53 +130,39 @@ def test_model_config_can_load_from_bundle(tmp_path: Path) -> None:
     bundle_root = tmp_path / "bundle"
     bundle_root.mkdir()
     (bundle_root / "model.cbm").write_text("placeholder", encoding="utf-8")
-    (bundle_root / "feature_columns.json").write_text('{"feature_columns":["f1","f2"]}', encoding="utf-8")
-    (bundle_root / "model_bundle.json").write_text(
-        '{"model_artifact":"model.cbm","feature_columns_file":"feature_columns.json","threshold":0.5,"positive_label":"Attack","negative_label":"Benign"}',
-        encoding="utf-8",
-    )
+    write_bundle_manifest(bundle_root)
 
     config = IDSModelConfig.from_bundle(bundle_root)
 
     assert config.model_path == (bundle_root / "model.cbm").resolve()
     assert config.feature_columns_path == (bundle_root / "feature_columns.json").resolve()
     assert config.threshold == 0.5
+    assert config.bundle_root == bundle_root.resolve()
 
 
-def test_build_model_config_prefers_bundle_root(tmp_path: Path) -> None:
+def test_build_model_config_rejects_mixed_bundle_and_config_inputs(tmp_path: Path) -> None:
     bundle_root = tmp_path / "bundle"
     bundle_root.mkdir()
     (bundle_root / "model.cbm").write_text("placeholder", encoding="utf-8")
-    (bundle_root / "feature_columns.json").write_text('{"feature_columns":["f1","f2"]}', encoding="utf-8")
-    (bundle_root / "model_bundle.json").write_text(
-        '{"model_artifact":"model.cbm","feature_columns_file":"feature_columns.json","threshold":0.75,"positive_label":"Attack","negative_label":"Benign"}',
-        encoding="utf-8",
-    )
+    write_bundle_manifest(bundle_root, threshold=0.75)
     unused_config = tmp_path / "unused.json"
     unused_config.write_text(
         '{"model_artifact":"unused.cbm","feature_columns_file":"unused_columns.json","threshold":0.1}',
         encoding="utf-8",
     )
 
-    config = build_model_config(bundle_root=bundle_root, config_path=unused_config)
-
-    assert config.model_path == (bundle_root / "model.cbm").resolve()
-    assert config.feature_columns_path == (bundle_root / "feature_columns.json").resolve()
-    assert config.threshold == 0.75
+    with pytest.raises(
+        ModelBundleContractError,
+        match="Specify only one canonical model contract source",
+    ):
+        build_model_config(bundle_root=bundle_root, config_path=unused_config)
 
 
 def test_build_model_config_supports_config_path(tmp_path: Path) -> None:
     config_path = tmp_path / "bundle" / "model_bundle.json"
     config_path.parent.mkdir(parents=True)
     (config_path.parent / "model.cbm").write_text("placeholder", encoding="utf-8")
-    (config_path.parent / "feature_columns.json").write_text(
-        '{"feature_columns":["f1","f2"]}',
-        encoding="utf-8",
-    )
-    config_path.write_text(
-        '{"model_artifact":"model.cbm","feature_columns_file":"feature_columns.json","threshold":0.25,"positive_label":"Alert","negative_label":"Benign"}',
-        encoding="utf-8",
-    )
+    write_bundle_manifest(config_path.parent, threshold=0.25, positive_label="Alert")
 
     config = build_model_config(config_path=config_path)
 
@@ -138,11 +176,7 @@ def test_build_inferencer_uses_resolved_config(monkeypatch: pytest.MonkeyPatch, 
     bundle_root = tmp_path / "bundle"
     bundle_root.mkdir()
     (bundle_root / "model.cbm").write_text("placeholder", encoding="utf-8")
-    (bundle_root / "feature_columns.json").write_text('{"feature_columns":["f1","f2"]}', encoding="utf-8")
-    (bundle_root / "model_bundle.json").write_text(
-        '{"model_artifact":"model.cbm","feature_columns_file":"feature_columns.json","threshold":0.5,"positive_label":"Attack","negative_label":"Benign"}',
-        encoding="utf-8",
-    )
+    write_bundle_manifest(bundle_root)
 
     loaded_models: list[Path] = []
 
@@ -157,6 +191,43 @@ def test_build_inferencer_uses_resolved_config(monkeypatch: pytest.MonkeyPatch, 
     assert inferencer.config.model_path == (bundle_root / "model.cbm").resolve()
     assert inferencer.feature_columns == ["f1", "f2"]
     assert loaded_models == [(bundle_root / "model.cbm").resolve()]
+
+
+def test_build_model_config_supports_activation_path(tmp_path: Path) -> None:
+    bundle_root = tmp_path / "bundle"
+    bundle_root.mkdir()
+    (bundle_root / "model.cbm").write_text("placeholder", encoding="utf-8")
+    write_bundle_manifest(bundle_root, threshold=0.4)
+    activation_path = tmp_path / DEFAULT_ACTIVATION_RECORD_NAME
+    write_activation_record(
+        activation_path,
+        build_activation_record_payload(
+            active_bundle_root=bundle_root,
+            active_bundle_name="bundle-under-test",
+            activated_at="2026-03-29T00:00:00+07:00",
+        ),
+    )
+
+    config = build_model_config(activation_path=activation_path)
+
+    assert config.bundle_root == bundle_root.resolve()
+    assert config.threshold == 0.4
+
+
+def test_build_model_config_rejects_external_overrides_when_bundle_used(tmp_path: Path) -> None:
+    bundle_root = tmp_path / "bundle"
+    bundle_root.mkdir()
+    (bundle_root / "model.cbm").write_text("placeholder", encoding="utf-8")
+    write_bundle_manifest(bundle_root)
+
+    with pytest.raises(
+        ModelBundleContractError,
+        match="cannot be mixed with external model/schema/threshold overrides",
+    ):
+        build_model_config(
+            bundle_root=bundle_root,
+            model_path=tmp_path / "other_model.cbm",
+        )
 
 
 def test_ids_inference_main_preserves_cli_output_shape(

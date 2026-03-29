@@ -8,6 +8,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from scripts.ids_model_bundle import (
+    SUPPORTED_BUNDLE_MANIFEST_VERSION,
+    build_feature_schema_metadata,
+    build_inference_contract_metadata,
+)
+
 
 DEFAULT_MODEL_PATH = Path(
     r"F:\Work\IDS_ML_New\artifacts\kaggle\outputs\catboost_full_data_attempt"
@@ -120,6 +126,7 @@ def main() -> None:
     training_summary = read_json(args.training_summary_path.resolve())
     threshold_selection = read_json(args.threshold_selection_path.resolve())
     feature_columns_payload = read_json(args.feature_columns_path.resolve())
+    feature_schema_metadata = build_feature_schema_metadata(feature_target)
 
     metrics_payload = {
         "val_f1": float(summary["val_f1"]),
@@ -133,6 +140,7 @@ def main() -> None:
     write_json(training_target, training_summary)
 
     bundle_payload = {
+        "manifest_version": SUPPORTED_BUNDLE_MANIFEST_VERSION,
         "bundle_name": "catboost_full_data_v1",
         "created_at": datetime.now().astimezone().isoformat(),
         "model_key": "catboost_full_data",
@@ -152,6 +160,14 @@ def main() -> None:
         },
         "metrics_file": metrics_target.name,
         "training_summary_file": training_target.name,
+        "compatibility": {
+            "feature_schema": feature_schema_metadata,
+            "inference_contract": build_inference_contract_metadata(
+                positive_label="Attack",
+                negative_label="Benign",
+                threshold=float(args.threshold),
+            ),
+        },
         "source_artifacts": {
             "model_path": str(args.model_path.resolve()),
             "feature_columns_path": str(args.feature_columns_path.resolve()),

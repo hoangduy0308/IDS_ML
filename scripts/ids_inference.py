@@ -4,10 +4,18 @@ import argparse
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import pandas as pd
 from catboost import CatBoostClassifier
+
+from scripts.ids_model_bundle import (
+    DEFAULT_BUNDLE_CONFIG_NAME,
+    ModelBundleContractError,
+    load_feature_columns,
+    load_model_bundle_manifest,
+    read_json,
+    resolve_active_model_bundle,
+)
 
 
 DEFAULT_MODEL_PATH = Path(
@@ -17,7 +25,6 @@ DEFAULT_MODEL_PATH = Path(
 DEFAULT_FEATURE_COLUMNS_PATH = Path(
     r"F:\Work\IDS_ML_New\artifacts\cic_iot_diad_2024_binary\manifests\feature_columns.json"
 )
-DEFAULT_BUNDLE_CONFIG_NAME = "model_bundle.json"
 DEFAULT_THRESHOLD = 0.5
 
 PREDICTION_COLUMNS = ["attack_score", "predicted_label", "is_alert", "threshold"]
@@ -30,44 +37,43 @@ class IDSModelConfig:
     threshold: float = DEFAULT_THRESHOLD
     positive_label: str = "Attack"
     negative_label: str = "Benign"
+    bundle_root: Path | None = None
+    manifest_path: Path | None = None
 
     @classmethod
     def from_bundle(cls, bundle_root: Path) -> "IDSModelConfig":
-        bundle_root = bundle_root.resolve()
-        config_path = bundle_root / DEFAULT_BUNDLE_CONFIG_NAME
-        payload = read_json(config_path)
+        manifest = load_model_bundle_manifest(bundle_root)
         return cls(
-            model_path=(bundle_root / payload["model_artifact"]).resolve(),
-            feature_columns_path=(bundle_root / payload["feature_columns_file"]).resolve(),
-            threshold=float(payload.get("threshold", DEFAULT_THRESHOLD)),
-            positive_label=str(payload.get("positive_label", "Attack")),
-            negative_label=str(payload.get("negative_label", "Benign")),
+            model_path=manifest.model_path,
+            feature_columns_path=manifest.feature_columns_path,
+            threshold=manifest.threshold,
+            positive_label=manifest.positive_label,
+            negative_label=manifest.negative_label,
+            bundle_root=manifest.bundle_root,
+            manifest_path=manifest.manifest_path,
         )
 
     @classmethod
     def from_config_path(cls, config_path: Path) -> "IDSModelConfig":
         config_path = config_path.resolve()
-        payload = read_json(config_path)
-        base_dir = config_path.parent
+        if config_path.name != DEFAULT_BUNDLE_CONFIG_NAME:
+            raise ModelBundleContractError(
+                f"Expected config path to point to {DEFAULT_BUNDLE_CONFIG_NAME}, got {config_path}"
+            )
+        return cls.from_bundle(config_path.parent)
+
+    @classmethod
+    def from_activation_path(cls, activation_path: Path) -> "IDSModelConfig":
+        manifest = resolve_active_model_bundle(activation_path)
         return cls(
-            model_path=(base_dir / payload["model_artifact"]).resolve(),
-            feature_columns_path=(base_dir / payload["feature_columns_file"]).resolve(),
-            threshold=float(payload.get("threshold", DEFAULT_THRESHOLD)),
-            positive_label=str(payload.get("positive_label", "Attack")),
-            negative_label=str(payload.get("negative_label", "Benign")),
+            model_path=manifest.model_path,
+            feature_columns_path=manifest.feature_columns_path,
+            threshold=manifest.threshold,
+            positive_label=manifest.positive_label,
+            negative_label=manifest.negative_label,
+            bundle_root=manifest.bundle_root,
+            manifest_path=manifest.manifest_path,
         )
-
-
-def read_json(path: Path) -> dict[str, Any]:
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
-def load_feature_columns(path: Path) -> list[str]:
-    payload = read_json(path)
-    columns = payload.get("feature_columns")
-    if not isinstance(columns, list) or not columns:
-        raise ValueError(f"Invalid feature_columns payload in {path}")
-    return [str(column) for column in columns]
 
 
 def load_input_frame(path: Path) -> pd.DataFrame:
@@ -143,18 +149,30 @@ def build_model_config(
     *,
     bundle_root: Path | None = None,
     config_path: Path | None = None,
-    model_path: Path = DEFAULT_MODEL_PATH,
-    feature_columns_path: Path = DEFAULT_FEATURE_COLUMNS_PATH,
-    threshold: float = DEFAULT_THRESHOLD,
+    activation_path: Path | None = None,
+    model_path: Path | None = None,
+    feature_columns_path: Path | None = None,
+    threshold: float | None = None,
 ) -> IDSModelConfig:
+    contract_inputs = [value for value in (bundle_root, config_path, activation_path) if value is not None]
+    if len(contract_inputs) > 1:
+        raise ModelBundleContractError(
+            "Specify only one canonical model contract source: bundle_root, config_path, or activation_path"
+        )
+    if contract_inputs and any(value is not None for value in (model_path, feature_columns_path, threshold)):
+        raise ModelBundleContractError(
+            "Canonical bundle resolution cannot be mixed with external model/schema/threshold overrides"
+        )
+    if activation_path is not None:
+        return IDSModelConfig.from_activation_path(activation_path)
     if bundle_root is not None:
         return IDSModelConfig.from_bundle(bundle_root)
     if config_path is not None:
         return IDSModelConfig.from_config_path(config_path)
     return IDSModelConfig(
-        model_path=model_path.resolve(),
-        feature_columns_path=feature_columns_path.resolve(),
-        threshold=float(threshold),
+        model_path=(model_path or DEFAULT_MODEL_PATH).resolve(),
+        feature_columns_path=(feature_columns_path or DEFAULT_FEATURE_COLUMNS_PATH).resolve(),
+        threshold=float(DEFAULT_THRESHOLD if threshold is None else threshold),
     )
 
 
@@ -162,13 +180,15 @@ def build_inferencer(
     *,
     bundle_root: Path | None = None,
     config_path: Path | None = None,
-    model_path: Path = DEFAULT_MODEL_PATH,
-    feature_columns_path: Path = DEFAULT_FEATURE_COLUMNS_PATH,
-    threshold: float = DEFAULT_THRESHOLD,
+    activation_path: Path | None = None,
+    model_path: Path | None = None,
+    feature_columns_path: Path | None = None,
+    threshold: float | None = None,
 ) -> IDSInferencer:
     config = build_model_config(
         bundle_root=bundle_root,
         config_path=config_path,
+        activation_path=activation_path,
         model_path=model_path,
         feature_columns_path=feature_columns_path,
         threshold=threshold,
@@ -186,9 +206,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-path", type=Path)
     parser.add_argument("--bundle-root", type=Path, default=None)
     parser.add_argument("--config-path", type=Path, default=None)
-    parser.add_argument("--model-path", type=Path, default=DEFAULT_MODEL_PATH)
-    parser.add_argument("--feature-columns-path", type=Path, default=DEFAULT_FEATURE_COLUMNS_PATH)
-    parser.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD)
+    parser.add_argument("--activation-path", type=Path, default=None)
+    parser.add_argument("--model-path", type=Path, default=None)
+    parser.add_argument("--feature-columns-path", type=Path, default=None)
+    parser.add_argument("--threshold", type=float, default=None)
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument(
         "--drop-input-columns",
@@ -203,6 +224,7 @@ def main() -> None:
     config = build_model_config(
         bundle_root=args.bundle_root,
         config_path=args.config_path,
+        activation_path=args.activation_path,
         model_path=args.model_path,
         feature_columns_path=args.feature_columns_path,
         threshold=args.threshold,
