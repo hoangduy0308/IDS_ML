@@ -13,7 +13,7 @@
     }
 
     stamp.title = raw;
-    stamp.textContent = parsed.toLocaleString();
+    stamp.textContent = parsed.toLocaleString("vi-VN");
   });
 
   const body = document.body;

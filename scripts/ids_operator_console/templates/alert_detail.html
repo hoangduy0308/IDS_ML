@@ -1,18 +1,18 @@
 {% extends "base.html" %}
-{% block title %}Alert {{ alert.id }} | IDS Operator Console{% endblock %}
+{% block title %}Cảnh báo {{ alert.id }} | Bảng điều hành IDS{% endblock %}
 {% block content %}
 <section class="detail-hero panel panel-primary">
   <div class="detail-hero__copy">
-    <a href="/alerts" class="back-link">Back to alerts</a>
-    <span class="eyebrow">Investigation Workspace</span>
-    <h2>Alert {{ alert.id }}</h2>
-    <p>Move from queue scan to read-depth here without losing the triage state, evidence trail, or analyst notes that justify the decision.</p>
+    <a href="/alerts" class="back-link">Quay lại hàng đợi</a>
+    <span class="eyebrow">Không gian điều tra</span>
+    <h2>Cảnh báo {{ alert.id }}</h2>
+    <p>Đi từ quét hàng đợi sang đọc sâu tại đây mà không mất trạng thái triage, dấu vết bằng chứng hay ghi chú analyst.</p>
   </div>
   <div class="alert-badges">
-    <span class="badge status-{{ alert.triage_status|replace('_', '-') }}">{{ alert.triage_status }}</span>
-    <span class="badge severity-{{ (alert.severity or 'unknown')|lower }}">{{ alert.severity or "unknown" }}</span>
+    <span class="badge status-{{ alert.triage_status|replace('_', '-') }}">{{ triage_labels.get(alert.triage_status, alert.triage_status) }}</span>
+    <span class="badge severity-{{ (alert.severity or 'unknown')|lower }}">{{ severity_labels.get((alert.severity or 'unknown')|lower, alert.severity or "Chưa rõ") }}</span>
     {% if alert.suppressed %}
-    <span class="badge badge-muted">suppressed</span>
+    <span class="badge badge-muted">Đã suppress</span>
     {% endif %}
   </div>
 </section>
@@ -20,38 +20,38 @@
 <section class="panel">
   <div class="section-heading">
     <div>
-      <span class="eyebrow">Alert Context</span>
-      <h3>Investigation Baseline</h3>
+      <span class="eyebrow">Ngữ cảnh cảnh báo</span>
+      <h3>Mặt bằng điều tra</h3>
     </div>
-    <p class="section-copy">This surface keeps the raw identifiers visible while workflow actions stay adjacent instead of buried under the event details.</p>
+    <p class="section-copy">Bề mặt này giữ nguyên các định danh thô trong khi thao tác workflow nằm kề bên, không bị chôn xuống dưới phần event detail.</p>
   </div>
   <dl class="detail-grid">
     <div>
-      <dt>Source event</dt>
+      <dt>Sự kiện nguồn</dt>
       <dd><code>{{ alert.source_event_id or "-" }}</code></dd>
     </div>
     <div>
-      <dt>Event time</dt>
+      <dt>Thời điểm</dt>
       <dd>{{ alert.event_ts }}</dd>
     </div>
     <div>
-      <dt>Source IP</dt>
+      <dt>IP nguồn</dt>
       <dd><code>{{ alert.src_ip or "-" }}</code></dd>
     </div>
     <div>
-      <dt>Destination IP</dt>
+      <dt>IP đích</dt>
       <dd><code>{{ alert.dst_ip or "-" }}</code></dd>
     </div>
     <div>
-      <dt>Protocol</dt>
+      <dt>Giao thức</dt>
       <dd>{{ alert.protocol or alert.payload.protocol or "-" }}</dd>
     </div>
     <div>
-      <dt>Ports</dt>
+      <dt>Cổng</dt>
       <dd>{{ alert.src_port or "-" }} -> {{ alert.dst_port or "-" }}</dd>
     </div>
     <div>
-      <dt>Score</dt>
+      <dt>Điểm</dt>
       <dd>{{ alert.payload.score if alert.payload and alert.payload.score is defined else "-" }}</dd>
     </div>
     <div>
@@ -64,7 +64,7 @@
     </div>
     <div>
       <dt>Suppression</dt>
-      <dd>{{ "active" if alert.suppressed else "none" }}</dd>
+      <dd>{{ "Đang bật" if alert.suppressed else "Không có" }}</dd>
     </div>
   </dl>
 </section>
@@ -73,38 +73,38 @@
   <article class="panel">
     <div class="section-heading">
       <div>
-        <span class="eyebrow">Workflow</span>
-        <h3>Update Triage Status</h3>
+        <span class="eyebrow">Luồng xử lý</span>
+        <h3>Cập nhật trạng thái triage</h3>
       </div>
     </div>
     <form method="post" action="/alerts/{{ alert.id }}/status" class="stack-form">
       <input type="hidden" name="csrf_token" value="{{ admin.csrf_token }}">
       <label>
-        New status
+        Trạng thái mới
         <select name="to_status">
           {% for state in triage_states %}
-          <option value="{{ state }}" {% if alert.triage_status == state %}selected{% endif %}>{{ state }}</option>
+          <option value="{{ state }}" {% if alert.triage_status == state %}selected{% endif %}>{{ triage_labels.get(state, state) }}</option>
           {% endfor %}
         </select>
       </label>
-      <button type="submit" class="button">Save status</button>
+      <button type="submit" class="button">Lưu trạng thái</button>
     </form>
   </article>
 
   <article class="panel">
     <div class="section-heading">
       <div>
-        <span class="eyebrow">Evidence</span>
-        <h3>Add Investigation Note</h3>
+        <span class="eyebrow">Bằng chứng</span>
+        <h3>Thêm ghi chú điều tra</h3>
       </div>
     </div>
     <form method="post" action="/alerts/{{ alert.id }}/notes" class="stack-form">
       <input type="hidden" name="csrf_token" value="{{ admin.csrf_token }}">
       <label>
-        Note
-        <textarea name="note_text" rows="5" required placeholder="Capture analyst judgment, correlation, or follow-up action."></textarea>
+        Ghi chú
+        <textarea name="note_text" rows="5" required placeholder="Ghi nhận nhận định analyst, tương quan hoặc hành động tiếp theo."></textarea>
       </label>
-      <button type="submit" class="button">Record note</button>
+      <button type="submit" class="button">Lưu ghi chú</button>
     </form>
   </article>
 </section>
@@ -114,7 +114,7 @@
     <div class="section-heading">
       <div>
         <span class="eyebrow">Timeline</span>
-        <h3>Status History</h3>
+        <h3>Lịch sử trạng thái</h3>
       </div>
     </div>
     {% if timeline.status_history %}
@@ -122,15 +122,15 @@
       {% for item in timeline.status_history %}
       <li class="timeline-item">
         <strong>{{ item.changed_at }}</strong>
-        <span>{{ item.from_status or "new" }} -> {{ item.to_status }}</span>
-        <span>Changed by {{ item.changed_by }}</span>
+        <span>{{ triage_labels.get(item.from_status or "new", item.from_status or "new") }} -> {{ triage_labels.get(item.to_status, item.to_status) }}</span>
+        <span>Thay đổi bởi {{ item.changed_by }}</span>
       </li>
       {% endfor %}
     </ul>
     {% else %}
     <div class="empty-state">
-      <h4>No status history recorded.</h4>
-      <p>The alert has not moved through another triage step yet.</p>
+      <h4>Chưa có lịch sử trạng thái.</h4>
+      <p>Cảnh báo này chưa đi qua bước triage nào khác.</p>
     </div>
     {% endif %}
   </article>
@@ -138,8 +138,8 @@
   <article class="panel">
     <div class="section-heading">
       <div>
-        <span class="eyebrow">Case Log</span>
-        <h3>Notes</h3>
+        <span class="eyebrow">Nhật ký hồ sơ</span>
+        <h3>Ghi chú</h3>
       </div>
     </div>
     {% if timeline.notes %}
@@ -154,8 +154,8 @@
     </ul>
     {% else %}
     <div class="empty-state">
-      <h4>No notes recorded.</h4>
-      <p>Add the first analyst note to keep the investigation trail intact.</p>
+      <h4>Chưa có ghi chú.</h4>
+      <p>Hãy thêm ghi chú đầu tiên để giữ mạch điều tra liền mạch.</p>
     </div>
     {% endif %}
   </article>

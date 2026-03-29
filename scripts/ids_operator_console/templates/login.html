@@ -1,32 +1,32 @@
 {% extends "base.html" %}
-{% block title %}Login | IDS Operator Console{% endblock %}
+{% block title %}Đăng nhập | Bảng điều hành IDS{% endblock %}
 {% block content %}
 <section class="panel panel-narrow">
-  <span class="eyebrow">Operator Access</span>
-  <h2>Admin Login</h2>
-  <p>Authenticate to open the Overview, alert queue, operations lane, and reporting history for this same-host console.</p>
+  <span class="eyebrow">Truy cập điều hành</span>
+  <h2>Đăng nhập quản trị</h2>
+  <p>Xác thực để mở tổng quan, hàng đợi cảnh báo, khu vận hành và lịch sử báo cáo của console chạy cùng máy này.</p>
   {% if login_error %}
   <p class="error">{{ login_error }}</p>
   {% endif %}
   <form method="post" action="/login" class="stack-form">
     <label>
-      Username
+      Tên đăng nhập
       <input type="text" name="username" required placeholder="admin">
     </label>
     <label>
-      Password
-      <input type="password" name="password" required placeholder="Enter password">
+      Mật khẩu
+      <input type="password" name="password" required placeholder="Nhập mật khẩu">
     </label>
-    <button type="submit">Sign In</button>
+    <button type="submit">Vào console</button>
   </form>
   <div class="metrics">
     <div>
-      <dt>Surface</dt>
-      <dd>Read / triage / report</dd>
+      <dt>Bề mặt</dt>
+      <dd>Đọc / triage / báo cáo</dd>
     </div>
     <div>
-      <dt>Mode</dt>
-      <dd>Light baseline</dd>
+      <dt>Chế độ</dt>
+      <dd>Chuẩn sáng</dd>
     </div>
   </div>
 </section>

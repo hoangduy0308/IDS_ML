@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Alerts | IDS Operator Console{% endblock %}
+{% block title %}Cảnh báo | Bảng điều hành IDS{% endblock %}
 {% block content %}
 {% set visible_alerts = alerts|length %}
 {% set suppressed_alerts = alerts|selectattr("suppressed")|list|length %}
@@ -10,36 +10,36 @@
 {% set false_positive_count = alerts|selectattr("triage_status", "equalto", "false_positive")|list|length %}
 <section class="hero-panel">
   <div class="hero-copy">
-    <span class="eyebrow">Primary Triage</span>
-    <h2>Alerts</h2>
-    <p>Run the scan-fast lane here, keep suppression visible, and drop into the alert detail view only when the row warrants read depth.</p>
+    <span class="eyebrow">Triage chính</span>
+    <h2>Cảnh báo</h2>
+    <p>Đây là lane quét nhanh. Giữ suppression luôn hiện diện và chỉ mở trang chi tiết khi một dòng thực sự cần đọc sâu.</p>
     <div class="hero-badges">
-      <span class="badge badge-outline status-{{ health.status|replace('_', '-') }}">{{ health.status }}</span>
+      <span class="badge badge-outline status-{{ health.status|replace('_', '-') }}">{{ state_labels.get(health.status, health.status) }}</span>
       <span class="badge badge-outline {% if readiness.ready %}status-resolved{% else %}status-degraded{% endif %}">
-        Readiness {{ "ready" if readiness.ready else "degraded" }}
+        Readiness {{ "sẵn sàng" if readiness.ready else "suy giảm" }}
       </span>
     </div>
   </div>
   <div class="hero-metrics">
     <article class="metric-card">
-      <span class="metric-label">Visible alerts</span>
+      <span class="metric-label">Cảnh báo đang thấy</span>
       <strong>{{ visible_alerts }}</strong>
-      <span class="metric-footnote">Queue count after the current filter</span>
+      <span class="metric-footnote">Số dòng còn lại sau bộ lọc hiện tại</span>
     </article>
     <article class="metric-card">
-      <span class="metric-label">Suppressed</span>
+      <span class="metric-label">Đã suppress</span>
       <strong>{{ suppressed_alerts }}</strong>
-      <span class="metric-footnote">Noise retained for analyst review</span>
+      <span class="metric-footnote">Nhiễu vẫn được giữ lại để analyst có thể đọc lại</span>
     </article>
     <article class="metric-card">
-      <span class="metric-label">Investigating</span>
+      <span class="metric-label">Đang điều tra</span>
       <strong>{{ investigating_count }}</strong>
-      <span class="metric-footnote">Items already in deep-read workflow</span>
+      <span class="metric-footnote">Các mục đã đi vào luồng đọc sâu</span>
     </article>
     <article class="metric-card">
-      <span class="metric-label">Notification</span>
-      <strong>{{ readiness.components.notification.state }}</strong>
-      <span class="metric-footnote">Delivery health for this same-host surface</span>
+      <span class="metric-label">Thông báo</span>
+      <strong>{{ state_labels.get(readiness.components.notification.state, readiness.components.notification.state) }}</strong>
+      <span class="metric-footnote">Sức khỏe phát tín hiệu của surface chạy cùng máy</span>
     </article>
   </div>
 </section>
@@ -48,29 +48,29 @@
   <article class="panel panel-primary">
     <div class="section-heading">
       <div>
-        <span class="eyebrow">Queue</span>
-        <h3>Alert Queue</h3>
+        <span class="eyebrow">Hàng đợi</span>
+        <h3>Danh sách cảnh báo</h3>
       </div>
-      <form method="get" action="/alerts" class="inline-form" aria-label="Alert filters">
+      <form method="get" action="/alerts" class="inline-form" aria-label="Bộ lọc cảnh báo">
         <label>
-          Triage status
+          Trạng thái triage
           <select name="status_filter">
-            <option value="">all</option>
+            <option value="">Tất cả</option>
             {% for state in triage_states %}
-            <option value="{{ state }}" {% if status_filter == state %}selected{% endif %}>{{ state }}</option>
+            <option value="{{ state }}" {% if status_filter == state %}selected{% endif %}>{{ triage_labels.get(state, state) }}</option>
             {% endfor %}
           </select>
         </label>
-        <button type="submit" class="button">Apply</button>
+        <button type="submit" class="button">Lọc</button>
       </form>
     </div>
 
     <div class="badge-group">
-      <span class="badge status-new">new {{ new_count }}</span>
-      <span class="badge status-acknowledged">acknowledged {{ acknowledged_count }}</span>
-      <span class="badge status-investigating">investigating {{ investigating_count }}</span>
-      <span class="badge status-resolved">resolved {{ resolved_count }}</span>
-      <span class="badge status-false-positive">false_positive {{ false_positive_count }}</span>
+      <span class="badge status-new">{{ triage_labels["new"] }} {{ new_count }}</span>
+      <span class="badge status-acknowledged">{{ triage_labels["acknowledged"] }} {{ acknowledged_count }}</span>
+      <span class="badge status-investigating">{{ triage_labels["investigating"] }} {{ investigating_count }}</span>
+      <span class="badge status-resolved">{{ triage_labels["resolved"] }} {{ resolved_count }}</span>
+      <span class="badge status-false-positive">{{ triage_labels["false_positive"] }} {{ false_positive_count }}</span>
     </div>
 
     {% if alerts %}
@@ -79,32 +79,32 @@
       <a href="/alerts/{{ alert.id }}" class="alert-card" role="listitem">
         <div class="alert-card__top">
           <div>
-            <span class="alert-id">Alert {{ alert.id }}</span>
+            <span class="alert-id">Cảnh báo {{ alert.id }}</span>
             <h4>{{ alert.src_ip or "-" }} -> {{ alert.dst_ip or "-" }}</h4>
           </div>
           <div class="alert-badges">
-            <span class="badge status-{{ alert.triage_status|replace('_', '-') }}">{{ alert.triage_status }}</span>
-            <span class="badge severity-{{ (alert.severity or 'unknown')|lower }}">{{ alert.severity or "unknown" }}</span>
+            <span class="badge status-{{ alert.triage_status|replace('_', '-') }}">{{ triage_labels.get(alert.triage_status, alert.triage_status) }}</span>
+            <span class="badge severity-{{ (alert.severity or 'unknown')|lower }}">{{ severity_labels.get((alert.severity or 'unknown')|lower, alert.severity or "Chưa rõ") }}</span>
             {% if alert.suppressed %}
-            <span class="badge badge-muted">suppressed</span>
+            <span class="badge badge-muted">Đã suppress</span>
             {% endif %}
           </div>
         </div>
         <dl class="alert-meta">
           <div>
-            <dt>Source event</dt>
+            <dt>Sự kiện nguồn</dt>
             <dd>{{ alert.source_event_id or "-" }}</dd>
           </div>
           <div>
-            <dt>Protocol</dt>
+            <dt>Giao thức</dt>
             <dd>{{ alert.protocol or alert.payload.protocol or "-" }}</dd>
           </div>
           <div>
-            <dt>Score</dt>
+            <dt>Điểm</dt>
             <dd>{{ alert.payload.score if alert.payload and alert.payload.score is defined else "-" }}</dd>
           </div>
           <div>
-            <dt>Event time</dt>
+            <dt>Thời điểm</dt>
             <dd>{{ alert.event_ts }}</dd>
           </div>
         </dl>
@@ -113,8 +113,8 @@
     </div>
     {% else %}
     <div class="empty-state">
-      <h4>No alerts in the selected triage view.</h4>
-      <p>Change the filter or wait for the next ingest window to repopulate the queue.</p>
+      <h4>Không có cảnh báo trong chế độ triage đã chọn.</h4>
+      <p>Hãy đổi bộ lọc hoặc chờ cửa sổ ingest tiếp theo nạp lại hàng đợi.</p>
     </div>
     {% endif %}
   </article>
@@ -123,33 +123,33 @@
     <article class="panel">
       <div class="section-heading">
         <div>
-          <span class="eyebrow">Queue Signals</span>
-          <h3>Triage Distribution</h3>
+          <span class="eyebrow">Tín hiệu hàng đợi</span>
+          <h3>Phân bố triage</h3>
         </div>
       </div>
       <dl class="metrics">
         <div>
-          <dt>New</dt>
+          <dt>Mới</dt>
           <dd>{{ new_count }}</dd>
         </div>
         <div>
-          <dt>Acknowledged</dt>
+          <dt>Đã tiếp nhận</dt>
           <dd>{{ acknowledged_count }}</dd>
         </div>
         <div>
-          <dt>Investigating</dt>
+          <dt>Đang điều tra</dt>
           <dd>{{ investigating_count }}</dd>
         </div>
         <div>
-          <dt>Resolved</dt>
+          <dt>Đã xử lý</dt>
           <dd>{{ resolved_count }}</dd>
         </div>
         <div>
-          <dt>False Positive</dt>
+          <dt>Cảnh báo sai</dt>
           <dd>{{ false_positive_count }}</dd>
         </div>
         <div>
-          <dt>Suppressed</dt>
+          <dt>Đã suppress</dt>
           <dd>{{ suppressed_alerts }}</dd>
         </div>
       </dl>
@@ -158,29 +158,29 @@
     <article class="panel">
       <div class="section-heading">
         <div>
-          <span class="eyebrow">Runtime Context</span>
-          <h3>Health In Parallel</h3>
+          <span class="eyebrow">Ngữ cảnh runtime</span>
+          <h3>Sức khỏe song song</h3>
         </div>
       </div>
       <dl class="metrics">
         <div>
-          <dt>Status</dt>
-          <dd>{{ health.status }}</dd>
+          <dt>Trạng thái</dt>
+          <dd>{{ state_labels.get(health.status, health.status) }}</dd>
         </div>
         <div>
-          <dt>Latest Summary</dt>
+          <dt>Tổng hợp mới nhất</dt>
           <dd>{{ health.summary_ts or "N/A" }}</dd>
         </div>
         <div>
-          <dt>Alert Count</dt>
+          <dt>Số cảnh báo</dt>
           <dd>{{ health.alert_count }}</dd>
         </div>
         <div>
-          <dt>Anomaly Count</dt>
+          <dt>Số bất thường</dt>
           <dd>{{ health.anomaly_count }}</dd>
         </div>
         <div>
-          <dt>Active Bundle</dt>
+          <dt>Bundle hiện hành</dt>
           <dd>{{ health.active_bundle.active_bundle_name if health.active_bundle else "N/A" }}</dd>
         </div>
       </dl>

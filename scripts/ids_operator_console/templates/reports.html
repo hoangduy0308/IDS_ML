@@ -1,38 +1,38 @@
 {% extends "base.html" %}
-{% block title %}Reports | IDS Operator Console{% endblock %}
+{% block title %}Báo cáo | Bảng điều hành IDS{% endblock %}
 {% block content %}
 {% set latest_summary = summaries[0] if summaries else none %}
 <section class="hero-panel">
   <div class="hero-copy">
-    <span class="eyebrow">Reporting Surface</span>
-    <h2>Reports</h2>
-    <p>Start with the rollup, then read the operational history below. Trends stay lightweight and subordinate to the tables operators actually export and inspect.</p>
+    <span class="eyebrow">Bề mặt báo cáo</span>
+    <h2>Báo cáo</h2>
+    <p>Bắt đầu từ lớp rollup phía trên rồi đọc lịch sử vận hành phía dưới. Xu hướng chỉ đóng vai trò phụ, không lấn át các bảng mà operator thực sự xuất và kiểm tra.</p>
     <div class="hero-badges">
-      <span class="badge badge-outline">history {{ report_rollup.summaries_total }}</span>
-      <span class="badge badge-outline">alerts {{ report_rollup.alerts_total }}</span>
-      <span class="badge badge-outline">anomalies {{ report_rollup.anomalies_total }}</span>
+      <span class="badge badge-outline">lịch sử {{ report_rollup.summaries_total }}</span>
+      <span class="badge badge-outline">cảnh báo {{ report_rollup.alerts_total }}</span>
+      <span class="badge badge-outline">bất thường {{ report_rollup.anomalies_total }}</span>
     </div>
   </div>
   <div class="hero-metrics">
     <article class="metric-card">
-      <span class="metric-label">Latest summary</span>
+      <span class="metric-label">Tổng hợp mới nhất</span>
       <strong>{{ latest_summary.summary_ts if latest_summary else "N/A" }}</strong>
-      <span class="metric-footnote">Newest monitoring window on record</span>
+      <span class="metric-footnote">Cửa sổ giám sát mới nhất đang có trong kho</span>
     </article>
     <article class="metric-card">
-      <span class="metric-label">Latest alert count</span>
+      <span class="metric-label">Số cảnh báo mới nhất</span>
       <strong>{{ latest_summary.payload.alert_count if latest_summary and latest_summary.payload else "-" }}</strong>
-      <span class="metric-footnote">Top-line signal pressure in the newest window</span>
+      <span class="metric-footnote">Áp lực tín hiệu ở cửa sổ mới nhất</span>
     </article>
     <article class="metric-card">
-      <span class="metric-label">Latest anomaly count</span>
+      <span class="metric-label">Số bất thường mới nhất</span>
       <strong>{{ latest_summary.payload.anomaly_count if latest_summary and latest_summary.payload else "-" }}</strong>
-      <span class="metric-footnote">Operational anomalies captured in that same window</span>
+      <span class="metric-footnote">Bất thường vận hành trong cùng cửa sổ đó</span>
     </article>
     <article class="metric-card">
-      <span class="metric-label">Window seconds</span>
+      <span class="metric-label">Cửa sổ (giây)</span>
       <strong>{{ latest_summary.payload.window_seconds if latest_summary and latest_summary.payload else "-" }}</strong>
-      <span class="metric-footnote">Reporting duration for the newest snapshot</span>
+      <span class="metric-footnote">Độ dài báo cáo của snapshot mới nhất</span>
     </article>
   </div>
 </section>
@@ -41,19 +41,19 @@
   <article class="panel panel-primary">
     <div class="section-heading">
       <div>
-        <span class="eyebrow">Summary + Trend</span>
-        <h3>Recent Window Trend</h3>
+        <span class="eyebrow">Tổng hợp + xu hướng</span>
+        <h3>Diễn biến các cửa sổ gần đây</h3>
       </div>
-      <p class="section-copy">The top slice shows how the last windows moved without turning this surface into a chart-heavy BI page.</p>
+      <p class="section-copy">Lớp trên cùng cho thấy biến động của các cửa sổ gần nhất mà không biến trang này thành một màn BI nặng chart.</p>
     </div>
     {% if summaries %}
     <table class="data-table">
       <thead>
         <tr>
-          <th>Summary Time</th>
-          <th>Alert Count</th>
-          <th>Anomaly Count</th>
-          <th>Window (s)</th>
+          <th>Thời điểm tổng hợp</th>
+          <th>Số cảnh báo</th>
+          <th>Số bất thường</th>
+          <th>Cửa sổ (giây)</th>
         </tr>
       </thead>
       <tbody>
@@ -69,8 +69,8 @@
     </table>
     {% else %}
     <div class="no-data-state">
-      <h4>No summary records available.</h4>
-      <p>Trend reporting will appear here after the reporting store captures at least one monitoring window.</p>
+      <h4>Chưa có bản ghi tổng hợp.</h4>
+      <p>Xu hướng sẽ xuất hiện ở đây sau khi kho báo cáo ghi được ít nhất một cửa sổ giám sát.</p>
     </div>
     {% endif %}
 </section>
@@ -79,18 +79,18 @@
   <article class="panel">
     <div class="section-heading">
       <div>
-        <span class="eyebrow">Operational History</span>
-        <h3>Alert Rollup</h3>
+        <span class="eyebrow">Lịch sử vận hành</span>
+        <h3>Tổng hợp cảnh báo</h3>
       </div>
     </div>
     <dl class="metrics">
       <div>
-        <dt>Total alerts</dt>
+        <dt>Tổng cảnh báo</dt>
         <dd>{{ report_rollup.alerts_total }}</dd>
       </div>
       {% for status, count in report_rollup.alerts_by_status.items() %}
       <div>
-        <dt>{{ status }}</dt>
+        <dt>{{ triage_labels.get(status, status) }}</dt>
         <dd>{{ count }}</dd>
       </div>
       {% endfor %}
@@ -100,30 +100,30 @@
   <article class="panel">
     <div class="section-heading">
       <div>
-        <span class="eyebrow">Operational History</span>
-        <h3>Severity Mix</h3>
+        <span class="eyebrow">Lịch sử vận hành</span>
+        <h3>Cơ cấu mức độ</h3>
       </div>
     </div>
     <dl class="metrics">
       {% if report_rollup.alerts_by_severity %}
         {% for severity, count in report_rollup.alerts_by_severity.items() %}
         <div>
-          <dt>{{ severity }}</dt>
+          <dt>{{ severity_labels.get(severity, severity) }}</dt>
           <dd>{{ count }}</dd>
         </div>
         {% endfor %}
       {% else %}
       <div>
-        <dt>No alert rows</dt>
+        <dt>Không có dòng cảnh báo</dt>
         <dd>0</dd>
       </div>
       {% endif %}
       <div>
-        <dt>Total anomalies</dt>
+        <dt>Tổng bất thường</dt>
         <dd>{{ report_rollup.anomalies_total }}</dd>
       </div>
       <div>
-        <dt>Summary history</dt>
+        <dt>Tổng số cửa sổ</dt>
         <dd>{{ report_rollup.summaries_total }}</dd>
       </div>
     </dl>
@@ -133,19 +133,19 @@
 <section class="panel">
   <div class="section-heading">
     <div>
-      <span class="eyebrow">Snapshots</span>
-      <h3>Anomaly History</h3>
+      <span class="eyebrow">Ảnh chụp</span>
+      <h3>Lịch sử bất thường</h3>
     </div>
-    <p class="section-copy">Operational events remain available below the rollup so the reporting page still supports export-style reading, not just trend scanning.</p>
+    <p class="section-copy">Các sự kiện vận hành vẫn nằm dưới phần rollup để trang báo cáo tiếp tục hỗ trợ kiểu đọc để xuất dữ liệu, không chỉ quét xu hướng.</p>
   </div>
   {% if report_bundle.anomalies %}
   <table class="data-table">
     <thead>
       <tr>
         <th>ID</th>
-        <th>Type</th>
-        <th>Reason</th>
-        <th>Event Time</th>
+        <th>Loại</th>
+        <th>Lý do</th>
+        <th>Thời điểm</th>
       </tr>
     </thead>
     <tbody>
@@ -161,8 +161,8 @@
   </table>
   {% else %}
   <div class="empty-state">
-    <h4>No anomaly history available.</h4>
-    <p>This report window currently has no operational anomaly rows to review or export.</p>
+    <h4>Chưa có lịch sử bất thường.</h4>
+    <p>Cửa sổ báo cáo này hiện chưa có dòng bất thường vận hành để xem hoặc xuất.</p>
   </div>
   {% endif %}
 </section>

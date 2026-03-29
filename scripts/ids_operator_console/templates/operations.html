@@ -1,41 +1,41 @@
 {% extends "base.html" %}
-{% block title %}Operations | IDS Operator Console{% endblock %}
+{% block title %}Vận hành | Bảng điều hành IDS{% endblock %}
 {% block content %}
 <section class="hero-panel">
   <div class="hero-copy">
-    <span class="eyebrow">Operations Lane</span>
-    <h2>Operations</h2>
-    <p>Keep runtime readiness, schema anomalies, and degraded state review distinct from the alert queue so operators do not confuse pipeline health with attack pressure.</p>
+    <span class="eyebrow">Lane vận hành</span>
+    <h2>Vận hành</h2>
+    <p>Giữ readiness, bất thường schema và trạng thái suy giảm tách khỏi lane cảnh báo để không nhầm sức khỏe pipeline với áp lực tấn công.</p>
     <div class="hero-badges">
-      <span class="badge badge-outline status-{{ health.status|replace('_', '-') }}">{{ health.status }}</span>
+      <span class="badge badge-outline status-{{ health.status|replace('_', '-') }}">{{ state_labels.get(health.status, health.status) }}</span>
       <span class="badge badge-outline {% if readiness.ready %}status-resolved{% else %}status-degraded{% endif %}">
-        Readiness {{ "ready" if readiness.ready else "degraded" }}
+        Readiness {{ "sẵn sàng" if readiness.ready else "suy giảm" }}
       </span>
       <span class="badge badge-outline status-{{ readiness.components.notification.state|replace('_', '-') }}">
-        Notification {{ readiness.components.notification.state }}
+        Thông báo {{ state_labels.get(readiness.components.notification.state, readiness.components.notification.state) }}
       </span>
     </div>
   </div>
   <div class="hero-metrics">
     <article class="metric-card">
-      <span class="metric-label">Anomalies</span>
+      <span class="metric-label">Bất thường</span>
       <strong>{{ anomalies|length }}</strong>
-      <span class="metric-footnote">Operational events outside attack triage</span>
+      <span class="metric-footnote">Các sự kiện vận hành nằm ngoài luồng triage tấn công</span>
     </article>
     <article class="metric-card">
-      <span class="metric-label">Latest alert count</span>
+      <span class="metric-label">Số cảnh báo mới nhất</span>
       <strong>{{ health.alert_count }}</strong>
-      <span class="metric-footnote">Summary-window alert volume for runtime context</span>
+      <span class="metric-footnote">Mức tín hiệu cảnh báo trong cửa sổ tổng hợp gần nhất</span>
     </article>
     <article class="metric-card">
-      <span class="metric-label">Window seconds</span>
+      <span class="metric-label">Cửa sổ (giây)</span>
       <strong>{{ health.window_seconds or "N/A" }}</strong>
-      <span class="metric-footnote">Most recent reporting window length</span>
+      <span class="metric-footnote">Độ dài cửa sổ báo cáo gần nhất</span>
     </article>
     <article class="metric-card">
-      <span class="metric-label">Active bundle</span>
+      <span class="metric-label">Bundle hiện hành</span>
       <strong>{{ health.active_bundle.active_bundle_name if health.active_bundle else "N/A" }}</strong>
-      <span class="metric-footnote">{{ health.active_bundle.compatibility_status if health.active_bundle else "unknown" }}</span>
+      <span class="metric-footnote">{{ state_labels.get(health.active_bundle.compatibility_status, health.active_bundle.compatibility_status) if health.active_bundle else "Chưa rõ" }}</span>
     </article>
   </div>
 </section>
@@ -44,20 +44,20 @@
   <article class="panel panel-primary">
     <div class="section-heading">
       <div>
-        <span class="eyebrow">Operational Events</span>
-        <h3>Anomaly Lane</h3>
+        <span class="eyebrow">Sự kiện vận hành</span>
+        <h3>Lane bất thường</h3>
       </div>
-      <p class="section-copy">This lane stays operational by design. It shows schema and ingest problems without blending them into the analyst alert queue.</p>
+      <p class="section-copy">Khu này chỉ dành cho vận hành. Nó hiển thị lỗi schema và ingest mà không trộn vào hàng đợi analyst.</p>
     </div>
     {% if anomalies %}
     <table class="data-table">
       <thead>
         <tr>
           <th>ID</th>
-          <th>Type</th>
-          <th>Reason</th>
-          <th>Summary</th>
-          <th>Event Time</th>
+          <th>Loại</th>
+          <th>Lý do</th>
+          <th>Tóm tắt</th>
+          <th>Thời điểm</th>
         </tr>
       </thead>
       <tbody>
@@ -74,18 +74,18 @@
     </table>
     {% elif health.status == "no-data" %}
     <div class="no-data-state">
-      <h4>No operational data has arrived yet.</h4>
-      <p>The operations lane is empty because the reporting store has not produced a usable summary window yet.</p>
+      <h4>Chưa có dữ liệu vận hành đổ về.</h4>
+      <p>Lane vận hành đang trống vì kho báo cáo chưa tạo được cửa sổ tổng hợp khả dụng.</p>
     </div>
     {% elif not readiness.ready or health.status != "ok" %}
     <div class="degraded-state">
-      <h4>No anomalies are listed, but the runtime is degraded.</h4>
-      <p>Use readiness and bundle context on this page to distinguish ingest trouble from a genuinely quiet operational lane.</p>
+      <h4>Không có dòng bất thường, nhưng runtime đang suy giảm.</h4>
+      <p>Hãy dùng phần readiness và bundle context trên trang này để phân biệt lỗi ingest với trạng thái thực sự yên của lane vận hành.</p>
     </div>
     {% else %}
     <div class="empty-state">
-      <h4>No anomalies recorded.</h4>
-      <p>The operational lane is clear for the current ingest horizon.</p>
+      <h4>Chưa ghi nhận bất thường.</h4>
+      <p>Lane vận hành đang sạch trong horizon ingest hiện tại.</p>
     </div>
     {% endif %}
   </article>
@@ -95,29 +95,29 @@
       <div class="section-heading">
         <div>
           <span class="eyebrow">Runtime</span>
-          <h3>Health Snapshot</h3>
+          <h3>Ảnh chụp sức khỏe</h3>
         </div>
       </div>
       <dl class="metrics">
         <div>
-          <dt>Status</dt>
-          <dd>{{ health.status }}</dd>
+          <dt>Trạng thái</dt>
+          <dd>{{ state_labels.get(health.status, health.status) }}</dd>
         </div>
         <div>
-          <dt>Summary Time</dt>
+          <dt>Thời điểm tổng hợp</dt>
           <dd>{{ health.summary_ts or "N/A" }}</dd>
         </div>
         <div>
-          <dt>Anomaly Count</dt>
+          <dt>Số bất thường</dt>
           <dd>{{ health.anomaly_count }}</dd>
         </div>
         <div>
-          <dt>Alert Count</dt>
+          <dt>Số cảnh báo</dt>
           <dd>{{ health.alert_count }}</dd>
         </div>
         <div>
-          <dt>Bundle Status</dt>
-          <dd>{{ health.active_bundle.compatibility_status if health.active_bundle else "unknown" }}</dd>
+          <dt>Trạng thái bundle</dt>
+          <dd>{{ state_labels.get(health.active_bundle.compatibility_status, health.active_bundle.compatibility_status) if health.active_bundle else "Chưa rõ" }}</dd>
         </div>
       </dl>
     </article>
@@ -125,26 +125,26 @@
     <article class="panel">
       <div class="section-heading">
         <div>
-          <span class="eyebrow">Readiness</span>
-          <h3>Component State</h3>
+          <span class="eyebrow">Sẵn sàng</span>
+          <h3>Trạng thái thành phần</h3>
         </div>
       </div>
       <div class="readiness-stack">
         <div class="readiness-item">
           <span>Schema</span>
-          <strong>{{ readiness.components.schema.state }}</strong>
+          <strong>{{ state_labels.get(readiness.components.schema.state, readiness.components.schema.state) }}</strong>
         </div>
         <div class="readiness-item">
-          <span>Admin bootstrap</span>
+          <span>Bootstrap quản trị</span>
           <strong>{{ readiness.components.admin_bootstrap.admin_count }}</strong>
         </div>
         <div class="readiness-item">
-          <span>Data paths</span>
-          <strong>{{ "ok" if readiness.components.data_paths.ok else "degraded" }}</strong>
+          <span>Đường dẫn dữ liệu</span>
+          <strong>{{ "Ổn định" if readiness.components.data_paths.ok else "Suy giảm" }}</strong>
         </div>
         <div class="readiness-item">
-          <span>Notification</span>
-          <strong>{{ readiness.components.notification.state }}</strong>
+          <span>Thông báo</span>
+          <strong>{{ state_labels.get(readiness.components.notification.state, readiness.components.notification.state) }}</strong>
         </div>
       </div>
     </article>

@@ -31,6 +31,35 @@ from .health import build_liveness_payload, build_readiness_payload
 from .migrations import assert_runtime_ready
 from .reporting import build_report_bundle, build_report_rollup
 
+TRIAGE_LABELS = {
+    "new": "Mới",
+    "acknowledged": "Đã tiếp nhận",
+    "investigating": "Đang điều tra",
+    "resolved": "Đã xử lý",
+    "false_positive": "Cảnh báo sai",
+}
+
+SEVERITY_LABELS = {
+    "critical": "Nghiêm trọng",
+    "high": "Cao",
+    "medium": "Trung bình",
+    "low": "Thấp",
+    "unknown": "Chưa rõ",
+}
+
+STATE_LABELS = {
+    "ok": "Ổn định",
+    "ready": "Sẵn sàng",
+    "disabled": "Tắt",
+    "degraded": "Suy giảm",
+    "no-data": "Chưa có dữ liệu",
+    "unknown": "Chưa rõ",
+    "current": "Hiện hành",
+    "active": "Đang bật",
+    "none": "Không có",
+    "compatible": "Tương thích",
+}
+
 
 def _decode_payload(raw_payload: Any) -> dict[str, Any]:
     if isinstance(raw_payload, dict):
@@ -135,32 +164,35 @@ def create_operator_console_web_app(
             "request": request,
             "admin": current_admin(request),
             "triage_states": ALERT_TRIAGE_STATES,
+            "triage_labels": TRIAGE_LABELS,
+            "severity_labels": SEVERITY_LABELS,
+            "state_labels": STATE_LABELS,
             "generated_at": _format_utc_now(),
             "public_base_url": config.public_base_url,
             "primary_nav": [
                 {
                     "key": "overview",
-                    "label": "Overview",
+                    "label": "Tổng quan",
                     "href": "/overview",
-                    "meta": "Alert pressure and runtime health",
+                    "meta": "Tải cảnh báo và sức khỏe hệ thống",
                 },
                 {
                     "key": "alerts",
-                    "label": "Alerts",
+                    "label": "Cảnh báo",
                     "href": "/alerts",
-                    "meta": "Primary triage lane",
+                    "meta": "Hàng đợi triage chính",
                 },
                 {
                     "key": "operations",
-                    "label": "Operations",
+                    "label": "Vận hành",
                     "href": "/operations",
-                    "meta": "Anomaly and readiness lane",
+                    "meta": "Bất thường và trạng thái sẵn sàng",
                 },
                 {
                     "key": "reports",
-                    "label": "Reports",
+                    "label": "Báo cáo",
                     "href": "/reports",
-                    "meta": "History, windows, and summaries",
+                    "meta": "Lịch sử, cửa sổ và tổng hợp",
                 },
             ],
             **context,
@@ -215,7 +247,7 @@ def create_operator_console_web_app(
             return render_template(
                 request,
                 "login.html",
-                login_error="Invalid username or password.",
+                login_error="Tên đăng nhập hoặc mật khẩu không đúng.",
             )
         return RedirectResponse(url="/overview", status_code=status.HTTP_303_SEE_OTHER)
 
@@ -258,9 +290,9 @@ def create_operator_console_web_app(
             readiness=readiness,
             page_key="overview",
             page_meta={
-                "eyebrow": "Operator Surface",
-                "title": "Overview",
-                "summary": "Balance alert pressure with runtime health before dropping into triage or operations.",
+                "eyebrow": "Không gian điều hành",
+                "title": "Tổng quan",
+                "summary": "Đặt tải cảnh báo cạnh sức khỏe hệ thống để quyết định nên đi vào triage hay vận hành.",
             },
         )
 
@@ -304,9 +336,9 @@ def create_operator_console_web_app(
             status_filter=status_filter,
             page_key="alerts",
             page_meta={
-                "eyebrow": "Primary Triage",
-                "title": "Alerts",
-                "summary": "Scan the live queue fast, keep suppression visible, and jump into deep investigation only when needed.",
+                "eyebrow": "Triage chính",
+                "title": "Cảnh báo",
+                "summary": "Quét nhanh hàng đợi đang chạy, giữ suppression hiển thị, và chỉ mở trang chi tiết khi thật sự cần đọc sâu.",
             },
         )
 
@@ -333,9 +365,9 @@ def create_operator_console_web_app(
             timeline=timeline,
             page_key="detail",
             page_meta={
-                "eyebrow": "Investigation",
-                "title": "Alert Detail",
-                "summary": "Read deep on triage status, evidence, and investigation notes.",
+                "eyebrow": "Điều tra",
+                "title": "Chi tiết cảnh báo",
+                "summary": "Đọc sâu trạng thái triage, bằng chứng và ghi chú điều tra trên cùng một mặt làm việc.",
             },
         )
 
@@ -404,9 +436,9 @@ def create_operator_console_web_app(
             readiness=build_readiness_payload(config),
             page_key="operations",
             page_meta={
-                "eyebrow": "Operations",
-                "title": "Operations",
-                "summary": "Keep schema anomalies, readiness drift, and runtime posture separate from alert triage.",
+                "eyebrow": "Vận hành",
+                "title": "Vận hành",
+                "summary": "Tách rõ bất thường dữ liệu, lệch readiness và tư thế runtime khỏi hàng đợi cảnh báo.",
             },
         )
 
@@ -443,9 +475,9 @@ def create_operator_console_web_app(
             report_rollup=build_report_rollup(report_bundle),
             page_key="reports",
             page_meta={
-                "eyebrow": "Reports",
-                "title": "Reports",
-                "summary": "Review monitoring windows, alert volume, and anomaly history.",
+                "eyebrow": "Báo cáo",
+                "title": "Báo cáo",
+                "summary": "Theo dõi các cửa sổ giám sát, sản lượng cảnh báo và lịch sử bất thường theo dạng dễ đọc, dễ xuất.",
             },
         )
 

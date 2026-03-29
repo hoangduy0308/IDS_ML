@@ -8,29 +8,35 @@
   "overview"
 ) %}
 {% set console_nav = primary_nav if primary_nav is defined else [
-  {"key": "overview", "label": "Overview", "href": "/dashboard", "meta": "Alert pressure and runtime health"},
-  {"key": "alerts", "label": "Alerts", "href": "/dashboard", "meta": "Primary triage lane"},
-  {"key": "operations", "label": "Operations", "href": "/anomalies", "meta": "Anomaly and readiness lane"},
-  {"key": "reports", "label": "Reports", "href": "/reports", "meta": "History, windows, and summaries"}
+  {"key": "overview", "label": "Tổng quan", "href": "/dashboard", "meta": "Tải cảnh báo và sức khỏe hệ thống"},
+  {"key": "alerts", "label": "Cảnh báo", "href": "/dashboard", "meta": "Hàng đợi triage chính"},
+  {"key": "operations", "label": "Vận hành", "href": "/anomalies", "meta": "Bất thường và readiness"},
+  {"key": "reports", "label": "Báo cáo", "href": "/reports", "meta": "Lịch sử, cửa sổ và tổng hợp"}
 ] %}
 
-<aside class="app-sidebar" aria-label="Console navigation">
+<aside class="app-sidebar" aria-label="Điều hướng console">
   <div class="app-sidebar__inner">
     <div class="app-sidebar__brand">
       <div class="brand-lockup">
         <span class="brand-mark">IDS</span>
         <div class="brand-lockup__copy">
-          <p class="brand-lockup__eyebrow">Precision Lab Surface</p>
-          <h1>Operator Console</h1>
-          <p>Read, triage, and monitor without control-plane drift.</p>
+          <p class="brand-lockup__eyebrow">Bề mặt Precision Lab</p>
+          <h1>Điều hành IDS</h1>
+          <p>Đọc tín hiệu, triage nhanh và theo dõi vận hành trong cùng một mặt làm việc gọn.</p>
         </div>
       </div>
-      <button type="button" class="drawer-close" data-drawer-close aria-label="Close navigation">
-        Close
+      <button type="button" class="drawer-close" data-drawer-close aria-label="Đóng điều hướng">
+        Đóng
       </button>
     </div>
 
-    <nav class="sidebar-nav" aria-label="Primary">
+    <section class="sidebar-index" aria-label="Nhịp vận hành">
+      <p class="sidebar-index__label">Nhịp vận hành</p>
+      <strong>Quét nhanh / đọc sâu / tách vận hành</strong>
+      <p>Không trộn tín hiệu tấn công với sức khỏe pipeline.</p>
+    </section>
+
+    <nav class="sidebar-nav" aria-label="Chính">
       {% for item in console_nav %}
         <a
           href="{{ item.href }}"
@@ -44,30 +50,30 @@
     </nav>
 
     <section class="sidebar-panel">
-      <p class="sidebar-panel__label">Session</p>
+      <p class="sidebar-panel__label">Phiên làm việc</p>
       <div class="state-cluster">
-        <span class="state-chip state-chip--active">Same-host visibility</span>
-        <span class="state-chip">Signed in as {{ admin.username }}</span>
+        <span class="state-chip state-chip--active">Quan sát cùng máy</span>
+        <span class="state-chip">Đăng nhập: {{ admin.username }}</span>
       </div>
       <p class="sidebar-panel__copy">
-        Shared shell is locked to the validated redesign graph and keeps alert and operational signals distinct.
+        Shell này giữ riêng hai luồng: tín hiệu cảnh báo để phân tích và tín hiệu vận hành để chẩn đoán hệ thống.
       </p>
     </section>
 
     <section class="sidebar-panel sidebar-panel--muted">
-      <p class="sidebar-panel__label">Foundation</p>
+      <p class="sidebar-panel__label">Nền tảng</p>
       <div class="state-cluster">
-        <span class="state-chip">Light mode baseline</span>
-        <span class="state-chip">Desktop-first shell</span>
+        <span class="state-chip">Chuẩn sáng</span>
+        <span class="state-chip">Shell ưu tiên desktop</span>
       </div>
       <p class="sidebar-panel__copy">
-        Navigation, workspace hierarchy, and explicit degraded or empty states are owned here.
+        Điều hướng, nhịp hierarchy và các trạng thái suy giảm hay rỗng đều được hiển thị tường minh tại đây.
       </p>
     </section>
 
     <form method="post" action="/logout" class="logout-form">
       <input type="hidden" name="csrf_token" value="{{ admin.csrf_token }}">
-      <button type="submit" class="button button-secondary">Logout</button>
+      <button type="submit" class="button button-secondary">Đăng xuất</button>
     </form>
   </div>
 </aside>

@@ -131,10 +131,10 @@ def test_overview_renders_operator_surface_and_legacy_routes_redirect(tmp_path: 
     response = client.get("/overview")
     assert response.status_code == 200
     body = response.text
-    assert "Overview" in body
-    assert "Priority Queue Snapshot" in body
-    assert "Health Snapshot" in body
-    assert "Anomaly Preview" in body
+    assert "Tổng quan" in body
+    assert "Ảnh chụp hàng đợi ưu tiên" in body
+    assert "Ảnh chụp sức khỏe" in body
+    assert "Xem nhanh bất thường" in body
     assert "schema_anomaly" in body
     assert "bundle-a" in body
 
@@ -163,25 +163,25 @@ def test_alert_detail_and_sensor_aware_json_endpoints(tmp_path: Path) -> None:
 
     alerts_page = client.get("/alerts")
     assert alerts_page.status_code == 200
-    assert "Alert Queue" in alerts_page.text
+    assert "Danh sách cảnh báo" in alerts_page.text
 
     operations_page = client.get("/operations")
     assert operations_page.status_code == 200
-    assert "Operations" in operations_page.text
-    assert "Anomaly Lane" in operations_page.text
+    assert "Vận hành" in operations_page.text
+    assert "Lane bất thường" in operations_page.text
 
     reports_page = client.get("/reports")
     assert reports_page.status_code == 200
-    assert "Recent Window Trend" in reports_page.text
-    assert "Anomaly History" in reports_page.text
+    assert "Diễn biến các cửa sổ gần đây" in reports_page.text
+    assert "Lịch sử bất thường" in reports_page.text
 
     detail = client.get(f"/alerts/{alert_id}")
     assert detail.status_code == 200
     body = detail.text
-    assert f"Alert {alert_id}" in body
+    assert f"Cảnh báo {alert_id}" in body
     assert "Correlated with known scanner host" in body
-    assert "acknowledged" in body
-    assert "Back to alerts" in body
+    assert "Đã tiếp nhận" in body
+    assert "Quay lại hàng đợi" in body
 
     snapshot = client.get("/api/v1/console/snapshot")
     assert snapshot.status_code == 200
