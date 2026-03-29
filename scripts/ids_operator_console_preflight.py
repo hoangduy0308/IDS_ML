@@ -14,6 +14,7 @@ from scripts.ids_operator_console.migrations import inspect_operator_store
 class OperatorConsolePreflightConfig:
     python_binary: Path
     app_entrypoint: Path
+    manage_entrypoint: Path | None
     database_path: Path
     alerts_input_path: Path
     quarantine_input_path: Path
@@ -133,6 +134,10 @@ def validate_preflight(config: OperatorConsolePreflightConfig) -> None:
         raise ValueError(
             "telegram_bot_token and telegram_chat_id must be set together or both omitted"
         )
+    if token is not None:
+        if config.manage_entrypoint is None:
+            raise ValueError("notification-enabled deployments require manage_entrypoint")
+        _require_existing_file(config.manage_entrypoint, name="manage_entrypoint")
 
     inspection = inspect_operator_store(config.database_path)
     if inspection.schema_state != "current":
@@ -151,6 +156,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--python-binary", type=Path, required=True)
     parser.add_argument("--app-entrypoint", type=Path, required=True)
+    parser.add_argument("--manage-entrypoint", type=Path, default=None)
     parser.add_argument("--database-path", type=Path, required=True)
     parser.add_argument("--alerts-input-path", type=Path, required=True)
     parser.add_argument("--quarantine-input-path", type=Path, required=True)
@@ -179,6 +185,7 @@ def build_config_from_args(args: argparse.Namespace) -> OperatorConsolePreflight
     return OperatorConsolePreflightConfig(
         python_binary=Path(args.python_binary),
         app_entrypoint=Path(args.app_entrypoint),
+        manage_entrypoint=Path(args.manage_entrypoint) if args.manage_entrypoint else None,
         database_path=Path(args.database_path),
         alerts_input_path=Path(args.alerts_input_path),
         quarantine_input_path=Path(args.quarantine_input_path),

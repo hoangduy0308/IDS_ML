@@ -69,6 +69,7 @@ def _make_preflight_config(tmp_path: Path, **overrides: object) -> OperatorConso
     kwargs: dict[str, object] = {
         "python_binary": _make_executable(tmp_path / "bin" / "python3"),
         "app_entrypoint": tmp_path / "scripts" / "ids_operator_console_server.py",
+        "manage_entrypoint": tmp_path / "scripts" / "ids_operator_console_manage.py",
         "database_path": db_path,
         "alerts_input_path": logs_dir / "ids_live_alerts.jsonl",
         "quarantine_input_path": logs_dir / "ids_live_quarantine.jsonl",
@@ -86,6 +87,7 @@ def _make_preflight_config(tmp_path: Path, **overrides: object) -> OperatorConso
     }
     Path(kwargs["app_entrypoint"]).parent.mkdir(parents=True, exist_ok=True)
     Path(kwargs["app_entrypoint"]).write_text("print('ok')\n", encoding="utf-8")
+    Path(kwargs["manage_entrypoint"]).write_text("print('ok')\n", encoding="utf-8")
     kwargs.update(overrides)
     return OperatorConsolePreflightConfig(**kwargs)
 

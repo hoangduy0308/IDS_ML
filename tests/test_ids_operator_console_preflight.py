@@ -54,6 +54,7 @@ def _make_preflight_config(tmp_path: Path, **overrides: object) -> OperatorConso
     kwargs: dict[str, object] = {
         "python_binary": _make_executable(tmp_path / "bin" / "python3"),
         "app_entrypoint": tmp_path / "scripts" / "ids_operator_console_server.py",
+        "manage_entrypoint": tmp_path / "scripts" / "ids_operator_console_manage.py",
         "database_path": db_path,
         "alerts_input_path": logs_dir / "ids_live_alerts.jsonl",
         "quarantine_input_path": logs_dir / "ids_live_quarantine.jsonl",
@@ -72,6 +73,7 @@ def _make_preflight_config(tmp_path: Path, **overrides: object) -> OperatorConso
     }
     Path(kwargs["app_entrypoint"]).parent.mkdir(parents=True, exist_ok=True)
     Path(kwargs["app_entrypoint"]).write_text("print('ok')\n", encoding="utf-8")
+    Path(kwargs["manage_entrypoint"]).write_text("print('ok')\n", encoding="utf-8")
     kwargs.update(overrides)
     return OperatorConsolePreflightConfig(**kwargs)
 
@@ -98,13 +100,36 @@ def test_preflight_requires_admin_bootstrap(tmp_path: Path, monkeypatch: pytest.
 
 def test_deploy_artifacts_are_wired_to_proxy_and_secret_contract() -> None:
     service_text = (REPO_ROOT / "deploy/systemd/ids-operator-console.service").read_text(encoding="utf-8")
+    notify_service_text = (REPO_ROOT / "deploy/systemd/ids-operator-console-notify.service").read_text(encoding="utf-8")
     nginx_text = (REPO_ROOT / "deploy/nginx/ids-operator-console.conf.example").read_text(encoding="utf-8")
 
     assert "EnvironmentFile=-/etc/ids-operator-console/ids-operator-console.env" in service_text
     assert "IDS_OPERATOR_CONSOLE_SECRET_KEY_FILE" in service_text
     assert "--public-base-url ${IDS_OPERATOR_CONSOLE_PUBLIC_BASE_URL}" in service_text
     assert "--secret-key-file ${IDS_OPERATOR_CONSOLE_SECRET_KEY_FILE}" in service_text
+    assert "--manage-entrypoint /opt/ids_ml_new/scripts/ids_operator_console_manage.py" in service_text
+    assert "IDS_OPERATOR_CONSOLE_TELEGRAM_BOT_TOKEN_FILE" in service_text
+
+    assert "ids_operator_console_manage.py --database-path \"$IDS_OPERATOR_CONSOLE_DATABASE_PATH\" notify-worker" in notify_service_text
+    assert "--manage-entrypoint /opt/ids_ml_new/scripts/ids_operator_console_manage.py" in notify_service_text
+    assert "IDS_OPERATOR_CONSOLE_TELEGRAM_BOT_TOKEN_FILE" in notify_service_text
 
     assert "proxy_set_header Host $host;" in nginx_text
     assert "proxy_set_header X-Forwarded-Proto https;" in nginx_text
     assert "proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;" in nginx_text
+
+
+def test_preflight_rejects_notification_enabled_missing_manage_entrypoint(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _make_preflight_config(
+        tmp_path,
+        manage_entrypoint=None,
+        telegram_bot_token="token",
+        telegram_chat_id="-100preflight",
+    )
+    monkeypatch.setattr(preflight, "_is_executable_file", lambda path: True)
+
+    with pytest.raises(ValueError, match="manage_entrypoint"):
+        validate_preflight(config)
