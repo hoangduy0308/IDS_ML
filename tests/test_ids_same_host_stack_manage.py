@@ -430,3 +430,190 @@ def test_manage_main_status_or_smoke_prints_json_payload(
 
     assert exit_code == 0
     assert json.loads(capsys.readouterr().out)["command"] == "status"
+
+
+def test_run_stack_recovery_restart_or_recovery_path_executes_supervisor_first_order(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _build_config(tmp_path, telegram_enabled=True)
+
+    executed: list[list[str]] = []
+
+    def fake_runner(argv: list[str] | tuple[str, ...]) -> str:
+        command = [str(part) for part in argv]
+        executed.append(command)
+        return ""
+
+    monkeypatch.setattr(
+        stack,
+        "build_bundle_status_payload",
+        lambda path: {"runtime_ready": True, "activation_path": str(path)},
+    )
+    monkeypatch.setattr(
+        stack,
+        "build_live_sensor_health_payload",
+        lambda *_args, **_kwargs: {"ready": True, "status": "ok"},
+    )
+    monkeypatch.setattr(
+        stack,
+        "build_readiness_payload",
+        lambda _config: {"ready": True, "status": "ok"},
+    )
+    monkeypatch.setattr(
+        stack,
+        "run_smoke_checks",
+        lambda _config: SimpleNamespace(
+            health_status=200,
+            readiness_status=200,
+            redirect_status=307,
+            readiness_payload={"ready": True, "status": "ok"},
+        ),
+    )
+    monkeypatch.setattr(
+        stack,
+        "build_notification_component",
+        lambda _config, include_sensitive=True: {
+            "ok": True,
+            "state": "ok",
+            "enabled": True,
+        },
+    )
+
+    payload = stack.run_stack_recovery(
+        config,
+        command_runner=fake_runner,
+        proxy_checker=lambda _url, _timeout: (200, "https://console.example"),
+    )
+
+    assert payload["recovery_ready"] is True
+    assert [step["step"] for step in payload["steps"]] == [
+        "verify_activation_contract",
+        "restart_live_sensor_service",
+        "restart_operator_console_service",
+        "restart_notification_service",
+        "stack_status",
+        "stack_smoke",
+    ]
+    assert executed == [
+        ["systemctl", "restart", "ids-live-sensor.service"],
+        ["systemctl", "restart", "ids-operator-console.service"],
+        ["systemctl", "restart", "ids-operator-console-notify.service"],
+    ]
+    assert payload["diagnosis"]["status"]["command"] == "status"
+    assert payload["diagnosis"]["smoke"]["command"] == "smoke"
+
+
+def test_run_stack_recovery_restart_or_recovery_path_reports_degraded_diagnosis(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _build_config(tmp_path)
+
+    executed: list[list[str]] = []
+
+    def fake_runner(argv: list[str] | tuple[str, ...]) -> str:
+        command = [str(part) for part in argv]
+        executed.append(command)
+        return ""
+
+    monkeypatch.setattr(
+        stack,
+        "build_bundle_status_payload",
+        lambda path: {"runtime_ready": True, "activation_path": str(path)},
+    )
+    monkeypatch.setattr(
+        stack,
+        "build_live_sensor_health_payload",
+        lambda *_args, **_kwargs: {"ready": False, "status": "degraded"},
+    )
+    monkeypatch.setattr(
+        stack,
+        "build_readiness_payload",
+        lambda _config: {"ready": True, "status": "ok"},
+    )
+    monkeypatch.setattr(
+        stack,
+        "run_smoke_checks",
+        lambda _config: SimpleNamespace(
+            health_status=200,
+            readiness_status=503,
+            redirect_status=307,
+            readiness_payload={"ready": False, "status": "degraded"},
+        ),
+    )
+    monkeypatch.setattr(
+        stack,
+        "build_notification_component",
+        lambda _config, include_sensitive=True: {
+            "ok": True,
+            "state": "disabled",
+            "enabled": False,
+        },
+    )
+
+    payload = stack.run_stack_recovery(config, command_runner=fake_runner)
+
+    assert payload["recovery_ready"] is False
+    assert payload["notification_enabled"] is False
+    assert executed == [
+        ["systemctl", "restart", "ids-live-sensor.service"],
+        ["systemctl", "restart", "ids-operator-console.service"],
+    ]
+    assert payload["steps"][3]["step"] == "notification_service_disabled"
+    assert (
+        payload["diagnosis"]["status"]["components"]["outbound_notification_path"]["state"]
+        == "disabled"
+    )
+    assert (
+        payload["diagnosis"]["status"]["components"]["live_sensor_data_path"]["state"]
+        == "degraded"
+    )
+
+
+def test_manage_main_restart_or_recovery_path_prints_json_payload(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config = _build_config(tmp_path)
+
+    monkeypatch.setattr(
+        manage,
+        "run_stack_recovery",
+        lambda _: {"recovery_ready": True, "command": "recover"},
+    )
+
+    exit_code = manage.main(
+        [
+            "--repo-root",
+            str(config.repo_root),
+            "--python-binary",
+            str(config.python_binary),
+            "--operator-env-file",
+            str(config.operator_env_file),
+            "--activation-path",
+            str(config.activation_path),
+            "--dumpcap-binary",
+            str(config.dumpcap_binary),
+            "--java-binary",
+            str(config.java_binary),
+            "--extractor-binary",
+            str(config.extractor_binary),
+            "--jnetpcap-path",
+            str(config.jnetpcap_path),
+            "--spool-dir",
+            str(config.spool_dir),
+            "--alerts-output-path",
+            str(config.alerts_output_path),
+            "--quarantine-output-path",
+            str(config.quarantine_output_path),
+            "--summary-output-path",
+            str(config.summary_output_path),
+            "--json",
+            "recover",
+        ]
+    )
+
+    assert exit_code == 0
+    assert json.loads(capsys.readouterr().out)["command"] == "recover"

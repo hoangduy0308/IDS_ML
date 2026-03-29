@@ -377,6 +377,120 @@ def build_stack_smoke_payload(
     )
 
 
+def _run_supervisor_restart(
+    command_runner: CommandRunner,
+    *,
+    service_name: str,
+) -> tuple[list[str], dict[str, Any]]:
+    argv = ["systemctl", "restart", service_name]
+    try:
+        command_runner(argv)
+    except Exception as exc:
+        return argv, {
+            "ok": False,
+            "state": "restart_failed",
+            "detail": str(exc),
+            "service": service_name,
+        }
+    return argv, {
+        "ok": True,
+        "state": "restarted",
+        "detail": None,
+        "service": service_name,
+    }
+
+
+def run_stack_recovery(
+    config: SameHostStackConfig,
+    *,
+    command_runner: CommandRunner | None = None,
+    proxy_checker: ProxyChecker = _default_proxy_checker,
+) -> dict[str, Any]:
+    effective_command_runner = run_command if command_runner is None else command_runner
+    steps: list[dict[str, Any]] = []
+    restart_results: list[dict[str, Any]] = []
+
+    bundle_component = _build_bundle_component(config)
+    steps.append(
+        {
+            "step": "verify_activation_contract",
+            "result": bundle_component,
+        }
+    )
+
+    for step_name, service_name in (
+        ("restart_live_sensor_service", config.live_sensor_service_name),
+        ("restart_operator_console_service", config.console_service_name),
+    ):
+        argv, result = _run_supervisor_restart(effective_command_runner, service_name=service_name)
+        restart_results.append(result)
+        steps.append(
+            {
+                "step": step_name,
+                "argv": argv,
+                "result": result,
+            }
+        )
+
+    notification_is_enabled = notifications_enabled(config)
+    if notification_is_enabled:
+        argv, result = _run_supervisor_restart(
+            effective_command_runner,
+            service_name=config.notification_service_name,
+        )
+        restart_results.append(result)
+        steps.append(
+            {
+                "step": "restart_notification_service",
+                "argv": argv,
+                "result": result,
+            }
+        )
+    else:
+        steps.append(
+            {
+                "step": "notification_service_disabled",
+                "result": {
+                    "ok": True,
+                    "state": "disabled",
+                    "detail": None,
+                    "service": config.notification_service_name,
+                },
+            }
+        )
+
+    status_payload = build_stack_status_payload(config, proxy_checker=proxy_checker)
+    smoke_payload = build_stack_smoke_payload(config, proxy_checker=proxy_checker)
+    steps.append(
+        {
+            "step": "stack_status",
+            "result": status_payload,
+        }
+    )
+    steps.append(
+        {
+            "step": "stack_smoke",
+            "result": smoke_payload,
+        }
+    )
+
+    recovery_ready = all(result["ok"] for result in restart_results) and bool(
+        status_payload.get("ready") and smoke_payload.get("ready")
+    )
+    return {
+        "command": "recover",
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+        "recovery_ready": recovery_ready,
+        "status": "ok" if recovery_ready else "degraded",
+        "notification_enabled": notification_is_enabled,
+        "steps": steps,
+        "diagnosis": {
+            "status": status_payload,
+            "smoke": smoke_payload,
+        },
+    }
+
+
 def validate_stack_preflight(config: SameHostStackConfig) -> dict[str, Any]:
     repo_root = _require_existing_directory(config.repo_root, name="repo_root")
     python_binary = _require_existing_file(config.python_binary, name="python_binary", executable=True)

@@ -15,6 +15,7 @@ from scripts.ids_same_host_stack import (  # noqa: E402
     SameHostStackConfig,
     build_stack_smoke_payload,
     build_stack_status_payload,
+    run_stack_recovery,
     run_stack_bootstrap,
     validate_stack_preflight,
 )
@@ -95,6 +96,10 @@ def _build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("preflight", help="Validate the canonical same-host stack preflight.")
     subparsers.add_parser("status", help="Report stack runtime health per failure domain.")
     subparsers.add_parser("smoke", help="Run stack smoke checks per failure domain.")
+    subparsers.add_parser(
+        "recover",
+        help="Run the canonical supervisor-first restart/recovery ordering and diagnosis path.",
+    )
 
     bootstrap_parser = subparsers.add_parser(
         "bootstrap",
@@ -183,6 +188,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         payload = build_stack_smoke_payload(config)
         _print_payload(payload, as_json=args.json_output)
         return 0 if payload.get("ready") else 2
+
+    if args.command == "recover":
+        payload = run_stack_recovery(config)
+        _print_payload(payload, as_json=args.json_output)
+        return 0 if payload.get("recovery_ready") else 2
 
     parser.error(f"unsupported command: {args.command}")
     return 2
