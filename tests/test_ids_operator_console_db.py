@@ -178,3 +178,51 @@ def test_inspect_operator_store_reports_legacy_and_current_states(tmp_path: Path
     assert current.schema_state == "current"
     assert current.schema_version == 2
     assert current.runtime_ready is False
+
+
+def test_notification_delivery_summary_and_redrive_preserve_explicit_recovery(tmp_path: Path) -> None:
+    store = OperatorStore.open(tmp_path / "operator_console.db")
+    try:
+        alert_id = store.upsert_alert(
+            source_event_id="alert-redrive",
+            event_ts="2026-03-28T14:40:00+00:00",
+            severity="high",
+            src_ip="10.0.0.8",
+            dst_ip="192.168.1.10",
+            payload={"event_type": "model_prediction", "score": 0.93},
+        )
+        delivery_id = store.save_notification_delivery(
+            alert_id=alert_id,
+            channel="telegram",
+            target="ops-room",
+            dedupe_key="alert-redrive",
+            payload={"text": "Alert alert-redrive"},
+            status="pending",
+        )
+        store.mark_notification_attempt(
+            delivery_id=delivery_id,
+            status="failed",
+            last_error="telegram outage",
+        )
+
+        summary_before = store.get_notification_delivery_summary(channel="telegram")
+        assert summary_before["failed_count"] == 1
+        assert summary_before["due_count"] == 0
+        assert summary_before["last_error"] is not None
+        assert summary_before["last_error"]["last_error"] == "telegram outage"
+
+        redriven = store.redrive_failed_notification_deliveries(channel="telegram")
+        redriven_delivery = store.get_notification_delivery(delivery_id)
+        summary_after = store.get_notification_delivery_summary(channel="telegram")
+
+        assert redriven == 1
+        assert redriven_delivery is not None
+        assert redriven_delivery["status"] == "pending"
+        assert redriven_delivery["attempt_count"] == 0
+        assert redriven_delivery["last_error"] is None
+        assert summary_after["pending_count"] == 1
+        assert summary_after["failed_count"] == 0
+        assert summary_after["due_count"] == 1
+        assert summary_after["last_error"] is None
+    finally:
+        store.close()

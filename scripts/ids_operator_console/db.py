@@ -769,8 +769,6 @@ class OperatorStore:
                 ON CONFLICT(channel, target, dedupe_key) DO UPDATE SET
                     alert_id = COALESCE(excluded.alert_id, notification_deliveries.alert_id),
                     payload_json = excluded.payload_json,
-                    status = excluded.status,
-                    next_attempt_at = excluded.next_attempt_at,
                     updated_at = excluded.updated_at
                 """,
                 (alert_id, channel, target, dedupe_key, payload_json, status, next_attempt_at, now, now),
@@ -844,6 +842,110 @@ class OperatorStore:
             (channel, threshold, limit),
         ).fetchall()
         return [_row_to_dict(row) for row in rows if row is not None]
+
+    def get_notification_delivery_summary(
+        self,
+        *,
+        channel: str = "telegram",
+        as_of_ts: str | None = None,
+    ) -> dict[str, Any]:
+        threshold = as_of_ts or _utc_now_iso()
+        row = self._connection.execute(
+            """
+            SELECT
+                COALESCE(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END), 0) AS pending_count,
+                COALESCE(SUM(CASE WHEN status = 'retry' THEN 1 ELSE 0 END), 0) AS retry_count,
+                COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0) AS failed_count,
+                COALESCE(SUM(CASE WHEN status = 'sent' THEN 1 ELSE 0 END), 0) AS sent_count,
+                COALESCE(
+                    SUM(
+                        CASE
+                            WHEN status IN ('pending', 'retry')
+                             AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
+                            THEN 1
+                            ELSE 0
+                        END
+                    ),
+                    0
+                ) AS due_count,
+                MIN(
+                    CASE
+                        WHEN status IN ('pending', 'retry')
+                         AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
+                        THEN COALESCE(next_attempt_at, created_at)
+                        ELSE NULL
+                    END
+                ) AS oldest_due_at
+            FROM notification_deliveries
+            WHERE channel = ?
+            """,
+            (threshold, threshold, channel),
+        ).fetchone()
+        summary = _row_to_dict(row) or {}
+        last_error_row = self._connection.execute(
+            """
+            SELECT status, last_error, updated_at
+            FROM notification_deliveries
+            WHERE channel = ?
+              AND last_error IS NOT NULL
+              AND TRIM(last_error) != ''
+            ORDER BY updated_at DESC, id DESC
+            LIMIT 1
+            """,
+            (channel,),
+        ).fetchone()
+        last_error = _row_to_dict(last_error_row) if last_error_row is not None else None
+        return {
+            "channel": channel,
+            "pending_count": int(summary.get("pending_count") or 0),
+            "retry_count": int(summary.get("retry_count") or 0),
+            "failed_count": int(summary.get("failed_count") or 0),
+            "sent_count": int(summary.get("sent_count") or 0),
+            "due_count": int(summary.get("due_count") or 0),
+            "oldest_due_at": summary.get("oldest_due_at"),
+            "last_error": last_error,
+        }
+
+    def redrive_failed_notification_deliveries(
+        self,
+        *,
+        channel: str = "telegram",
+        limit: int = 100,
+    ) -> int:
+        rows = self._connection.execute(
+            """
+            SELECT id
+            FROM notification_deliveries
+            WHERE channel = ?
+              AND status = 'failed'
+            ORDER BY updated_at ASC, id ASC
+            LIMIT ?
+            """,
+            (channel, limit),
+        ).fetchall()
+        if not rows:
+            return 0
+
+        delivery_ids = [int(row["id"]) for row in rows]
+        placeholders = ", ".join("?" for _ in delivery_ids)
+        now = _utc_now_iso()
+        with self._connection:
+            self._connection.execute(
+                f"""
+                UPDATE notification_deliveries
+                SET
+                    status = 'pending',
+                    attempt_count = 0,
+                    last_attempt_at = NULL,
+                    next_attempt_at = NULL,
+                    last_error = NULL,
+                    provider_message_id = NULL,
+                    updated_at = ?
+                WHERE id IN ({placeholders})
+                """,
+                (now, *delivery_ids),
+            )
+        return len(delivery_ids)
 
 
 def open_operator_store(database_path: Path) -> OperatorStore:

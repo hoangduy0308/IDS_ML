@@ -356,6 +356,14 @@ def queue_and_dispatch_notifications(
     )
 
 
+def redrive_failed_telegram_notifications(
+    store: OperatorStore,
+    *,
+    limit: int = 100,
+) -> int:
+    return store.redrive_failed_notification_deliveries(channel="telegram", limit=limit)
+
+
 __all__ = [
     "NotificationDeliveryError",
     "NotificationDispatchSummary",
@@ -364,5 +372,6 @@ __all__ = [
     "dispatch_pending_telegram_notifications",
     "queue_alert_notifications",
     "queue_and_dispatch_notifications",
+    "redrive_failed_telegram_notifications",
     "send_telegram_message",
 ]

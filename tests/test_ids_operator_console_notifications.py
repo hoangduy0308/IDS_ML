@@ -16,6 +16,7 @@ from scripts.ids_operator_console.notifications import (  # noqa: E402
     TelegramNotifierConfig,
     dispatch_pending_telegram_notifications,
     queue_alert_notifications,
+    redrive_failed_telegram_notifications,
 )
 
 
@@ -135,3 +136,70 @@ def test_dispatch_retryable_failure_keeps_local_state_and_sets_retry(tmp_path: P
     finally:
         store.close()
 
+
+def test_queue_alert_notifications_does_not_reopen_terminal_delivery_state(tmp_path: Path) -> None:
+    store = _new_store(tmp_path)
+    try:
+        _seed_alert(store, source_event_id="alert-terminal", src_ip="10.0.3.1")
+        queue_alert_notifications(store, chat_id="-100terminal", limit=10)
+        delivery = store._connection.execute(  # noqa: SLF001
+            "SELECT id FROM notification_deliveries WHERE dedupe_key = 'alert-terminal'"
+        ).fetchone()
+        assert delivery is not None
+        store.mark_notification_attempt(
+            delivery_id=int(delivery["id"]),
+            status="sent",
+            provider_message_id="telegram-msg-terminal",
+        )
+
+        queued_again = queue_alert_notifications(store, chat_id="-100terminal", limit=10)
+        persisted = store._connection.execute(  # noqa: SLF001
+            "SELECT status, attempt_count, provider_message_id FROM notification_deliveries WHERE id = ?",
+            (int(delivery["id"]),),
+        ).fetchone()
+
+        assert queued_again == 1
+        assert persisted is not None
+        assert persisted["status"] == "sent"
+        assert int(persisted["attempt_count"]) == 1
+        assert persisted["provider_message_id"] == "telegram-msg-terminal"
+    finally:
+        store.close()
+
+
+def test_redrive_failed_notifications_requires_explicit_operator_action(tmp_path: Path) -> None:
+    store = _new_store(tmp_path)
+    try:
+        _seed_alert(store, source_event_id="alert-redrive", src_ip="10.0.4.1")
+        queue_alert_notifications(store, chat_id="-100redrive", limit=10)
+        config = TelegramNotifierConfig(
+            bot_token="token",
+            default_chat_id="-100redrive",
+            max_attempts=1,
+            base_backoff_seconds=1,
+        )
+
+        def failing_sender(_cfg: TelegramNotifierConfig, _chat_id: str, _text: str) -> str:
+            raise NotificationDeliveryError("permanent rejection", retryable=False)
+
+        dispatch_pending_telegram_notifications(store, config=config, sender=failing_sender)
+        queue_alert_notifications(store, chat_id="-100redrive", limit=10)
+        failed_delivery = store._connection.execute(  # noqa: SLF001
+            "SELECT status, attempt_count FROM notification_deliveries WHERE dedupe_key = 'alert-redrive'"
+        ).fetchone()
+        assert failed_delivery is not None
+        assert failed_delivery["status"] == "failed"
+        assert int(failed_delivery["attempt_count"]) == 1
+
+        redriven = redrive_failed_telegram_notifications(store, limit=10)
+        pending_delivery = store._connection.execute(  # noqa: SLF001
+            "SELECT status, attempt_count, last_error FROM notification_deliveries WHERE dedupe_key = 'alert-redrive'"
+        ).fetchone()
+
+        assert redriven == 1
+        assert pending_delivery is not None
+        assert pending_delivery["status"] == "pending"
+        assert int(pending_delivery["attempt_count"]) == 0
+        assert pending_delivery["last_error"] is None
+    finally:
+        store.close()
