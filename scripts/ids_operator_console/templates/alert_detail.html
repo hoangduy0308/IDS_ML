@@ -1,17 +1,82 @@
 {% extends "base.html" %}
 {% block title %}Alert {{ alert.id }} | IDS Operator Console{% endblock %}
 {% block content %}
+<section class="detail-hero panel panel-primary">
+  <div class="detail-hero__copy">
+    <a href="/alerts" class="back-link">Back to alerts</a>
+    <span class="eyebrow">Investigation Workspace</span>
+    <h2>Alert {{ alert.id }}</h2>
+    <p>Move from queue scan to read-depth here without losing the triage state, evidence trail, or analyst notes that justify the decision.</p>
+  </div>
+  <div class="alert-badges">
+    <span class="badge status-{{ alert.triage_status|replace('_', '-') }}">{{ alert.triage_status }}</span>
+    <span class="badge severity-{{ (alert.severity or 'unknown')|lower }}">{{ alert.severity or "unknown" }}</span>
+    {% if alert.suppressed %}
+    <span class="badge badge-muted">suppressed</span>
+    {% endif %}
+  </div>
+</section>
+
 <section class="panel">
-  <h2>Alert {{ alert.id }}</h2>
-  <p>Status: <strong>{{ alert.triage_status }}</strong></p>
-  <p>Severity: <strong>{{ alert.severity or "unknown" }}</strong></p>
-  <p>Source event: <code>{{ alert.source_event_id or "-" }}</code></p>
-  <p>Source IP: <code>{{ alert.src_ip or "-" }}</code> | Destination IP: <code>{{ alert.dst_ip or "-" }}</code></p>
+  <div class="section-heading">
+    <div>
+      <span class="eyebrow">Alert Context</span>
+      <h3>Investigation Baseline</h3>
+    </div>
+    <p class="section-copy">This surface keeps the raw identifiers visible while workflow actions stay adjacent instead of buried under the event details.</p>
+  </div>
+  <dl class="detail-grid">
+    <div>
+      <dt>Source event</dt>
+      <dd><code>{{ alert.source_event_id or "-" }}</code></dd>
+    </div>
+    <div>
+      <dt>Event time</dt>
+      <dd>{{ alert.event_ts }}</dd>
+    </div>
+    <div>
+      <dt>Source IP</dt>
+      <dd><code>{{ alert.src_ip or "-" }}</code></dd>
+    </div>
+    <div>
+      <dt>Destination IP</dt>
+      <dd><code>{{ alert.dst_ip or "-" }}</code></dd>
+    </div>
+    <div>
+      <dt>Protocol</dt>
+      <dd>{{ alert.protocol or alert.payload.protocol or "-" }}</dd>
+    </div>
+    <div>
+      <dt>Ports</dt>
+      <dd>{{ alert.src_port or "-" }} -> {{ alert.dst_port or "-" }}</dd>
+    </div>
+    <div>
+      <dt>Score</dt>
+      <dd>{{ alert.payload.score if alert.payload and alert.payload.score is defined else "-" }}</dd>
+    </div>
+    <div>
+      <dt>Fingerprint</dt>
+      <dd><code>{{ alert.fingerprint or "-" }}</code></dd>
+    </div>
+    <div>
+      <dt>Sensor</dt>
+      <dd>{{ alert.sensor_id or "sensor-local" }}</dd>
+    </div>
+    <div>
+      <dt>Suppression</dt>
+      <dd>{{ "active" if alert.suppressed else "none" }}</dd>
+    </div>
+  </dl>
 </section>
 
 <section class="grid two-col">
   <article class="panel">
-    <h3>Update Triage Status</h3>
+    <div class="section-heading">
+      <div>
+        <span class="eyebrow">Workflow</span>
+        <h3>Update Triage Status</h3>
+      </div>
+    </div>
     <form method="post" action="/alerts/{{ alert.id }}/status" class="stack-form">
       <input type="hidden" name="csrf_token" value="{{ admin.csrf_token }}">
       <label>
@@ -22,49 +87,76 @@
           {% endfor %}
         </select>
       </label>
-      <button type="submit">Save status</button>
+      <button type="submit" class="button">Save status</button>
     </form>
   </article>
 
   <article class="panel">
-    <h3>Add Investigation Note</h3>
+    <div class="section-heading">
+      <div>
+        <span class="eyebrow">Evidence</span>
+        <h3>Add Investigation Note</h3>
+      </div>
+    </div>
     <form method="post" action="/alerts/{{ alert.id }}/notes" class="stack-form">
       <input type="hidden" name="csrf_token" value="{{ admin.csrf_token }}">
       <label>
         Note
-        <textarea name="note_text" rows="4" required></textarea>
+        <textarea name="note_text" rows="5" required placeholder="Capture analyst judgment, correlation, or follow-up action."></textarea>
       </label>
-      <button type="submit">Add note</button>
+      <button type="submit" class="button">Record note</button>
     </form>
   </article>
 </section>
 
 <section class="grid two-col">
   <article class="panel">
-    <h3>Status History</h3>
+    <div class="section-heading">
+      <div>
+        <span class="eyebrow">Timeline</span>
+        <h3>Status History</h3>
+      </div>
+    </div>
     {% if timeline.status_history %}
-    <ul>
+    <ul class="timeline-list">
       {% for item in timeline.status_history %}
-      <li>
-        {{ item.changed_at }} - {{ item.from_status or "new" }} → {{ item.to_status }} ({{ item.changed_by }})
+      <li class="timeline-item">
+        <strong>{{ item.changed_at }}</strong>
+        <span>{{ item.from_status or "new" }} -> {{ item.to_status }}</span>
+        <span>Changed by {{ item.changed_by }}</span>
       </li>
       {% endfor %}
     </ul>
     {% else %}
-    <p>No status history recorded.</p>
+    <div class="empty-state">
+      <h4>No status history recorded.</h4>
+      <p>The alert has not moved through another triage step yet.</p>
+    </div>
     {% endif %}
   </article>
 
   <article class="panel">
-    <h3>Notes</h3>
+    <div class="section-heading">
+      <div>
+        <span class="eyebrow">Case Log</span>
+        <h3>Notes</h3>
+      </div>
+    </div>
     {% if timeline.notes %}
-    <ul>
+    <ul class="timeline-list">
       {% for note in timeline.notes %}
-      <li>{{ note.created_at }} - {{ note.author }}: {{ note.note_text }}</li>
+      <li class="timeline-item timeline-item-note">
+        <strong>{{ note.created_at }}</strong>
+        <span>{{ note.author }}</span>
+        <p>{{ note.note_text }}</p>
+      </li>
       {% endfor %}
     </ul>
     {% else %}
-    <p>No notes recorded.</p>
+    <div class="empty-state">
+      <h4>No notes recorded.</h4>
+      <p>Add the first analyst note to keep the investigation trail intact.</p>
+    </div>
     {% endif %}
   </article>
 </section>
