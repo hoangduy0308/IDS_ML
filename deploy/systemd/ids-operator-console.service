@@ -8,19 +8,25 @@ Type=exec
 User=ids-operator
 Group=ids-operator
 WorkingDirectory=/opt/ids_ml_new
+EnvironmentFile=-/etc/ids-operator-console/ids-operator-console.env
+Environment=IDS_OPERATOR_CONSOLE_ENVIRONMENT=production
 Environment=IDS_OPERATOR_CONSOLE_HOST=127.0.0.1
 Environment=IDS_OPERATOR_CONSOLE_PORT=8765
 Environment=IDS_OPERATOR_CONSOLE_LOG_LEVEL=info
-Environment=IDS_OPERATOR_CONSOLE_SECRET_KEY=change-me
+Environment=IDS_OPERATOR_CONSOLE_FORWARDED_ALLOW_IPS=127.0.0.1
+Environment=IDS_OPERATOR_CONSOLE_ROOT_PATH=
+Environment=IDS_OPERATOR_CONSOLE_PUBLIC_BASE_URL=https://console.example
+Environment=IDS_OPERATOR_CONSOLE_SESSION_COOKIE_NAME=ids_operator_session
 Environment=IDS_OPERATOR_CONSOLE_DATABASE_PATH=/var/lib/ids-operator-console/operator_console.db
 Environment=IDS_OPERATOR_CONSOLE_ALERTS_INPUT_PATH=/var/log/ids-live-sensor/ids_live_alerts.jsonl
 Environment=IDS_OPERATOR_CONSOLE_QUARANTINE_INPUT_PATH=/var/log/ids-live-sensor/ids_live_quarantine.jsonl
 Environment=IDS_OPERATOR_CONSOLE_SUMMARY_INPUT_PATH=/var/log/ids-live-sensor/ids_live_sensor_summary.jsonl
 Environment=IDS_OPERATOR_CONSOLE_TEMPLATES_DIR=/opt/ids_ml_new/scripts/ids_operator_console/templates
 Environment=IDS_OPERATOR_CONSOLE_STATIC_DIR=/opt/ids_ml_new/scripts/ids_operator_console/static
+Environment=IDS_OPERATOR_CONSOLE_SECRET_KEY_FILE=/etc/ids-operator-console/console.secret
 Environment=IDS_OPERATOR_CONSOLE_TELEGRAM_BOT_TOKEN=
 Environment=IDS_OPERATOR_CONSOLE_TELEGRAM_CHAT_ID=
-ExecStartPre=/usr/bin/python3 /opt/ids_ml_new/scripts/ids_operator_console_preflight.py --python-binary /usr/bin/python3 --app-entrypoint /opt/ids_ml_new/scripts/ids_operator_console_server.py --database-path ${IDS_OPERATOR_CONSOLE_DATABASE_PATH} --alerts-input-path ${IDS_OPERATOR_CONSOLE_ALERTS_INPUT_PATH} --quarantine-input-path ${IDS_OPERATOR_CONSOLE_QUARANTINE_INPUT_PATH} --summary-input-path ${IDS_OPERATOR_CONSOLE_SUMMARY_INPUT_PATH} --templates-dir ${IDS_OPERATOR_CONSOLE_TEMPLATES_DIR} --static-dir ${IDS_OPERATOR_CONSOLE_STATIC_DIR} --secret-key ${IDS_OPERATOR_CONSOLE_SECRET_KEY} --telegram-bot-token ${IDS_OPERATOR_CONSOLE_TELEGRAM_BOT_TOKEN} --telegram-chat-id ${IDS_OPERATOR_CONSOLE_TELEGRAM_CHAT_ID}
+ExecStartPre=/usr/bin/python3 /opt/ids_ml_new/scripts/ids_operator_console_preflight.py --python-binary /usr/bin/python3 --app-entrypoint /opt/ids_ml_new/scripts/ids_operator_console_server.py --database-path ${IDS_OPERATOR_CONSOLE_DATABASE_PATH} --alerts-input-path ${IDS_OPERATOR_CONSOLE_ALERTS_INPUT_PATH} --quarantine-input-path ${IDS_OPERATOR_CONSOLE_QUARANTINE_INPUT_PATH} --summary-input-path ${IDS_OPERATOR_CONSOLE_SUMMARY_INPUT_PATH} --templates-dir ${IDS_OPERATOR_CONSOLE_TEMPLATES_DIR} --static-dir ${IDS_OPERATOR_CONSOLE_STATIC_DIR} --environment ${IDS_OPERATOR_CONSOLE_ENVIRONMENT} --public-base-url ${IDS_OPERATOR_CONSOLE_PUBLIC_BASE_URL} --root-path ${IDS_OPERATOR_CONSOLE_ROOT_PATH} --forwarded-allow-ips ${IDS_OPERATOR_CONSOLE_FORWARDED_ALLOW_IPS} --secret-key-file ${IDS_OPERATOR_CONSOLE_SECRET_KEY_FILE} --telegram-bot-token ${IDS_OPERATOR_CONSOLE_TELEGRAM_BOT_TOKEN} --telegram-chat-id ${IDS_OPERATOR_CONSOLE_TELEGRAM_CHAT_ID}
 ExecStart=/usr/bin/bash -lc 'exec /usr/bin/python3 /opt/ids_ml_new/scripts/ids_operator_console_server.py --host "$IDS_OPERATOR_CONSOLE_HOST" --port "$IDS_OPERATOR_CONSOLE_PORT" --log-level "$IDS_OPERATOR_CONSOLE_LOG_LEVEL"'
 Restart=on-failure
 RestartSec=5s

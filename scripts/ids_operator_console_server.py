@@ -57,6 +57,9 @@ def run_server(app: FastAPI, *, config: OperatorConsoleConfig) -> None:
         port=config.port,
         log_level=config.log_level,
         reload=config.reload,
+        proxy_headers=True,
+        forwarded_allow_ips=config.forwarded_allow_ips,
+        root_path=config.root_path,
     )
 
 

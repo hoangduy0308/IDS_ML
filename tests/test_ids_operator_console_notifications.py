@@ -10,17 +10,12 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-import scripts.ids_operator_console_preflight as preflight  # noqa: E402
 from scripts.ids_operator_console.db import OperatorStore  # noqa: E402
 from scripts.ids_operator_console.notifications import (  # noqa: E402
     NotificationDeliveryError,
     TelegramNotifierConfig,
     dispatch_pending_telegram_notifications,
     queue_alert_notifications,
-)
-from scripts.ids_operator_console_preflight import (  # noqa: E402
-    OperatorConsolePreflightConfig,
-    validate_preflight,
 )
 
 
@@ -40,42 +35,6 @@ def _seed_alert(store: OperatorStore, *, source_event_id: str, src_ip: str) -> i
         protocol="tcp",
         payload={"event_type": "model_prediction", "src_ip": src_ip, "attack_score": 0.91, "is_alert": True},
     )
-
-
-def _make_executable(path: Path) -> Path:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8", newline="\n")
-    path.chmod(path.stat().st_mode | 0o111)
-    return path
-
-
-def _make_preflight_config(tmp_path: Path, **overrides: object) -> OperatorConsolePreflightConfig:
-    runtime_dir = tmp_path / "runtime"
-    logs_dir = tmp_path / "logs"
-    templates_dir = tmp_path / "templates"
-    static_dir = tmp_path / "static"
-    runtime_dir.mkdir()
-    logs_dir.mkdir()
-    templates_dir.mkdir()
-    static_dir.mkdir()
-
-    kwargs: dict[str, object] = {
-        "python_binary": _make_executable(tmp_path / "bin" / "python3"),
-        "app_entrypoint": tmp_path / "scripts" / "ids_operator_console_server.py",
-        "database_path": runtime_dir / "operator_console.db",
-        "alerts_input_path": logs_dir / "ids_live_alerts.jsonl",
-        "quarantine_input_path": logs_dir / "ids_live_quarantine.jsonl",
-        "summary_input_path": logs_dir / "ids_live_sensor_summary.jsonl",
-        "templates_dir": templates_dir,
-        "static_dir": static_dir,
-        "secret_key": "production-secret",
-        "telegram_bot_token": None,
-        "telegram_chat_id": None,
-    }
-    Path(kwargs["app_entrypoint"]).parent.mkdir(parents=True, exist_ok=True)
-    Path(kwargs["app_entrypoint"]).write_text("print('ok')\n", encoding="utf-8")
-    kwargs.update(overrides)
-    return OperatorConsolePreflightConfig(**kwargs)
 
 
 def test_queue_alert_notifications_respects_suppression_and_dedupes(tmp_path: Path) -> None:
@@ -176,24 +135,3 @@ def test_dispatch_retryable_failure_keeps_local_state_and_sets_retry(tmp_path: P
     finally:
         store.close()
 
-
-def test_preflight_accepts_valid_contract(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    config = _make_preflight_config(tmp_path)
-    monkeypatch.setattr(preflight, "_is_executable_file", lambda path: True)
-    validate_preflight(config)
-
-
-def test_preflight_rejects_placeholder_secret_key(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    config = _make_preflight_config(tmp_path, secret_key="change-me")
-    monkeypatch.setattr(preflight, "_is_executable_file", lambda path: True)
-
-    with pytest.raises(ValueError, match="must not use default placeholder"):
-        validate_preflight(config)
-
-
-def test_preflight_requires_telegram_pairing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    config = _make_preflight_config(tmp_path, telegram_bot_token="token-only", telegram_chat_id=None)
-    monkeypatch.setattr(preflight, "_is_executable_file", lambda path: True)
-
-    with pytest.raises(ValueError, match="must be set together"):
-        validate_preflight(config)

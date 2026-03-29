@@ -59,3 +59,12 @@ The live sensor originally treated the end of the capture notification stream as
 The service unit became safer only after runtime values were centralized and preflight checks validated exact helper-binary paths, native dependencies, NIC selection, and writable output roots before the daemon loop started. Bare `PATH` lookups and duplicated literals made the deployment contract too easy to drift. Future Linux services with host-level dependencies should use one config source and an explicit exact-path preflight step.
 
 **Full entry:** history/learnings/20260328-live-sensor-runtime-contracts.md
+
+## [20260329] Split Runtime Verification From Operator Mutation Paths
+**Category:** pattern
+**Feature:** ids-operator-console-production-hardening
+**Tags:** [sqlite, bootstrap, migration, startup]
+
+The operator console only became safely production-ready once normal startup stopped creating or mutating schema implicitly and shifted all shape-changing actions into explicit operator commands such as `migrate` and `bootstrap-admin`. For same-host services with local persistent state, mixing inspection and mutation inside the runtime path makes readiness impossible to reason about and hides broken upgrades until production. Future hardening work should keep runtime verify-only and move bootstrap/migration/recovery into explicit maintenance entrypoints.
+
+**Full entry:** history/learnings/20260329-operator-console-production-hardening.md

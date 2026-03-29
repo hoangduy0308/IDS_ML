@@ -14,6 +14,7 @@ from scripts.ids_operator_console.db import (  # noqa: E402
     bootstrap_operator_store,
     connect_operator_db,
 )
+from scripts.ids_operator_console.migrations import inspect_operator_store, migrate_operator_store  # noqa: E402
 
 
 def test_bootstrap_operator_store_is_idempotent(tmp_path: Path) -> None:
@@ -161,3 +162,19 @@ def test_operator_store_primitives_cover_console_state(tmp_path: Path) -> None:
         assert store.list_pending_notification_deliveries(channel="telegram") == []
     finally:
         store.close()
+
+
+def test_inspect_operator_store_reports_legacy_and_current_states(tmp_path: Path) -> None:
+    db_path = tmp_path / "operator_console.db"
+
+    legacy_store = OperatorStore.open(db_path)
+    legacy_store.close()
+
+    legacy = inspect_operator_store(db_path)
+    assert legacy.schema_state == "legacy-v1"
+    assert legacy.runtime_ready is False
+
+    current = migrate_operator_store(db_path)
+    assert current.schema_state == "current"
+    assert current.schema_version == 2
+    assert current.runtime_ready is False

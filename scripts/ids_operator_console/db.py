@@ -197,6 +197,11 @@ class OperatorStore:
         bootstrap_operator_store(connection)
         return cls(connection)
 
+    @classmethod
+    def open_existing(cls, database_path: Path) -> "OperatorStore":
+        connection = connect_operator_db(database_path)
+        return cls(connection)
+
     def close(self) -> None:
         self._connection.close()
 
@@ -845,6 +850,10 @@ def open_operator_store(database_path: Path) -> OperatorStore:
     return OperatorStore.open(database_path)
 
 
+def open_existing_operator_store(database_path: Path) -> OperatorStore:
+    return OperatorStore.open_existing(database_path)
+
+
 def bootstrap_operator_store_path(database_path: Path) -> None:
     with closing(connect_operator_db(database_path)) as connection:
         bootstrap_operator_store(connection)
@@ -856,5 +865,6 @@ __all__ = [
     "bootstrap_operator_store",
     "bootstrap_operator_store_path",
     "connect_operator_db",
+    "open_existing_operator_store",
     "open_operator_store",
 ]

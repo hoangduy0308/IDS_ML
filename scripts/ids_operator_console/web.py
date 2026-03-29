@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 import json
 
@@ -27,7 +26,9 @@ from .auth import (
     validate_csrf_form,
 )
 from .config import OperatorConsoleConfig
-from .db import DEFAULT_SENSOR_ID, OperatorStore
+from .db import DEFAULT_SENSOR_ID, OperatorStore, open_existing_operator_store
+from .health import build_liveness_payload, build_readiness_payload
+from .migrations import assert_runtime_ready
 
 
 def _decode_payload(raw_payload: Any) -> dict[str, Any]:
@@ -96,28 +97,35 @@ def create_operator_console_web_app(
     *,
     store: OperatorStore | None = None,
 ) -> FastAPI:
-    config.ensure_runtime_dirs()
-    if store is None:
-        bootstrap_store = OperatorStore.open(config.database_path)
-        bootstrap_store.close()
+    runtime_inspection = assert_runtime_ready(config.database_path)
     templates = Jinja2Templates(directory=str(config.templates_dir))
 
-    app = FastAPI(title="IDS Operator Console", version="0.2.0")
+    app = FastAPI(
+        title="IDS Operator Console",
+        version="0.3.0",
+        root_path=config.root_path,
+    )
     app.add_middleware(
         SessionMiddleware,
         secret_key=config.secret_key,
         session_cookie=config.session_cookie_name,
-        https_only=False,
-        same_site="lax",
+        max_age=config.session_max_age_seconds,
+        same_site=config.session_cookie_same_site,
+        https_only=config.session_cookie_https_only,
+        domain=config.session_cookie_domain,
+        path=config.session_cookie_path,
     )
     app.state.operator_console_config = config
+    app.state.operator_console_runtime_inspection = runtime_inspection
     app.state.templates = templates
 
     if config.static_dir.exists():
         app.mount("/static", StaticFiles(directory=str(config.static_dir)), name="static")
 
     def _open_store() -> OperatorStore:
-        return OperatorStore.open(config.database_path)
+        if store is not None:
+            return store
+        return open_existing_operator_store(config.database_path)
 
     def render_template(request: Request, template_name: str, **context: Any) -> HTMLResponse:
         template_context = {
@@ -125,6 +133,7 @@ def create_operator_console_web_app(
             "admin": current_admin(request),
             "triage_states": ALERT_TRIAGE_STATES,
             "generated_at": _format_utc_now(),
+            "public_base_url": config.public_base_url,
             **context,
         }
         return templates.TemplateResponse(
@@ -135,13 +144,13 @@ def create_operator_console_web_app(
 
     @app.get("/healthz", response_class=JSONResponse)
     def healthz() -> JSONResponse:
-        return JSONResponse(
-            {
-                "status": "ok",
-                "service": "ids-operator-console",
-                "database_path": str(config.database_path),
-            }
-        )
+        return JSONResponse(build_liveness_payload(config))
+
+    @app.get("/readyz", response_class=JSONResponse)
+    def readyz() -> JSONResponse:
+        payload = build_readiness_payload(config)
+        status_code = status.HTTP_200_OK if payload["ready"] else status.HTTP_503_SERVICE_UNAVAILABLE
+        return JSONResponse(payload, status_code=status_code)
 
     @app.get("/", response_class=HTMLResponse)
     def root(request: Request) -> RedirectResponse:
@@ -171,7 +180,8 @@ def create_operator_console_web_app(
                 password=password,
             )
         finally:
-            runtime_store.close()
+            if store is None:
+                runtime_store.close()
         if admin is None:
             return render_template(
                 request,
@@ -209,8 +219,10 @@ def create_operator_console_web_app(
             anomalies = _with_decoded_payload(runtime_store.list_anomalies(limit=100))
             summaries = _with_decoded_payload(runtime_store.list_recent_summaries(limit=30))
         finally:
-            runtime_store.close()
+            if store is None:
+                runtime_store.close()
         health = _prepare_health_snapshot(summaries)
+        readiness = build_readiness_payload(config)
         return render_template(
             request,
             "dashboard.html",
@@ -218,6 +230,7 @@ def create_operator_console_web_app(
             anomalies=anomalies,
             summaries=summaries,
             health=health,
+            readiness=readiness,
             status_filter=status_filter,
         )
 
@@ -234,10 +247,9 @@ def create_operator_console_web_app(
                 raise HTTPException(status_code=404, detail=f"Alert {alert_id} not found")
             timeline = get_alert_timeline(runtime_store, alert_id=alert_id)
         finally:
-            runtime_store.close()
+            if store is None:
+                runtime_store.close()
 
-        if alert is None:
-            raise HTTPException(status_code=404, detail=f"Alert {alert_id} not found")
         return render_template(
             request,
             "alert_detail.html",
@@ -263,7 +275,8 @@ def create_operator_console_web_app(
                 changed_by=admin.username,
             )
         finally:
-            runtime_store.close()
+            if store is None:
+                runtime_store.close()
         return RedirectResponse(url=f"/alerts/{alert_id}", status_code=status.HTTP_303_SEE_OTHER)
 
     @app.post("/alerts/{alert_id}/notes")
@@ -284,7 +297,8 @@ def create_operator_console_web_app(
                 author=admin.username,
             )
         finally:
-            runtime_store.close()
+            if store is None:
+                runtime_store.close()
         return RedirectResponse(url=f"/alerts/{alert_id}", status_code=status.HTTP_303_SEE_OTHER)
 
     @app.get("/anomalies", response_class=HTMLResponse)
@@ -296,7 +310,8 @@ def create_operator_console_web_app(
         try:
             anomalies = _with_decoded_payload(runtime_store.list_anomalies(limit=200))
         finally:
-            runtime_store.close()
+            if store is None:
+                runtime_store.close()
         return render_template(request, "anomalies.html", anomalies=anomalies)
 
     @app.get("/reports", response_class=HTMLResponse)
@@ -308,7 +323,8 @@ def create_operator_console_web_app(
         try:
             summaries = _with_decoded_payload(runtime_store.list_recent_summaries(limit=100))
         finally:
-            runtime_store.close()
+            if store is None:
+                runtime_store.close()
         return render_template(request, "reports.html", summaries=summaries)
 
     @app.get("/api/v1/console/snapshot", response_class=JSONResponse)
@@ -335,7 +351,8 @@ def create_operator_console_web_app(
                 sensor_id,
             )
         finally:
-            runtime_store.close()
+            if store is None:
+                runtime_store.close()
         return JSONResponse(
             {
                 "sensor_id": sensor_id,
@@ -362,7 +379,8 @@ def create_operator_console_web_app(
                 limit=500,
             )
         finally:
-            runtime_store.close()
+            if store is None:
+                runtime_store.close()
         return JSONResponse({"sensor_id": sensor_id, "alerts": _filter_by_sensor_id(alerts, sensor_id)})
 
     @app.get("/api/v1/anomalies", response_class=JSONResponse)
@@ -378,7 +396,8 @@ def create_operator_console_web_app(
                 sensor_id,
             )
         finally:
-            runtime_store.close()
+            if store is None:
+                runtime_store.close()
         return JSONResponse({"sensor_id": sensor_id, "anomalies": anomalies})
 
     @app.get("/api/v1/summaries", response_class=JSONResponse)
@@ -394,7 +413,8 @@ def create_operator_console_web_app(
                 sensor_id,
             )
         finally:
-            runtime_store.close()
+            if store is None:
+                runtime_store.close()
         return JSONResponse({"sensor_id": sensor_id, "summaries": summaries})
 
     return app
