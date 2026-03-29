@@ -19,6 +19,40 @@ The operator console does not own model promotion state. It is visibility-first 
 
 The repo does not store secret material. Backup/restore only records secret references.
 
+## Notification Runtime Contract
+
+Telegram notifications are same-host and explicit:
+
+- web UI/runtime: `ids-operator-console.service`
+- notification worker: `ids-operator-console-notify.service`
+- operator CLI surface: `scripts/ids_operator_console_manage.py`
+
+The notification worker does not run inside the FastAPI process. Operators use these commands against the same database path and env contract:
+
+```bash
+python scripts/ids_operator_console_manage.py \
+  --database-path /var/lib/ids-operator-console/operator_console.db \
+  --json notify-status
+
+python scripts/ids_operator_console_manage.py \
+  --database-path /var/lib/ids-operator-console/operator_console.db \
+  --json notify-test-send --text "operator ping"
+
+python scripts/ids_operator_console_manage.py \
+  --database-path /var/lib/ids-operator-console/operator_console.db \
+  --json notify-run-once
+
+python scripts/ids_operator_console_manage.py \
+  --database-path /var/lib/ids-operator-console/operator_console.db \
+  --json notify-worker --iterations 1 --poll-interval-seconds 30
+
+python scripts/ids_operator_console_manage.py \
+  --database-path /var/lib/ids-operator-console/operator_console.db \
+  --json notify-redrive --limit 100
+```
+
+Disabled mode is explicit. If `IDS_OPERATOR_CONSOLE_TELEGRAM_BOT_TOKEN`/`_FILE` and `IDS_OPERATOR_CONSOLE_TELEGRAM_CHAT_ID` are both omitted, `notify-status` and `/readyz` report `components.notification.state=disabled` and the worker is intentionally unused.
+
 ## Model bundle visibility boundary
 
 This feature adds read-only visibility for the active model bundle. The console is expected to surface:
@@ -58,6 +92,12 @@ python scripts/ids_operator_console_manage.py \
 systemctl enable --now ids-operator-console.service
 ```
 
+If Telegram notifications are enabled for this host, also start the notification worker:
+
+```bash
+systemctl enable --now ids-operator-console-notify.service
+```
+
 6. Run smoke:
 
 ```bash
@@ -66,7 +106,7 @@ python scripts/ids_operator_console_manage.py \
   --json smoke
 ```
 
-`smoke` verifies the wired runtime contract of the console itself. Active bundle visibility appears in `/readyz` and the dashboard after the console has ingested at least one live sensor summary containing an `active_bundle` block.
+`smoke` verifies the wired runtime contract of the console itself. Active bundle visibility appears in `/readyz` and the dashboard after the console has ingested at least one live sensor summary containing an `active_bundle` block. When notifications are enabled, the same smoke payload also surfaces `components.notification` without making notification degradation flip the top-level `ready` bit.
 
 ## Upgrade From V1
 
@@ -89,7 +129,8 @@ python scripts/ids_operator_console_manage.py \
 
 4. If the legacy DB never had an admin user, run `bootstrap-admin`.
 5. Run preflight or restart the service.
-6. Run `smoke` and verify `/readyz` returns ready.
+6. If Telegram is enabled on this host, run `notify-status` and make sure preflight/systemd can see the same manage/worker contract.
+7. Run `smoke` and verify `/readyz` returns ready.
 
 For bundle visibility, also verify that `/readyz` contains `components.active_bundle` and that the dashboard shows the current bundle identity once fresh sensor summaries have been ingested.
 
@@ -109,6 +150,7 @@ The backup artifact contains:
 - `manifest.json`
 - config values needed for restore drill validation
 - secret references only
+- persisted `notification_deliveries`, including retry, failed, and sent rows
 
 If the database already contains ingested live sensor summaries, the backup also preserves the last known active bundle visibility state stored in those summary rows. The backup does not replace the live sensor activation record itself.
 
@@ -134,7 +176,19 @@ python scripts/ids_operator_console_manage.py \
 ```
 
 4. Run smoke before restarting traffic.
-5. Start the service and verify `/readyz`.
+5. If notifications are enabled, inspect and recover the notification queue before restarting the worker:
+
+```bash
+python scripts/ids_operator_console_manage.py \
+  --database-path /var/lib/ids-operator-console/operator_console.db \
+  --json notify-status
+
+python scripts/ids_operator_console_manage.py \
+  --database-path /var/lib/ids-operator-console/operator_console.db \
+  --json notify-redrive --limit 100
+```
+
+6. Start the web service and, when enabled, the worker service. Then verify `/readyz`.
 
 After restore, treat the console and the live sensor as separate readiness domains:
 
@@ -145,6 +199,12 @@ If you expect bundle visibility immediately after restore, make sure either:
 
 - the restored database already contains recent summary rows with `active_bundle`, or
 - the live sensor is restarted and allowed to emit a fresh summary after its own preflight succeeds
+
+Notification recovery has a parallel expectation:
+
+- restored failed deliveries should remain visible in `notify-status` and `/readyz`
+- `notify-redrive` is the supported recovery path for failed terminal rows
+- notification degradation may show `components.notification.state=degraded`, but it must not make the whole console unready by itself
 
 ## Retention
 
@@ -171,6 +231,8 @@ For this feature, operators should also inspect the `/readyz` payload body and c
 
 - `components.active_bundle.ok` reflects whether a summary-backed active bundle state is currently available
 - `components.active_bundle.state.active_bundle_name` matches the sensor summary when one has been ingested
+- `components.notification.state` is `disabled`, `ok`, or `degraded` as expected for the host
+- `components.notification.failed_count` and `components.notification.last_error` are intelligible if Telegram delivery has degraded
 
 If smoke fails, treat that as a deployment blocker rather than a warning.
 
@@ -178,5 +240,7 @@ If smoke fails, treat that as a deployment blocker rather than a warning.
 
 - run `python scripts/ids_operator_console_manage.py --database-path ... --json smoke`
 - inspect `/readyz` for `components.active_bundle`
+- inspect `/readyz` or `notify-status` for `components.notification`
 - verify the dashboard `Sensor Health` section shows active bundle, bundle status, activated-at, and rollback target
 - confirm live sensor summaries are still being ingested into the console database
+- if Telegram is enabled, check `systemctl status ids-operator-console-notify.service` and `journalctl -u ids-operator-console-notify.service`

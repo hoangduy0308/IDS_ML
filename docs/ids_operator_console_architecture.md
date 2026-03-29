@@ -8,12 +8,13 @@ This hardening pass does not turn it into an IPS/control-plane component and doe
 ## Runtime Contract
 
 - Service entrypoint: `scripts/ids_operator_console_server.py`
+- Notification worker entrypoint: `scripts/ids_operator_console_manage.py notify-worker`
 - Canonical app factory: `scripts/ids_operator_console/web.py:create_operator_console_web_app`
 - App topology: FastAPI + Jinja2 + SQLite, bound on loopback/internal network only
 - Edge topology: reverse proxy terminates TLS and forwards `Host`, `X-Forwarded-Proto`, and `X-Forwarded-For`
 - Canonical public origin: `IDS_OPERATOR_CONSOLE_PUBLIC_BASE_URL`
 
-The runtime now fails closed when the operator database is missing, still on legacy schema, or has no bootstrapped admin user. Startup no longer mutates schema implicitly.
+The runtime now fails closed when the operator database is missing, still on legacy schema, or has no bootstrapped admin user. Startup no longer mutates schema implicitly. Notification dispatch remains outside the FastAPI process and is owned by an explicit same-host worker contract.
 
 ## Config And Secrets
 
@@ -35,13 +36,15 @@ Schema lifecycle is explicit:
 
 - inspection/migration logic: `scripts/ids_operator_console/migrations.py`
 - admin/operator CLI: `scripts/ids_operator_console_manage.py`
+- worker-aware preflight gate: `scripts/ids_operator_console_preflight.py`
 
 Expected operator flow:
 
 1. `migrate --allow-bootstrap` for fresh install, or `migrate` for v1 upgrade
 2. `bootstrap-admin`
-3. preflight
-4. start service
+3. `notify-status` to confirm whether Telegram is intentionally disabled or enabled
+4. preflight
+5. start the web service and, when Telegram is enabled, the notification worker service
 
 Normal service startup verifies readiness but never auto-applies migrations.
 
@@ -56,6 +59,7 @@ Readiness distinguishes:
 - schema state
 - admin bootstrap state
 - upstream data-path health
+- notification component state (`disabled`, `ok`, or `degraded`) without folding notification failures into the top-level `ready` boolean
 
 ## Backup And Restore
 
@@ -65,10 +69,12 @@ Operational backup/restore lives in `scripts/ids_operator_console/ops.py`.
 - Backup manifest records config and secret references, never secret material.
 - Restore is offline-only and requires explicit operator confirmation.
 - Restore validates that required secret references have been rebound before declaring success.
+- Restored `notification_deliveries` remain part of the operator-facing contract: backlog, failed rows, and last-error visibility must stay intelligible after restore so operators can redrive rather than reconstruct state manually.
 
 ## Deployment Artifacts
 
 - systemd unit: `deploy/systemd/ids-operator-console.service`
+- notification worker unit: `deploy/systemd/ids-operator-console-notify.service`
 - preflight gate: `scripts/ids_operator_console_preflight.py`
 - reverse proxy example: `deploy/nginx/ids-operator-console.conf.example`
 - operations runbook: `docs/ids_operator_console_operations.md`

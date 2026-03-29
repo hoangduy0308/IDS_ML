@@ -163,6 +163,27 @@ def test_manage_backup_restore_retention_and_smoke(tmp_path: Path, capsys: pytes
                 },
             },
         )
+        alert_id = store.upsert_alert(
+            source_event_id="backup-alert-001",
+            event_ts="2026-03-29T01:01:00+00:00",
+            severity="high",
+            src_ip="10.50.0.5",
+            dst_ip="10.50.0.7",
+            payload={"event_type": "model_prediction", "score": 0.97},
+        )
+        delivery_id = store.save_notification_delivery(
+            alert_id=alert_id,
+            channel="telegram",
+            target="-100backup",
+            dedupe_key="backup-alert-001",
+            payload={"text": "backup failed delivery"},
+            status="pending",
+        )
+        store.mark_notification_attempt(
+            delivery_id=delivery_id,
+            status="failed",
+            last_error="telegram outage",
+        )
     finally:
         store.close()
 
@@ -174,6 +195,8 @@ def test_manage_backup_restore_retention_and_smoke(tmp_path: Path, capsys: pytes
     monkeypatch.setenv("IDS_OPERATOR_CONSOLE_ALERTS_INPUT_PATH", str(tmp_path / "logs" / "ids_live_alerts.jsonl"))
     monkeypatch.setenv("IDS_OPERATOR_CONSOLE_QUARANTINE_INPUT_PATH", str(tmp_path / "logs" / "ids_live_quarantine.jsonl"))
     monkeypatch.setenv("IDS_OPERATOR_CONSOLE_SUMMARY_INPUT_PATH", str(tmp_path / "logs" / "ids_live_sensor_summary.jsonl"))
+    monkeypatch.setenv("IDS_OPERATOR_CONSOLE_TELEGRAM_BOT_TOKEN", "telegram-token")
+    monkeypatch.setenv("IDS_OPERATOR_CONSOLE_TELEGRAM_CHAT_ID", "-100backup")
     (tmp_path / "logs").mkdir()
 
     backup_root = tmp_path / "backups"
@@ -225,11 +248,15 @@ def test_manage_backup_restore_retention_and_smoke(tmp_path: Path, capsys: pytes
     restored_store = OperatorStore.open(restored_db)
     try:
         restored_summary = restored_store.list_recent_summaries(limit=1)[0]
+        restored_notification = restored_store.get_notification_delivery_summary(channel="telegram")
     finally:
         restored_store.close()
     restored_payload_json = json.loads(restored_summary["payload_json"])
     assert restored_payload_json["active_bundle"]["active_bundle_name"] == "bundle-a"
     assert restored_payload_json["active_bundle"]["previous_bundle_name"] == "bundle-prev"
+    assert restored_notification["failed_count"] == 1
+    assert restored_notification["last_error"] is not None
+    assert restored_notification["last_error"]["last_error"] == "telegram outage"
 
     restored_env = dict(os.environ)
     restored_env["IDS_OPERATOR_CONSOLE_DATABASE_PATH"] = str(restored_db)
@@ -240,6 +267,10 @@ def test_manage_backup_restore_retention_and_smoke(tmp_path: Path, capsys: pytes
         restored_smoke.readiness_payload["components"]["active_bundle"]["state"]["active_bundle_name"]
         == "bundle-a"
     )
+    assert restored_smoke.readiness_payload["components"]["notification"]["enabled"] is True
+    assert restored_smoke.readiness_payload["components"]["notification"]["failed_count"] == 1
+    assert restored_smoke.readiness_payload["components"]["notification"]["state"] == "degraded"
+    assert restored_smoke.readiness_payload["ready"] is True
 
     smoke_rc = manage.main(["--database-path", str(db_path), "--json", "smoke"])
     smoke_payload = json.loads(capsys.readouterr().out)
@@ -247,8 +278,9 @@ def test_manage_backup_restore_retention_and_smoke(tmp_path: Path, capsys: pytes
     assert smoke_payload["health_status"] == 200
     assert smoke_payload["readiness_status"] == 200
     assert smoke_payload["ready"] is True
-    assert smoke_payload["notification"]["state"] == "disabled"
-    assert smoke_payload["notification"]["ok"] is True
+    assert smoke_payload["notification"]["enabled"] is True
+    assert smoke_payload["notification"]["state"] == "degraded"
+    assert smoke_payload["notification"]["failed_count"] == 1
 
     second_backup_rc = manage.main(
         [
