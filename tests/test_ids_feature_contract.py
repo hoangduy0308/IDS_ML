@@ -10,14 +10,16 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.ids_feature_contract import (  # noqa: E402
-    DEFAULT_FEATURE_COLUMNS_PATH,
-    DEFAULT_TRAINING_FEATURE_COLUMNS_PATH,
+from ids.core.feature_contract import (  # noqa: E402
     FlowFeatureContract,
     QuarantinedFlowRecord,
     ValidatedFlowRecord,
     coerce_numeric_feature,
     load_feature_columns,
+)
+from scripts.ids_feature_contract import (  # noqa: E402
+    DEFAULT_FEATURE_COLUMNS_PATH,
+    DEFAULT_TRAINING_FEATURE_COLUMNS_PATH,
 )
 
 

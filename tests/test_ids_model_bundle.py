@@ -11,12 +11,14 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.ids_model_bundle import (  # noqa: E402
-    DEFAULT_ACTIVATION_RECORD_NAME,
+from ids.core.model_bundle import (  # noqa: E402
     ModelBundleContractError,
-    build_activation_record_payload,
     build_feature_schema_metadata,
     build_inference_contract_metadata,
+)
+from scripts.ids_model_bundle import (  # noqa: E402
+    DEFAULT_ACTIVATION_RECORD_NAME,
+    build_activation_record_payload,
     load_activation_record,
     load_model_bundle_manifest,
     resolve_active_model_bundle,

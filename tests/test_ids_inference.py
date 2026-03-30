@@ -21,12 +21,12 @@ from scripts.ids_inference import (  # noqa: E402
 )
 from ids.core.model_bundle import (  # noqa: E402
     ModelBundleContractError,
+    build_feature_schema_metadata,
+    build_inference_contract_metadata,
 )
 from scripts.ids_model_bundle import (  # noqa: E402
     DEFAULT_ACTIVATION_RECORD_NAME,
     build_activation_record_payload,
-    build_feature_schema_metadata,
-    build_inference_contract_metadata,
     write_activation_record,
 )
 

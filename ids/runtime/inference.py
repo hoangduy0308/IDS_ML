@@ -8,10 +8,10 @@ from pathlib import Path
 import pandas as pd
 from catboost import CatBoostClassifier
 
-from ids.core.model_bundle import (
+from ids.core.feature_contract import load_feature_columns
+from ids.core.model_bundle import ModelBundleContractError
+from scripts.ids_model_bundle import (
     DEFAULT_BUNDLE_CONFIG_NAME,
-    ModelBundleContractError,
-    load_feature_columns,
     load_model_bundle_manifest,
     resolve_active_model_bundle,
 )

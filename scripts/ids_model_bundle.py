@@ -8,6 +8,11 @@ from pathlib import Path
 import tempfile
 from typing import Any
 
+from ids.core.model_bundle import (
+    ActiveBundleResolutionError as _CoreActiveBundleResolutionError,
+    ModelBundleContractError as _CoreModelBundleContractError,
+)
+
 
 DEFAULT_BUNDLE_CONFIG_NAME = "model_bundle.json"
 DEFAULT_ACTIVATION_RECORD_NAME = "active_bundle.json"
@@ -17,11 +22,11 @@ SUPPORTED_FEATURE_SCHEMA_KIND = "feature_columns_json.v1"
 SUPPORTED_INFERENCE_CONTRACT_VERSION = "ids_binary_classifier.v1"
 
 
-class ModelBundleContractError(ValueError):
+class ModelBundleContractError(_CoreModelBundleContractError):
     """Raised when a model bundle contract is missing or incompatible."""
 
 
-class ActiveBundleResolutionError(ModelBundleContractError):
+class ActiveBundleResolutionError(_CoreActiveBundleResolutionError):
     """Raised when the active bundle activation contract cannot be resolved."""
 
 

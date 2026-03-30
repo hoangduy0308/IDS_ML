@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from scripts.ids_model_bundle import (
+from ids.core.model_bundle import (
     SUPPORTED_BUNDLE_MANIFEST_VERSION,
     build_feature_schema_metadata,
     build_inference_contract_metadata,
