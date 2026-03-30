@@ -13,12 +13,10 @@ import pandas as pd
 import pytest
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
-from scripts.ids_feature_contract import FlowFeatureContract  # noqa: E402
-from scripts.ids_realtime_pipeline import (  # noqa: E402
+from ids.core.feature_contract import FlowFeatureContract  # noqa: E402
+from ids.runtime.realtime_pipeline import (  # noqa: E402
     RealtimePipelineRunner,
     main,
     resolve_output_paths,
@@ -327,9 +325,9 @@ def test_main_supports_file_input_path(
     alerts_path = tmp_path / "alerts.jsonl"
     quarantine_path = tmp_path / "quarantine.jsonl"
 
-    monkeypatch.setattr("scripts.ids_realtime_pipeline.build_inferencer", lambda **_: DummyInferencer())
+    monkeypatch.setattr("ids.runtime.realtime_pipeline.build_inferencer", lambda **_: DummyInferencer())
     monkeypatch.setattr(
-        "scripts.ids_realtime_pipeline.FlowFeatureContract.from_feature_file",
+        "ids.runtime.realtime_pipeline.FlowFeatureContract.from_feature_file",
         classmethod(lambda cls, path, alias_map=None: make_contract()),
     )
     monkeypatch.setattr(
@@ -382,9 +380,9 @@ def test_main_supports_stdin_fallback(
         + "\n"
     )
 
-    monkeypatch.setattr("scripts.ids_realtime_pipeline.build_inferencer", lambda **_: DummyInferencer())
+    monkeypatch.setattr("ids.runtime.realtime_pipeline.build_inferencer", lambda **_: DummyInferencer())
     monkeypatch.setattr(
-        "scripts.ids_realtime_pipeline.FlowFeatureContract.from_feature_file",
+        "ids.runtime.realtime_pipeline.FlowFeatureContract.from_feature_file",
         classmethod(lambda cls, path, alias_map=None: make_contract()),
     )
     monkeypatch.setattr(sys, "stdin", stdin_stream)

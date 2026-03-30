@@ -8,11 +8,9 @@ import pandas as pd
 import pytest
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
-from scripts.ids_inference import (  # noqa: E402
+from ids.runtime.inference import (  # noqa: E402
     IDSInferencer,
     IDSModelConfig,
     build_inferencer,
@@ -20,13 +18,13 @@ from scripts.ids_inference import (  # noqa: E402
     main,
 )
 from ids.core.model_bundle import (  # noqa: E402
+    build_activation_record_payload,
     ModelBundleContractError,
     build_feature_schema_metadata,
     build_inference_contract_metadata,
 )
 from scripts.ids_model_bundle import (  # noqa: E402
     DEFAULT_ACTIVATION_RECORD_NAME,
-    build_activation_record_payload,
     write_activation_record,
 )
 
@@ -186,7 +184,7 @@ def test_build_inferencer_uses_resolved_config(monkeypatch: pytest.MonkeyPatch, 
         def load_model(self, path: Path) -> None:
             loaded_models.append(Path(path))
 
-    monkeypatch.setattr("scripts.ids_inference.CatBoostClassifier", DummyModel)
+    monkeypatch.setattr("ids.runtime.inference.CatBoostClassifier", DummyModel)
 
     inferencer = build_inferencer(bundle_root=bundle_root)
 
@@ -257,7 +255,7 @@ def test_ids_inference_main_preserves_cli_output_shape(
             self.feature_columns = ["f1", "f2"]
 
     monkeypatch.setattr(
-        "scripts.ids_inference.build_model_config",
+        "ids.runtime.inference.build_model_config",
         lambda **_: type(
             "Config",
             (),
@@ -270,7 +268,7 @@ def test_ids_inference_main_preserves_cli_output_shape(
             },
         )(),
     )
-    monkeypatch.setattr("scripts.ids_inference.IDSInferencer", DummyCLIInferencer)
+    monkeypatch.setattr("ids.runtime.inference.IDSInferencer", DummyCLIInferencer)
     monkeypatch.setattr(
         sys,
         "argv",

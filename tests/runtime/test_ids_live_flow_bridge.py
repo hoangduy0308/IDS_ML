@@ -9,18 +9,16 @@ import sys
 import pytest
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
-from scripts.ids_live_capture import ClosedCaptureWindow  # noqa: E402
-from scripts.ids_live_flow_bridge import (  # noqa: E402
+from ids.runtime.live_capture import ClosedCaptureWindow  # noqa: E402
+from ids.runtime.live_flow_bridge import (  # noqa: E402
     BridgeWindowResult,
     ExtractorRunResult,
     LiveFlowBridge,
     LiveFlowBridgeConfig,
 )
-from scripts.ids_record_adapter import PRIMARY_PROFILE_ID  # noqa: E402
+from ids.runtime.adapter.record_adapter import PRIMARY_PROFILE_ID  # noqa: E402
 
 
 def _mac(address: str) -> bytes:

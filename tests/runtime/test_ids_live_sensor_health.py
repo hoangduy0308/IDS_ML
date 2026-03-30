@@ -3,21 +3,20 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-import sys
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 from ids.runtime.live_sensor_health import (  # noqa: E402
     LiveSensorHealthConfig,
     build_live_sensor_health_payload,
 )
-from scripts.ids_model_bundle import (  # noqa: E402
+from ids.core.model_bundle import (  # noqa: E402
     build_activation_record_payload,
     build_feature_schema_metadata,
     build_inference_contract_metadata,
+)
+from scripts.ids_model_bundle import (  # noqa: E402
     write_activation_record,
 )
 

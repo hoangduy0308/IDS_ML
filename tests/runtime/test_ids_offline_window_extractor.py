@@ -10,11 +10,9 @@ from dataclasses import replace
 import pytest
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
-from scripts.ids_offline_window_extractor import (  # noqa: E402
+from ids.runtime.extractor.offline_window_extractor import (  # noqa: E402
     OfflineExtractorConfig,
     FlowSummary,
     PacketEvent,
@@ -23,8 +21,15 @@ from scripts.ids_offline_window_extractor import (  # noqa: E402
     extract_window,
     main,
 )
-from scripts.ids_offline_window_serializer import flow_to_source_record, write_flow_csv  # noqa: E402
-from scripts.ids_record_adapter import PRIMARY_PROFILE_ID, adapt_record, get_adapter_profile  # noqa: E402
+from ids.runtime.extractor.offline_window_serializer import (  # noqa: E402
+    flow_to_source_record,
+    write_flow_csv,
+)
+from ids.runtime.adapter.record_adapter import (  # noqa: E402
+    PRIMARY_PROFILE_ID,
+    adapt_record,
+    get_adapter_profile,
+)
 
 
 EXPECTED_FIXTURE_PATH = REPO_ROOT / "artifacts" / "demo" / "ids_offline_window_extractor_expected.csv"

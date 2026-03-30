@@ -21,12 +21,12 @@ ARTIFACTS:
 GRAPH:
 - Epic: ids_ml_new-br4g
 - Open execution tasks: 4
-- Current active/ready set: ids_ml_new-br4g.8 (ready), ids_ml_new-br4g.15 (ready), ids_ml_new-br4g.17 (ready)
+- Current active/ready set: ids_ml_new-br4g.15 (ready), ids_ml_new-br4g.17 (ready)
 - Live graph: acyclic, validation blockers cleared
 
 ACTIVE WORKERS:
-- GrayCliff - `ids_ml_new-br4g.11` completed and closed; relaunch target is `.8` for runtime/core test relayout
-- CopperCave - `ids_ml_new-br4g.13` completed and closed; relaunch target is the next unlocked ops/test bead
+- GrayCliff - `ids_ml_new-br4g.8` completed and closed; runtime/core test relayout is done
+- CopperCave - `ids_ml_new-br4g.13` completed and closed; same-host stack orchestration is done
 - LavenderReef - withdrawn; startup blocked because Agent Mail tools were unavailable in that worker session
 - IndigoBrook - `ids_ml_new-br4g.16` completed and is parked on standby until the next unlock
 
@@ -35,7 +35,7 @@ SWARM INTENT:
 - File coordination via Agent Mail reservations
 - Blockers, completions, and course corrections flow through epic thread ids_ml_new-br4g
 
-NEXT: tend the newly opened frontier at `.8`, `.15`, and `.17`; hold `.10` until the remaining test/doc dependencies clear
+NEXT: tend the newly opened frontier at `.15` and `.17`; hold `.10` until the remaining test/doc dependencies clear
 
 Notes:
 - User approved execution after validation summary.
@@ -56,4 +56,5 @@ Notes:
 - `ids_ml_new-br4g.6` is also closed from the worker report and live graph; preflight/manage CLIs now live under `ids.ops`.
 - `ids_ml_new-br4g.11` is also closed from the worker report and live graph; the runtime daemon, capture, health, and sink slice now lives under `ids.runtime`.
 - `ids_ml_new-br4g.13` is now closed from the worker report and live graph; same-host stack orchestration now lives under `ids.ops`.
-- The current wave is now `.8`, `.15`, and `.17`, with `.10` still blocked until the remaining test/doc beads land.
+- `ids_ml_new-br4g.8` is now closed from the worker report and live graph; the runtime/core tests now mirror the new domain layout.
+- The current wave is now `.15` and `.17`, with `.10` still blocked until the remaining test/doc beads land.

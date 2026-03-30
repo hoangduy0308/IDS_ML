@@ -5,17 +5,14 @@ import json
 from pathlib import Path
 import shlex
 import re
-import sys
 
 import pytest
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 from ids.runtime.live_capture import CaptureBacklogExceededError, ClosedCaptureWindow  # noqa: E402
-from scripts.ids_live_flow_bridge import BridgeWindowResult  # noqa: E402
+from ids.runtime.live_flow_bridge import BridgeWindowResult  # noqa: E402
 from ids.runtime.live_sensor import (  # noqa: E402
     CaptureSessionFatalError,
     DEFAULT_CAPTURE_WINDOW_DURATION_SECONDS,
@@ -24,10 +21,12 @@ from ids.runtime.live_sensor import (  # noqa: E402
 )
 from ids.runtime.live_sensor_sinks import LiveSensorLocalSink  # noqa: E402
 from ids.core.model_bundle import ActiveBundleResolutionError  # noqa: E402
-from scripts.ids_model_bundle import (  # noqa: E402
+from ids.core.model_bundle import (  # noqa: E402
     build_activation_record_payload,
     build_feature_schema_metadata,
     build_inference_contract_metadata,
+)
+from scripts.ids_model_bundle import (  # noqa: E402
     write_activation_record,
 )
 

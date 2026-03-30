@@ -10,13 +10,12 @@ import sys
 import pandas as pd
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
-from scripts import ids_record_adapter as adapter_module  # noqa: E402
-from scripts.ids_feature_contract import DEFAULT_FEATURE_COLUMNS_PATH, FlowFeatureContract, load_feature_columns  # noqa: E402
-from scripts.ids_record_adapter import (  # noqa: E402
+from ids.runtime.adapter import record_adapter as adapter_module  # noqa: E402
+from ids.core.feature_contract import FlowFeatureContract, load_feature_columns  # noqa: E402
+from ids.runtime.inference import DEFAULT_FEATURE_COLUMNS_PATH  # noqa: E402
+from ids.runtime.adapter.record_adapter import (  # noqa: E402
     ADAPTER_FIXED_METADATA_KEYS,
     MAX_JSONL_LINE_LENGTH,
     PRIMARY_PROFILE_FEATURE_ALIAS_OVERRIDES,
@@ -42,7 +41,7 @@ from scripts.ids_record_adapter import (  # noqa: E402
     get_adapter_profile,
     list_adapter_profile_ids,
 )
-from scripts.ids_realtime_pipeline import RealtimePipelineRunner, run_pipeline_stream  # noqa: E402
+from ids.runtime.realtime_pipeline import RealtimePipelineRunner, run_pipeline_stream  # noqa: E402
 
 
 FEATURE_COLUMNS = load_feature_columns(DEFAULT_FEATURE_COLUMNS_PATH)
