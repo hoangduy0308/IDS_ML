@@ -62,4 +62,5 @@ Notes:
 - The final cleanup bead `.10` is complete and the swarm moved into reviewing.
 - Review created 8 follow-up beads: P1 `ids_ml_new-br4g.24`, `ids_ml_new-br4g.25`; P2 `ids_ml_new-tv8z`, `ids_ml_new-9ku3`, `ids_ml_new-0hbt`; P3 `ids_ml_new-bs63`, `ids_ml_new-elz0`, `ids_ml_new-5fty`.
 - Review is hard-gated because P1 findings are present. Artifact verification, UAT, epic close, and compounding are blocked until the P1 beads are acknowledged and resolved.
+- `ids_ml_new-bs63` is now closed; remaining open review follow-ups are `ids_ml_new-elz0` and `ids_ml_new-5fty`.
 - `ids_ml_new-br4g.24` has been completed by GrayCliff; the remaining hard gate is `ids_ml_new-br4g.25`.
