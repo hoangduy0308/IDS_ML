@@ -15,6 +15,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from scripts.ids_offline_window_extractor import (  # noqa: E402
     OfflineExtractorConfig,
+    extract_flows,
     extract_window,
     main,
 )
@@ -189,6 +190,24 @@ def test_extract_window_writes_bridge_consumable_csv(tmp_path: Path) -> None:
     assert len(adapted.features) == 72
     assert adapted.metadata["source_flow_id"].endswith("-00000")
     assert adapted.controlled_extras["capture_mode"] == "closed-window"
+
+
+def test_extract_flows_exposes_canonical_core_without_adapter_aliasing(tmp_path: Path) -> None:
+    pcap_path = _build_sample_pcap(tmp_path / "capture-00001.pcap")
+
+    flows = extract_flows(pcap_path)
+
+    assert len(flows) == 1
+    flow = flows[0]
+    canonical = flow.canonical_feature_values()
+
+    assert canonical["Flow Duration"] == 900.0
+    assert canonical["Flow Bytes/s"] == pytest.approx(208.888889)
+    assert canonical["Flow Packets/s"] == pytest.approx(3.333333)
+    assert canonical["Fwd Packets/s"] == pytest.approx(2.222222)
+    assert canonical["Bwd Packets/s"] == pytest.approx(1.111111)
+    assert canonical["Bwd Bulk Rate Avg"] == pytest.approx(16.666667)
+    assert flow.metadata_values()["flow_id"].endswith("-00000")
 
 
 def test_extract_window_uses_zero_duration_guard_without_flooring_subsecond_flows(

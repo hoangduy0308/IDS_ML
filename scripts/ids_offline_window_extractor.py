@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import csv
 import ipaddress
 import math
 import struct
@@ -12,7 +11,8 @@ from pathlib import Path
 from statistics import fmean, pvariance, pstdev
 from typing import Any, Iterable, Iterator, Mapping, Sequence
 
-from scripts.ids_record_adapter import PRIMARY_PROFILE_ID, get_adapter_profile
+from scripts.ids_offline_window_serializer import write_flow_csv
+from scripts.ids_record_adapter import PRIMARY_PROFILE_ID
 
 
 DEFAULT_FLOW_SUFFIX = "_Flow.csv"
@@ -73,26 +73,10 @@ class FlowSummary:
             self.forward_dst_port,
         )
 
-    def to_source_record(self, profile_id: str) -> dict[str, Any]:
-        profile = get_adapter_profile(profile_id)
-        canonical_feature_values = self._build_canonical_feature_values()
-        canonical_to_source = {
-            canonical_key: source_key
-            for source_key, canonical_key in profile.feature_alias_map.items()
-        }
-        source_record: dict[str, Any] = {
-            canonical_to_source[canonical_key]: value
-            for canonical_key, value in canonical_feature_values.items()
-        }
-        source_record.update(
-            {
-                source_key: value
-                for source_key, value in self._build_metadata_values().items()
-            }
-        )
-        return source_record
+    def canonical_feature_values(self) -> dict[str, Any]:
+        return self._build_canonical_feature_values()
 
-    def _build_metadata_values(self) -> dict[str, Any]:
+    def metadata_values(self) -> dict[str, Any]:
         protocol_name = "tcp" if self.protocol == IP_PROTOCOL_TCP else "udp" if self.protocol == IP_PROTOCOL_UDP else "ip"
         flow_family = DEFAULT_FLOW_FAMILY if self._has_backward_packets() else "unidirectional"
         captured_at = datetime.fromtimestamp(self.first_timestamp, tz=timezone.utc).isoformat()
@@ -245,22 +229,18 @@ class PcapFormatError(ValueError):
     pass
 
 
+def extract_flows(path: Path) -> list[FlowSummary]:
+    return _parse_pcap_and_build_flows(Path(path))
+
+
 def extract_window(config: OfflineExtractorConfig) -> Path:
     input_path = Path(config.input_path)
     output_dir = Path(config.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"{input_path.stem}{config.flow_suffix}"
 
-    flows = _parse_pcap_and_build_flows(input_path)
-    profile = get_adapter_profile(config.profile_id)
-    fieldnames = list(profile.accepted_source_keys())
-
-    with output_path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames, extrasaction="ignore")
-        writer.writeheader()
-        for flow in sorted(flows, key=FlowSummary.sort_key):
-            row = flow.to_source_record(config.profile_id)
-            writer.writerow({key: _format_csv_value(row.get(key, "")) for key in fieldnames})
+    flows = extract_flows(input_path)
+    write_flow_csv(flows, output_path, profile_id=config.profile_id)
 
     return output_path
 
