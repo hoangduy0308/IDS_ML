@@ -1,6 +1,6 @@
 ## Current State
 
-Skill: swarming
+Skill: swarming -> COMPLETE
 Phase: validated
 Feature: ids-flow-extractor-replacement
 Epic: ids_ml_new-vii9
@@ -29,16 +29,8 @@ Validated At: 2026-03-30T15:49:00+07:00
 
 ## Active Workers
 
-- BoldBasin - completed `ids_ml_new-vii9.10`, handed off at ~68% context, now stood down
-- QuietRiver - completed `ids_ml_new-vii9.11` and `ids_ml_new-vii9.4`, handed off at ~69% context, now stood down
-- SunnyCreek - stale claim recovery; posted startup ack, marked `ids_ml_new-vii9.5` in progress, then disappeared before reservation/start message
-- CoralCanyon - completed `ids_ml_new-vii9.5`, handed off at .1 startup, now stood down
-- PearlSnow - completed `ids_ml_new-vii9.1`, now stood down
-- PinkSnow - completed `ids_ml_new-vii9.3`, now stood down
-- ChartreuseGrove - completed `ids_ml_new-vii9.6`, now stood down
-- CyanForest - completed `ids_ml_new-vii9.7`, now stood down
-- CyanPuma - completed `ids_ml_new-vii9.2`, now stood down
+None. Swarm complete; all workers stood down cleanly.
 
 ## Next
 
-Hand off to `khuym:reviewing`.
+Swarm `ids_ml_new-vii9` complete. Invoke `khuym:reviewing`.
