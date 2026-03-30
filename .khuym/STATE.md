@@ -36,7 +36,9 @@ Validated At: 2026-03-30T15:49:00+07:00
 - PearlSnow - completed `ids_ml_new-vii9.1`, now stood down
 - PinkSnow - completed `ids_ml_new-vii9.3`, now stood down
 - ChartreuseGrove - completed `ids_ml_new-vii9.6`, now stood down
+- CyanForest - completed `ids_ml_new-vii9.7`, now stood down
+- CyanPuma - completed `ids_ml_new-vii9.2`, now stood down
 
 ## Next
 
-Claim and complete `ids_ml_new-vii9.2`, then hand off to khuym:reviewing.
+Hand off to `khuym:reviewing`.

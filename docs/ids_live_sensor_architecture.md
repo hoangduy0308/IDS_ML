@@ -8,7 +8,7 @@ The sensor is intentionally narrow:
 
 - capture live traffic on one Linux host and one configured NIC
 - process only TCP/UDP flow traffic
-- bridge closed capture windows into CICFlowMeter-compatible flow records
+- bridge closed capture windows into extractor rows that the adapter normalizes into the canonical flow contract
 - reuse the existing adapter, realtime pipeline, and inference stack
 - persist local alert, quarantine, and telemetry outputs
 
@@ -33,7 +33,7 @@ The architecture follows the locked decisions from `history/ids-live-host-based-
 The daemon in [scripts/ids_live_sensor.py](F:/Work/IDS_ML_New/scripts/ids_live_sensor.py) composes four layers:
 
 1. `RollingDumpcapCaptureManager` creates closed capture windows.
-2. `LiveFlowBridge` runs the extractor on each closed window and adapts rows.
+2. `LiveFlowBridge` runs the extractor command prefix on each closed window and adapts rows.
 3. `RealtimePipelineRunner` validates the frozen 72-feature contract and runs inference.
 4. `LiveSensorLocalSink` writes local alerts, quarantines, and summaries.
 
@@ -66,7 +66,7 @@ The runtime layer is not forced to finalize on every closed capture window.
 The sensor only promotes closed-window output into the model path.
 
 - `dumpcap` produces rolling closed windows.
-- The bridge invokes the extractor command mode on a closed window.
+- The bridge invokes the configured extractor command prefix on a closed window.
 - The extractor output is adapted into the same 72-feature contract the runtime already expects.
 - Valid records reach the realtime pipeline.
 - Invalid records are quarantined before scoring.
@@ -104,13 +104,11 @@ The packaging layer must prove the sensor can start before the daemon loop runs.
 Required runtime pieces:
 
 - `dumpcap`
-- Java
-- the CICFlowMeter command-mode wrapper
-- `jnetpcap`
+- the configured extractor command prefix
 - the final model bundle
 - writable spool and log paths
 
-The sample service unit in [deploy/systemd/ids-live-sensor.service](F:/Work/IDS_ML_New/deploy/systemd/ids-live-sensor.service) calls [ids_live_sensor_preflight.py](F:/Work/IDS_ML_New/scripts/ids_live_sensor_preflight.py) so deployment fails early if one of those dependencies is missing.
+The sample service unit in [deploy/systemd/ids-live-sensor.service](F:/Work/IDS_ML_New/deploy/systemd/ids-live-sensor.service) calls [ids_live_sensor_preflight.py](F:/Work/IDS_ML_New/scripts/ids_live_sensor_preflight.py) so deployment fails early if one of those dependencies is missing. The preflight boundary keeps the extractor dependency explicit and separate from the adapter/runtime contract.
 
 ## Filesystem layout
 

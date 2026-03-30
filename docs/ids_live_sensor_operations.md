@@ -16,9 +16,7 @@ It assumes:
 Before the daemon starts, the deployment must verify:
 
 - `dumpcap` is installed and runnable
-- Java is installed and runnable
-- the CICFlowMeter command-mode wrapper is installed and runnable
-- `jnetpcap` is present where the extractor expects it
+- the configured extractor command prefix resolves to a runnable extractor entrypoint
 - the active bundle activation record exists
 - the resolved active bundle exists and is compatibility-valid
 - the configured NIC name is correct
@@ -94,9 +92,7 @@ The compact journald line also carries `active_bundle=<name>` and `bundle_status
 The preflight check should fail if any of the following are missing:
 
 - `dumpcap`
-- `java`
-- the CICFlowMeter command wrapper
-- `jnetpcap`
+- the configured extractor command prefix
 - the activation record
 - the resolved bundle manifest, model artifact, and feature schema files
 - bundle compatibility metadata that matches the current runtime inference contract
@@ -189,6 +185,7 @@ Useful checks during deployment and debugging:
 
 - verify the unit file content with `systemctl cat ids-live-sensor`
 - verify the exact configured binary paths still exist and are executable
+- verify the extractor command prefix resolves to the intended replacement extractor CLI
 - verify `IDS_LIVE_SENSOR_ACTIVE_BUNDLE_PATH` points to the intended activation record
 - verify the local outputs are writable and rotating as expected
 - inspect journald for the compact summary line when the daemon flushes telemetry
