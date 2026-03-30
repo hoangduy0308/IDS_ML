@@ -104,3 +104,12 @@ Expected contract failures in stack-level health and operations commands should 
 This UI redesign hit repeated worker startup/progress drift even though the validated graph, reservations, and repository state still allowed safe forward movement. The reliable rescue path was to stop trusting missing chat acknowledgments, release stale reservations, reset the bead state when necessary, and verify recovery from `br show`, real commits, and passing tests. Future swarms should time-box silent workers and recover from live execution state rather than waiting indefinitely on stuck status loops.
 
 **Full entry:** history/learnings/20260330-agent-coordination-ui-redesign.md
+
+## [20260330] Pin Multi-Token Runtime Contracts With End-To-End Tokenization Tests
+**Category:** failure
+**Feature:** ids-flow-extractor-replacement
+**Tags:** [systemd, shell, cli, testing]
+
+This feature's follow-up review found that preserving a multi-token extractor command prefix in code and service units was not enough; the real risk lived in the tokenization chain across systemd, shell expansion, and argparse. The issue only became truly closed after tests exercised both the success round-trip and the missing-argument failure path. Future host-service features should treat tokenization-sensitive startup flags as executable contracts and test them end to end.
+
+**Full entry:** history/learnings/20260330-extractor-contract-hardening.md

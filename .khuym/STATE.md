@@ -11,3 +11,9 @@ Review summary:
   - `python -m pytest tests/test_ids_offline_window_extractor.py tests/test_ids_live_flow_bridge.py tests/test_ids_live_sensor_preflight.py tests/test_ids_same_host_stack_manage.py tests/test_ids_live_sensor.py -q`
   - Result: `74 passed`
 - Open review beads for `ids_ml_new-vii9`: none
+
+## Last Compounding Run
+- Feature: ids-flow-extractor-replacement
+- Date: 2026-03-30
+- Learnings file: history/learnings/20260330-extractor-contract-hardening.md
+- Critical promotions: 1
