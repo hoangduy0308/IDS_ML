@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import ipaddress
-import math
 import struct
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -499,18 +498,6 @@ def _seconds_to_millis(value: float) -> float:
 
 def _round_metric(value: float, digits: int = 6) -> float:
     return round(float(value), digits)
-
-
-def _format_csv_value(value: Any) -> Any:
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float):
-        if math.isfinite(value) and float(value).is_integer():
-            return int(value)
-        return f"{value:.6f}".rstrip("0").rstrip(".")
-    return value
 
 
 def build_cli_parser() -> argparse.ArgumentParser:

@@ -3,6 +3,8 @@ from __future__ import annotations
 import io
 import json
 from pathlib import Path
+import shlex
+import re
 import sys
 
 import pytest
@@ -515,7 +517,22 @@ def test_service_unit_keeps_preflight_and_stdout_journal_contract() -> None:
     assert '--activation-path ${IDS_LIVE_SENSOR_ACTIVE_BUNDLE_PATH}' in content
     assert '--interface "$IDS_LIVE_SENSOR_INTERFACE"' in content
     assert '--dumpcap-binary "$IDS_LIVE_SENSOR_DUMPCAP_BINARY"' in content
-    assert '--extractor-command-prefix "$IDS_LIVE_SENSOR_EXTRACTOR_COMMAND_PREFIX"' in content
+    assert '--extractor-command-prefix "$IDS_LIVE_SENSOR_EXTRACTOR_COMMAND_PREFIX"' not in content
+    execstart_line = next(
+        line for line in content.splitlines() if line.startswith("ExecStart=")
+    )
+    command_match = re.search(r"bash -lc '(.*)'$", execstart_line)
+    assert command_match is not None
+    shell_command = command_match.group(1).replace(
+        "${IDS_LIVE_SENSOR_EXTRACTOR_COMMAND_PREFIX}",
+        "/opt/extractor-prefix /opt/extractor-bridge",
+    )
+    tokens = shlex.split(shell_command)
+    prefix_index = tokens.index("--extractor-command-prefix")
+    assert tokens[prefix_index + 1 : prefix_index + 3] == [
+        "/opt/extractor-prefix",
+        "/opt/extractor-bridge",
+    ]
     assert '--activation-path "$IDS_LIVE_SENSOR_ACTIVE_BUNDLE_PATH"' in content
     assert "StandardOutput=journal" in content
     assert "StandardError=journal" in content

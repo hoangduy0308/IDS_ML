@@ -15,6 +15,8 @@ if str(REPO_ROOT) not in sys.path:
 import scripts.ids_live_sensor_preflight as preflight  # noqa: E402
 from scripts.ids_live_sensor_preflight import (  # noqa: E402
     LiveSensorPreflightConfig,
+    build_config_from_args,
+    parse_args,
     validate_preflight,
 )
 from scripts.ids_model_bundle import (  # noqa: E402
@@ -144,6 +146,90 @@ def test_validate_preflight_accepts_canonical_multi_token_extractor_prefix(
 
     assert config.extractor_command_prefix == extractor_prefix
     validate_preflight(config)
+
+
+def test_parse_args_preserves_multi_token_extractor_prefix(tmp_path: Path) -> None:
+    dumpcap_binary = make_executable(tmp_path / "bin" / "dumpcap")
+    extractor_prefix = (
+        str(make_executable(tmp_path / "bin" / "extractor-prefix")),
+        str(make_executable(tmp_path / "bin" / "extractor-bridge")),
+    )
+    bundle_root = write_bundle_contract(tmp_path / "bundle-cli")
+    activation_path = tmp_path / "active_bundle_cli.json"
+    write_activation_record(
+        activation_path,
+        build_activation_record_payload(
+            active_bundle_root=bundle_root,
+            active_bundle_name="bundle-under-test",
+            activated_at="2026-03-29T00:00:00+07:00",
+        ),
+    )
+    spool_dir = tmp_path / "spool-cli"
+    log_dir = tmp_path / "logs-cli"
+    spool_dir.mkdir()
+    log_dir.mkdir()
+
+    args = parse_args(
+        [
+            "--interface",
+            "eth0",
+            "--dumpcap-binary",
+            str(dumpcap_binary),
+            "--extractor-command-prefix",
+            *extractor_prefix,
+            "--activation-path",
+            str(activation_path),
+            "--spool-dir",
+            str(spool_dir),
+            "--alerts-output-path",
+            str(log_dir / "alerts.jsonl"),
+            "--quarantine-output-path",
+            str(log_dir / "quarantine.jsonl"),
+            "--summary-output-path",
+            str(log_dir / "summary.jsonl"),
+        ]
+    )
+    config = build_config_from_args(args)
+
+    assert config.extractor_command_prefix == extractor_prefix
+
+
+def test_parse_args_requires_extractor_command_prefix(tmp_path: Path) -> None:
+    dumpcap_binary = make_executable(tmp_path / "bin" / "dumpcap")
+    bundle_root = write_bundle_contract(tmp_path / "bundle-missing-prefix")
+    activation_path = tmp_path / "active_bundle_missing_prefix.json"
+    write_activation_record(
+        activation_path,
+        build_activation_record_payload(
+            active_bundle_root=bundle_root,
+            active_bundle_name="bundle-under-test",
+            activated_at="2026-03-29T00:00:00+07:00",
+        ),
+    )
+    spool_dir = tmp_path / "spool-missing-prefix"
+    log_dir = tmp_path / "logs-missing-prefix"
+    spool_dir.mkdir()
+    log_dir.mkdir()
+
+    with pytest.raises(SystemExit, match="2"):
+        parse_args(
+            [
+                "--interface",
+                "eth0",
+                "--dumpcap-binary",
+                str(dumpcap_binary),
+                "--activation-path",
+                str(activation_path),
+                "--spool-dir",
+                str(spool_dir),
+                "--alerts-output-path",
+                str(log_dir / "alerts.jsonl"),
+                "--quarantine-output-path",
+                str(log_dir / "quarantine.jsonl"),
+                "--summary-output-path",
+                str(log_dir / "summary.jsonl"),
+            ]
+        )
 
 
 def test_validate_preflight_rejects_missing_interface(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

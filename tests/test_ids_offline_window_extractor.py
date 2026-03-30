@@ -5,6 +5,7 @@ import struct
 import subprocess
 import sys
 from pathlib import Path
+from dataclasses import replace
 
 import pytest
 
@@ -15,11 +16,14 @@ if str(REPO_ROOT) not in sys.path:
 
 from scripts.ids_offline_window_extractor import (  # noqa: E402
     OfflineExtractorConfig,
+    FlowSummary,
+    PacketEvent,
     PcapFormatError,
     extract_flows,
     extract_window,
     main,
 )
+from scripts.ids_offline_window_serializer import flow_to_source_record, write_flow_csv  # noqa: E402
 from scripts.ids_record_adapter import PRIMARY_PROFILE_ID, adapt_record, get_adapter_profile  # noqa: E402
 
 
@@ -130,6 +134,10 @@ def _write_pcap(path: Path, frames: list[tuple[float, bytes]]) -> None:
 
 
 def _build_sample_pcap(path: Path) -> Path:
+    return _build_sample_pcap_at(path, base_timestamp=1_700_000_000.0)
+
+
+def _build_sample_pcap_at(path: Path, *, base_timestamp: float) -> Path:
     client_mac = "02:00:00:00:00:01"
     server_mac = "02:00:00:00:00:02"
     client_ip = "10.0.0.10"
@@ -137,7 +145,7 @@ def _build_sample_pcap(path: Path) -> Path:
 
     frames = [
         (
-            1_700_000_000.0,
+            base_timestamp,
             _build_tcp_frame(
                 src_mac=client_mac,
                 dst_mac=server_mac,
@@ -152,7 +160,7 @@ def _build_sample_pcap(path: Path) -> Path:
             ),
         ),
         (
-            1_700_000_000.4,
+            base_timestamp + 0.4,
             _build_tcp_frame(
                 src_mac=server_mac,
                 dst_mac=client_mac,
@@ -167,7 +175,7 @@ def _build_sample_pcap(path: Path) -> Path:
             ),
         ),
         (
-            1_700_000_000.9,
+            base_timestamp + 0.9,
             _build_tcp_frame(
                 src_mac=client_mac,
                 dst_mac=server_mac,
@@ -189,6 +197,39 @@ def _build_sample_pcap(path: Path) -> Path:
 def _read_csv_rows(path: Path) -> list[dict[str, str]]:
     with path.open("r", encoding="utf-8", newline="") as handle:
         return list(csv.DictReader(handle))
+
+
+def _make_flow_summary(
+    *,
+    flow_index: int,
+    src_ip: str,
+    src_port: int,
+    dst_ip: str,
+    dst_port: int,
+    protocol: int,
+    timestamp: float,
+) -> FlowSummary:
+    flow = FlowSummary(
+        flow_index=flow_index,
+        forward_src_ip=src_ip,
+        forward_src_port=src_port,
+        forward_dst_ip=dst_ip,
+        forward_dst_port=dst_port,
+        protocol=protocol,
+    )
+    flow.add_packet(
+        PacketEvent(
+            timestamp=timestamp,
+            packet_length=60,
+            payload_length=20,
+            header_length=40,
+            direction="forward",
+            protocol=protocol,
+            flags=0x02 if protocol == 6 else 0,
+            window_size=8192 if protocol == 6 else 0,
+        )
+    )
+    return flow
 
 
 def test_extract_window_writes_bridge_consumable_csv(tmp_path: Path) -> None:
@@ -248,6 +289,89 @@ def test_extract_flows_exposes_canonical_core_without_adapter_aliasing(tmp_path:
     assert canonical["Bwd Packets/s"] == pytest.approx(1.111111)
     assert canonical["Bwd Bulk Rate Avg"] == pytest.approx(16.666667)
     assert flow.metadata_values()["flow_id"].endswith("-00000")
+
+
+def test_serializer_maps_canonical_flow_to_profile_source_keys(tmp_path: Path) -> None:
+    pcap_path = _build_sample_pcap(tmp_path / "capture-serializer-map.pcap")
+    flow = extract_flows(pcap_path)[0]
+
+    row = flow_to_source_record(flow, PRIMARY_PROFILE_ID)
+
+    assert row["FlowDuration"] == 900.0
+    assert row["SrcPort"] == 12345
+    assert row["DstPort"] == 80
+    assert row["flow_id"].endswith("-00000")
+    assert row["transport_family"] == "tcp"
+
+
+def test_write_flow_csv_sorts_multiple_flows_deterministically(tmp_path: Path) -> None:
+    early_flow = extract_flows(
+        _build_sample_pcap_at(tmp_path / "capture-early.pcap", base_timestamp=1_700_000_000.0)
+    )[0]
+    late_flow = extract_flows(
+        _build_sample_pcap_at(tmp_path / "capture-late.pcap", base_timestamp=1_700_000_010.0)
+    )[0]
+    late_flow = replace(
+        late_flow,
+        flow_index=7,
+        forward_src_port=23456,
+        packet_events=[
+            replace(packet, timestamp=packet.timestamp + 10.0) for packet in late_flow.packet_events
+        ],
+    )
+    output_path = tmp_path / "flows" / "multi_Flow.csv"
+
+    write_flow_csv([late_flow, early_flow], output_path, profile_id=PRIMARY_PROFILE_ID)
+
+    rows = _read_csv_rows(output_path)
+    assert [row["SrcPort"] for row in rows] == ["12345", "23456"]
+    assert rows[0]["flow_id"].endswith("-00000")
+    assert rows[1]["flow_id"].endswith("-00007")
+
+
+def test_write_flow_csv_uses_non_time_sort_key_tiebreakers(tmp_path: Path) -> None:
+    flows = [
+        _make_flow_summary(
+            flow_index=2,
+            src_ip="10.0.0.2",
+            src_port=2000,
+            dst_ip="10.0.0.30",
+            dst_port=8080,
+            protocol=17,
+            timestamp=1_700_000_020.0,
+        ),
+        _make_flow_summary(
+            flow_index=1,
+            src_ip="10.0.0.3",
+            src_port=1500,
+            dst_ip="10.0.0.40",
+            dst_port=8080,
+            protocol=6,
+            timestamp=1_700_000_020.0,
+        ),
+        _make_flow_summary(
+            flow_index=0,
+            src_ip="10.0.0.1",
+            src_port=1200,
+            dst_ip="10.0.0.50",
+            dst_port=8080,
+            protocol=6,
+            timestamp=1_700_000_020.0,
+        ),
+    ]
+    output_path = tmp_path / "flows" / "tiebreak_Flow.csv"
+
+    write_flow_csv(flows, output_path, profile_id=PRIMARY_PROFILE_ID)
+
+    rows = _read_csv_rows(output_path)
+    assert [
+        (row["Protocol"], row["SrcPort"], row["DstPort"])
+        for row in rows
+    ] == [
+        ("6", "1200", "8080"),
+        ("6", "1500", "8080"),
+        ("17", "2000", "8080"),
+    ]
 
 
 def test_extract_flows_handles_vlan_udp_frames_and_ignores_non_ip_frames(tmp_path: Path) -> None:
@@ -374,6 +498,57 @@ def test_extract_flows_rejects_malformed_and_unsupported_pcap_variants(
 
     with pytest.raises(PcapFormatError, match=message):
         extract_flows(pcap_path)
+
+
+@pytest.mark.parametrize(
+    "bad_frame",
+    [
+        b"\x00" * 10,
+        b"\x00" * 14 + struct.pack("!H", 0x8100),
+        (_mac("02:00:00:00:00:02") + _mac("02:00:00:00:00:01") + struct.pack("!H", 0x0800) + bytes([0x44]) + (b"\x00" * 19)),
+        _build_tcp_frame(
+            src_mac="02:00:00:00:00:01",
+            dst_mac="02:00:00:00:00:02",
+            src_ip="10.0.0.10",
+            dst_ip="10.0.0.20",
+            src_port=12345,
+            dst_port=80,
+            seq=1,
+            ack=0,
+            flags=0x02,
+            payload=b"",
+        )[:-6],
+    ],
+)
+def test_extract_flows_skips_malformed_inner_frames_inside_valid_pcap(
+    tmp_path: Path,
+    bad_frame: bytes,
+) -> None:
+    pcap_path = tmp_path / "capture-malformed-inner-frame.pcap"
+    good_frame = _build_tcp_frame(
+        src_mac="02:00:00:00:00:01",
+        dst_mac="02:00:00:00:00:02",
+        src_ip="10.0.0.10",
+        dst_ip="10.0.0.20",
+        src_port=12345,
+        dst_port=80,
+        seq=1,
+        ack=0,
+        flags=0x02,
+        payload=b"",
+    )
+    _write_pcap(
+        pcap_path,
+        [
+            (1_700_000_004.0, bad_frame),
+            (1_700_000_004.5, good_frame),
+        ],
+    )
+
+    flows = extract_flows(pcap_path)
+
+    assert len(flows) == 1
+    assert flows[0].forward_src_port == 12345
 
 
 def test_extract_window_uses_zero_duration_guard_without_flooring_subsecond_flows(

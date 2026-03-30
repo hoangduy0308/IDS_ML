@@ -18,7 +18,7 @@ class LiveSensorPreflightConfig:
     alerts_output_path: Path
     quarantine_output_path: Path
     summary_output_path: Path
-    extractor_command_prefix: tuple[str, ...] | None = None
+    extractor_command_prefix: tuple[str, ...]
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "interface", _require_non_blank(self.interface, name="interface"))
@@ -30,7 +30,7 @@ class LiveSensorPreflightConfig:
         object.__setattr__(self, "summary_output_path", Path(self.summary_output_path))
         normalized_prefix = tuple(
             str(part).strip()
-            for part in (self.extractor_command_prefix or ())
+            for part in self.extractor_command_prefix
             if str(part).strip()
         )
         if not normalized_prefix:
@@ -117,7 +117,7 @@ def _require_extractor_command_prefix(prefix: Sequence[str]) -> tuple[str, ...]:
 def validate_preflight(config: LiveSensorPreflightConfig) -> None:
     _require_interface(config.interface)
     _require_existing_file(config.dumpcap_binary, name="dumpcap_binary", executable=True)
-    _require_extractor_command_prefix(config.extractor_command_prefix or ())
+    _require_extractor_command_prefix(config.extractor_command_prefix)
     activation_path = _require_existing_file(config.activation_path, name="activation_path")
     resolve_active_model_bundle(activation_path)
     _require_writable_directory(config.spool_dir, name="spool_dir")
@@ -132,7 +132,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--interface", required=True)
     parser.add_argument("--dumpcap-binary", type=Path, required=True)
-    parser.add_argument("--extractor-command-prefix", nargs="+", default=None)
+    parser.add_argument("--extractor-command-prefix", nargs="+", required=True)
     parser.add_argument("--activation-path", type=Path, required=True)
     parser.add_argument("--spool-dir", type=Path, required=True)
     parser.add_argument("--alerts-output-path", type=Path, required=True)
@@ -150,11 +150,7 @@ def build_config_from_args(args: argparse.Namespace) -> LiveSensorPreflightConfi
         alerts_output_path=Path(args.alerts_output_path),
         quarantine_output_path=Path(args.quarantine_output_path),
         summary_output_path=Path(args.summary_output_path),
-        extractor_command_prefix=(
-            tuple(args.extractor_command_prefix)
-            if args.extractor_command_prefix is not None
-            else None
-        ),
+        extractor_command_prefix=tuple(args.extractor_command_prefix),
     )
 
 

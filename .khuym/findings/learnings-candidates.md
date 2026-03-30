@@ -21,3 +21,17 @@ Summary: The new extractor and bridge need negative-path coverage for malformed 
 Evidence: review findings about missing parser/flow-classification coverage in `scripts/ids_offline_window_extractor.py` / `tests/test_ids_offline_window_extractor.py`, bridge multi-row coverage gaps in `scripts/ids_live_flow_bridge.py` / `tests/test_ids_live_flow_bridge.py`, and sub-second rate undercounting in `scripts/ids_offline_window_extractor.py`.
 Related patterns: `history/learnings/20260328-live-sensor-runtime-contracts.md`, `history/learnings/20260328-adapter-rollback-contract.md`
 Recommended title: YYYYMMDD-pin-extractor-semantic-and-parser-edge-cases-with-negative-fixtures.md
+
+## Candidate: typed-serializer-seam
+Category: pattern
+Tags: serializer, typing, seam, extractor, contract
+Summary: When splitting extractor and serializer responsibilities, keep the seam strongly typed so the contract does not drift into `Any`-based plumbing.
+Evidence: serializer seam follow-up review on `scripts/ids_offline_window_serializer.py` and `scripts/ids_offline_window_extractor.py`.
+Recommended title: YYYYMMDD-typed-serializer-seam.md
+
+## Candidate: tokenization-roundtrip-coverage
+Category: failure
+Tags: cli, systemd, shell, tokenization, roundtrip, tests
+Summary: Multi-token command-prefix handling needs explicit round-trip coverage across argparse, systemd, and shell tokenization to prevent compatibility regressions.
+Evidence: review follow-up on `scripts/ids_live_sensor_preflight.py`, `deploy/systemd/ids-live-sensor.service`, and `tests/test_ids_live_sensor.py`.
+Recommended title: YYYYMMDD-tokenization-roundtrip-coverage.md
