@@ -57,4 +57,4 @@ Notes:
 - `ids_ml_new-br4g.11` is also closed from the worker report and live graph; the runtime daemon, capture, health, and sink slice now lives under `ids.runtime`.
 - `ids_ml_new-br4g.13` is now closed from the worker report and live graph; same-host stack orchestration now lives under `ids.ops`.
 - `ids_ml_new-br4g.8` is now closed from the worker report and live graph; the runtime/core tests now mirror the new domain layout.
-- The current wave is now `.15` and `.17`, with `.10` still blocked until the remaining test/doc beads land.
+- The current wave is now `.15`, with `.10` still blocked until the remaining test/doc beads land and the docs spine work now complete under `docs/current` / `docs/archive`.

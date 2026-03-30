@@ -1,11 +1,12 @@
-# Current docs
+﻿# Current docs
 
 Canonical documents live under this directory.
 
-Use this area for:
+## Domains
 
-- active architecture and operations docs
-- current contracts and runbooks
-- reader-facing material that should be treated as the source of truth
+- [runtime/](F:/Work/IDS_ML_New/docs/current/runtime): runtime, inference, bridge, adapter, and sensor docs
+- [console/](F:/Work/IDS_ML_New/docs/current/console): operator-console docs
+- [operations/](F:/Work/IDS_ML_New/docs/current/operations): same-host orchestration and runbooks
+- [ml/](F:/Work/IDS_ML_New/docs/current/ml): current ML, benchmark, and final-model docs
 
-When a document is superseded, move it to `docs/archive/` in a later bead instead of leaving the navigation ambiguous.
+When a document is superseded, move it to `docs/archive/` instead of leaving the navigation ambiguous.

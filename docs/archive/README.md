@@ -1,11 +1,9 @@
-# Archive docs
+﻿# Archive docs
 
 Historical and superseded material lives here.
 
-Use this area for:
+## Domains
 
-- old design notes
-- retired runbooks
-- prior versions of docs that should stay available for traceability
+- [ml/](F:/Work/IDS_ML_New/docs/archive/ml): superseded ML planning and intermediate results
 
 Do not treat files in this directory as the canonical source for current decisions.
