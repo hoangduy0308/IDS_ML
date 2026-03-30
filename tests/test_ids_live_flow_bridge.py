@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import struct
 from pathlib import Path
 import sys
 
@@ -19,6 +20,128 @@ from scripts.ids_live_flow_bridge import (  # noqa: E402
     LiveFlowBridge,
     LiveFlowBridgeConfig,
 )
+from scripts.ids_record_adapter import PRIMARY_PROFILE_ID  # noqa: E402
+
+
+def _mac(address: str) -> bytes:
+    return bytes.fromhex(address.replace(":", ""))
+
+
+def _ipv4(address: str) -> bytes:
+    return bytes(int(part) for part in address.split("."))
+
+
+def _build_tcp_frame(
+    *,
+    src_mac: str,
+    dst_mac: str,
+    src_ip: str,
+    dst_ip: str,
+    src_port: int,
+    dst_port: int,
+    seq: int,
+    ack: int,
+    flags: int,
+    payload: bytes,
+) -> bytes:
+    tcp_header_len = 20
+    ip_header_len = 20
+    total_length = ip_header_len + tcp_header_len + len(payload)
+    ethernet = _mac(dst_mac) + _mac(src_mac) + struct.pack("!H", 0x0800)
+    ip_header = struct.pack(
+        "!BBHHHBBH4s4s",
+        (4 << 4) | 5,
+        0,
+        total_length,
+        0,
+        0,
+        64,
+        6,
+        0,
+        _ipv4(src_ip),
+        _ipv4(dst_ip),
+    )
+    tcp_header = struct.pack(
+        "!HHLLBBHHH",
+        src_port,
+        dst_port,
+        seq,
+        ack,
+        (5 << 4),
+        flags,
+        8192,
+        0,
+        0,
+    )
+    return ethernet + ip_header + tcp_header + payload
+
+
+def _write_pcap(path: Path, frames: list[tuple[float, bytes]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("wb") as handle:
+        handle.write(struct.pack("<IHHIIII", 0xA1B2C3D4, 2, 4, 0, 0, 65535, 1))
+        for timestamp, frame in frames:
+            ts_sec = int(timestamp)
+            ts_usec = int(round((timestamp - ts_sec) * 1_000_000))
+            handle.write(struct.pack("<IIII", ts_sec, ts_usec, len(frame), len(frame)))
+            handle.write(frame)
+
+
+def _build_sample_pcap(path: Path) -> Path:
+    client_mac = "02:00:00:00:00:01"
+    server_mac = "02:00:00:00:00:02"
+    client_ip = "10.0.0.10"
+    server_ip = "10.0.0.20"
+
+    frames = [
+        (
+            1_700_000_000.0,
+            _build_tcp_frame(
+                src_mac=client_mac,
+                dst_mac=server_mac,
+                src_ip=client_ip,
+                dst_ip=server_ip,
+                src_port=12345,
+                dst_port=80,
+                seq=1,
+                ack=0,
+                flags=0x02,
+                payload=b"",
+            ),
+        ),
+        (
+            1_700_000_000.4,
+            _build_tcp_frame(
+                src_mac=server_mac,
+                dst_mac=client_mac,
+                src_ip=server_ip,
+                dst_ip=client_ip,
+                src_port=80,
+                dst_port=12345,
+                seq=2,
+                ack=2,
+                flags=0x12,
+                payload=b"reply-payload-1",
+            ),
+        ),
+        (
+            1_700_000_000.9,
+            _build_tcp_frame(
+                src_mac=client_mac,
+                dst_mac=server_mac,
+                src_ip=client_ip,
+                dst_ip=server_ip,
+                src_port=12345,
+                dst_port=80,
+                seq=3,
+                ack=17,
+                flags=0x18,
+                payload=b"client-data",
+            ),
+        ),
+    ]
+    _write_pcap(path, frames)
+    return path
 
 
 def load_primary_sample_row() -> dict[str, object]:
@@ -84,6 +207,49 @@ def test_bridge_invokes_extractor_for_closed_window_and_normalizes_primary_recor
     assert emitted["profile"] == "cicflowmeter_primary_v1"
     assert emitted["record"]["adapter_profile"] == "cicflowmeter_primary_v1"
     assert emitted["record"]["Flow Duration"] == 80.0
+
+
+def test_bridge_can_drive_the_offline_replacement_extractor_cli(tmp_path: Path) -> None:
+    window = make_window(tmp_path)
+    _build_sample_pcap(window.path)
+
+    bridge = LiveFlowBridge(
+        LiveFlowBridgeConfig(
+            extractor_command_prefix=(
+                sys.executable,
+                "-m",
+                "scripts.ids_offline_window_extractor",
+                "--profile-id",
+                PRIMARY_PROFILE_ID,
+            ),
+            adapter_profile_id=PRIMARY_PROFILE_ID,
+        ),
+    )
+
+    result = bridge.bridge_window(window, output_dir=tmp_path / "flows")
+
+    assert result.command[:5] == (
+        sys.executable,
+        "-m",
+        "scripts.ids_offline_window_extractor",
+        "--profile-id",
+        PRIMARY_PROFILE_ID,
+    )
+    assert result.command[-2] == str(window.path)
+    assert result.command[-1] == str(tmp_path / "flows")
+    assert result.extractor_output_path.name == "capture-00001_Flow.csv"
+    assert result.window_errors == ()
+    assert result.adapter_quarantines == ()
+    assert len(result.adapted_records) == 1
+
+    emitted = result.adapted_records[0]
+    assert emitted["event_type"] == "bridge_record"
+    assert emitted["profile"] == PRIMARY_PROFILE_ID
+    assert emitted["record"]["adapter_profile"] == PRIMARY_PROFILE_ID
+    assert emitted["record"]["Flow Duration"] == 900.0
+    assert emitted["record"]["flow_family"] == "bidirectional"
+    assert emitted["record"]["transport_family"] == "tcp"
+    assert emitted["record"]["capture_mode"] == "closed-window"
 
 
 def test_bridge_surfaces_window_stage_error_when_extractor_fails(tmp_path: Path) -> None:

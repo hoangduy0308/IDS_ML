@@ -1,55 +1,40 @@
-STATUS: reviewing-complete
-FEATURE: ids-operator-console-ui-redesign
-ACTIVE_SKILL: khuym:reviewing
-DATE: 2026-03-30
-EPIC_ID: ids_ml_new-6e84
+## Current State
 
-Current State:
-- Swarm execution completed for the full UI/UX redesign of the existing IDS operator console surface
-- The clean validated execution graph is epic `ids_ml_new-6e84` with tasks `ids_ml_new-mxm8`, `ids_ml_new-mun0`, `ids_ml_new-7y8m`, `ids_ml_new-6x7k`, and `ids_ml_new-9973`
-- Plan still keeps the Python-native FastAPI + Jinja stack, canonical `Overview / Alerts / Operations / Reports` IA, and explicit legacy redirects for `/dashboard` and `/anomalies`
-- Product boundary remains read/triage/monitoring only; execution must not turn the console into a control plane
-- Swarm constraint: workers must ignore superseded epic `ids_ml_new-opgj` and only claim/close beads inside `ids_ml_new-6e84`
-- Completed bead: `ids_ml_new-mxm8` via commit `abbdf8d879bde1a7b08c9a27cf75820daa7d5567`
-- Completed bead: `ids_ml_new-mun0` via commit `417c7d9`
-- Completed bead: `ids_ml_new-6x7k` via commit `8eab989`
-- Completed bead: `ids_ml_new-7y8m` via commit `57c97b9`
-- Completed bead: `ids_ml_new-9973` via commit `fc06e4c`
-- Full operator-console regression suite passed: `17 passed`
-- Epic `ids_ml_new-6e84` is closed
-- Review pass completed with no new P1/P2 findings identified in the shipped diff
+Skill: swarming
+Phase: validated
+Feature: ids-flow-extractor-replacement
+Epic: ids_ml_new-vii9
+Validated At: 2026-03-30T15:49:00+07:00
 
-Artifacts:
-- history/ids-operator-console-ui-redesign/CONTEXT.md
-- history/ids-operator-console-ui-redesign/discovery.md
-- history/ids-operator-console-ui-redesign/approach.md
-- .spikes/ids-operator-console-ui-redesign/ids_ml_new-u8xd/FINDINGS.md
-- .spikes/ids-operator-console-ui-redesign/ids_ml_new-xz5w/FINDINGS.md
-- .beads/ (validated epic `ids_ml_new-6e84`; old epic `ids_ml_new-opgj` is superseded and should not be used for execution)
+## Artifacts Written
 
-Validated Beads:
-- Epic: ids_ml_new-6e84
-- Tasks: ids_ml_new-mxm8, ids_ml_new-mun0, ids_ml_new-7y8m, ids_ml_new-6x7k, ids_ml_new-9973
+- history/ids-flow-extractor-replacement/CONTEXT.md
+- history/ids-flow-extractor-replacement/discovery.md
+- history/ids-flow-extractor-replacement/approach.md
+- .spikes/ids-flow-extractor-replacement/ids_ml_new-vii9.8/FINDINGS.md
+- .spikes/ids-flow-extractor-replacement/ids_ml_new-vii9.9/FINDINGS.md
 
-Risk Summary:
-- HIGH: shell + IA route refactor in `scripts/ids_operator_console/web.py`
-- HIGH: shared visual-system rewrite in `scripts/ids_operator_console/static/console.css`
-- Both HIGH-risk items passed spikes:
-  - `ids_ml_new-u8xd`: legacy redirects preserve runtime/tests/docs contract if redirects and docs/tests/back-navigation are updated
-  - `ids_ml_new-xz5w`: shared shell/CSS scope is safe if ownership stays concentrated in the foundation bead and downstream file scopes remain disjoint
+## Validation Summary
 
-Next:
-- Feature implementation and review are complete
-- Invoke `khuym:compounding` next
+- Structural plan verification: PASS
+- Spike ids_ml_new-vii9.8: YES
+- Spike ids_ml_new-vii9.9: YES
+- Approval gate: execution approved by user
 
-## Last Compounding Run
-- Feature: ids-operator-console-ui-redesign
-- Date: 2026-03-30
-- Learnings file: history/learnings/20260330-agent-coordination-ui-redesign.md
-- Critical promotions: 1
+## Swarm Intent
+
+- Coordinator will tend epic ids_ml_new-vii9 through Agent Mail and live bead graph.
+- Execution remains correctness-first and serial where the graph requires it.
+- Ready work at swarm start: ids_ml_new-vii9.10
 
 ## Active Workers
-- Coordinator: `GentleSpring` (Agent Mail thread/topic: `ids_ml_new-6e84` / `epic-ids_ml_new-6e84`)
-- Recycled: `PearlHollow` — silent startup drift; reservations released
-- Cleanup-only: `CloudyBadger` — reset `ids_ml_new-mxm8` from `in_progress` back to `open`
-- No active workers remain
+
+- BoldBasin - completed `ids_ml_new-vii9.10`, handed off at ~68% context, now stood down
+- QuietRiver - completed `ids_ml_new-vii9.11` and `ids_ml_new-vii9.4`, handed off at ~69% context, now stood down
+- SunnyCreek - stale claim recovery; posted startup ack, marked `ids_ml_new-vii9.5` in progress, then disappeared before reservation/start message
+- CoralCanyon - completed `ids_ml_new-vii9.5`, handed off at .1 startup, now stood down
+- PearlSnow - completed `ids_ml_new-vii9.1`, now stood down
+
+## Next
+
+Advance the epic through `.3`, `.6`, `.7`, and `.2` before handing off to khuym:reviewing.

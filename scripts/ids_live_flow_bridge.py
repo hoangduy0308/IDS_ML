@@ -11,13 +11,14 @@ from scripts.ids_live_capture import ClosedCaptureWindow
 from scripts.ids_record_adapter import (
     AdaptedFlowRecord,
     AdapterQuarantineRecord,
+    PRIMARY_PROFILE_ID,
     UnknownAdapterProfileError,
     adapt_record,
 )
 
 
 DEFAULT_EXTRACTOR_COMMAND_PREFIX: tuple[str, ...] = ("Cmd",)
-DEFAULT_ADAPTER_PROFILE_ID = "cicflowmeter_primary_v1"
+DEFAULT_ADAPTER_PROFILE_ID = PRIMARY_PROFILE_ID
 DEFAULT_FLOW_SUFFIX = "_Flow.csv"
 
 
@@ -308,4 +309,3 @@ class LiveFlowBridge:
             stdout=completed.stdout or "",
             stderr=completed.stderr or "",
         )
-

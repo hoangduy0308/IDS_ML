@@ -1,72 +1,3 @@
-# AGENTS.md — Khuym Skill Ecosystem
-
-Read this file at every session start. Re-read after any context compaction.
-
-## What is Khuym?
-
-A multi-skill ecosystem for agentic software development, built on the Flywheel toolchain (beads/bv/Agent Mail). Nine skills chain together to move from vague requirements to shipped, reviewed, compounded code.
-
-## Skill Catalog
-
-| Skill | Purpose | Invoke When |
-|-------|---------|-------------|
-| `khuym:using-khuym` | Bootstrap/meta — routing, go mode, state bootstrap | Session start, "build feature X" |
-| `khuym:exploring` | Extract decisions via Socratic dialogue → CONTEXT.md | New feature, unclear requirements |
-| `khuym:planning` | Research + synthesis + bead creation → approach.md + beads | After exploring, with CONTEXT.md |
-| `khuym:validating` | Plan verification + spikes + bead polishing — THE GATE | After planning, before execution |
-| `khuym:swarming` | Launch + tend parallel worker agents | After validating approves beads |
-| `khuym:executing` | Per-agent worker loop (register → implement → close) | Loaded by workers spawned by swarming |
-| `khuym:reviewing` | 5 review agents + 3-level verification + UAT + finishing | After swarming completes all beads |
-| `khuym:compounding` | Capture learnings → history/learnings/ | After reviewing, always |
-| `khuym:writing-khuym-skills` | TDD-for-skills meta-skill | Creating/improving khuym skills |
-
-### Support Skills
-
-| Skill | Purpose |
-|-------|---------|
-| `khuym:debugging` | Systematic debugging when workers hit blockers |
-| `khuym:gkg` | Codebase intelligence via gkg tool |
-
-## The Chain
-
-```
-khuym:exploring → khuym:planning → khuym:validating → khuym:swarming → khuym:executing(×N) → khuym:reviewing → khuym:compounding
-```
-
-## Go Mode Gates
-
-- **GATE 1** (after exploring): "Approve decisions/CONTEXT.md?"
-- **GATE 2** (after validating): "Beads verified. Approve execution?"
-- **GATE 3** (after reviewing): "P1 findings. Fix before merge?"
-
-## Core Tools
-
-- `br` — beads CLI (create/update/close work items)
-- `bv` — beads viewer (graph analytics, priority routing)
-- MCP Agent Mail — inter-agent messaging, file reservations
-- `gkg` — codebase intelligence (optional)
-- CASS/CM — session search, cognitive memory (optional)
-
-## File Conventions
-
-```
-.khuym/STATE.md          ← Working memory
-.khuym/config.json       ← Feature toggles (absent=enabled)
-.khuym/HANDOFF.json      ← Session handoff
-history/<feature>/       ← Per-feature artifacts
-history/learnings/       ← Accumulated knowledge
-.beads/                  ← Bead files
-.spikes/                 ← Spike verification results
-```
-
-## Critical Rules
-
-1. **Never execute without validating.** GATE 2 is non-negotiable.
-2. **CONTEXT.md is the source of truth.** All downstream agents honor locked decisions.
-3. **Context budget: >65% → write HANDOFF.json and pause.**
-4. **After compaction: re-read this file + CONTEXT.md immediately.**
-5. **P1 findings always block merge.** Even in go mode.
-
 ## MCP Agent Mail — Multi-Agent Coordination
 
 A mail-like layer that lets coding agents coordinate asynchronously via MCP tools and resources. Provides identities, inbox/outbox, searchable threads, and advisory file reservations with human-auditable artifacts in Git.
@@ -168,37 +99,28 @@ Beads provides a lightweight, dependency-aware issue database and CLI (`br` - be
 
 ---
 
-## bv — Graph-Aware Triage Engine
+## Beads Viewer (bv) — Graph-Aware Triage Engine
 
 bv is a graph-aware triage engine for Beads projects (`.beads/beads.jsonl`). It computes PageRank, betweenness, critical path, cycles, HITS, eigenvector, and k-core metrics deterministically.
 
 **Scope boundary:** bv handles *what to work on* (triage, priority, planning). For agent-to-agent coordination (messaging, work claiming, file reservations), use MCP Agent Mail.
 
-**CRITICAL: Use non-interactive flags (`--robot-*`, `--recipe`, `--as-of`, `--diff-since`, `--export-md`) only. Bare `bv` launches an interactive TUI that blocks your session.**
+**CRITICAL: Use ONLY `--robot-*` flags. Bare `bv` launches an interactive TUI that blocks your session.**
 
 ### The Workflow: Start With Triage
 
-Use this order of operations:
+**`bv --robot-triage` is your single entry point.** It returns:
+- `quick_ref`: at-a-glance counts + top 3 picks
+- `recommendations`: ranked actionable items with scores, reasons, unblock info
+- `quick_wins`: low-effort high-impact items
+- `blockers_to_clear`: items that unblock the most downstream work
+- `project_health`: status/type/priority distributions, graph metrics
+- `commands`: copy-paste shell commands for next steps
 
 ```bash
-bv --robot-plan          # Primary triage surface (tracks + highest-impact summary)
-bv --robot-priority      # Priority sanity check and suggested re-ranking
-bv --robot-insights      # Deep graph metrics when needed
-br ready --json          # Ground-truth actionable issues from Beads
+bv --robot-triage        # THE MEGA-COMMAND: start here
+bv --robot-next          # Minimal: just the single top pick + claim command
 ```
-
-If your local `bv` build supports `--robot-triage`, you can still use it. If not, `--robot-plan` + `br ready --json` is the required fallback.
-
-**CRITICAL Tombstone Guard:** `bv` output can include `status = tombstone` items in some versions. Tombstones are deleted/merged issues and are **never actionable**.
-
-Before claiming work from `bv`, always verify status with `br`:
-
-```bash
-br show <issue-id> --json | jq -r '.[0].status'
-# Only proceed if status is open/in_progress and the issue is not deleted/tombstoned.
-```
-
-If `br ready --json` is empty and `bv` only surfaces tombstones, do not claim tombstoned items. Create or refine a real bead and proceed.
 
 ### Command Reference
 
@@ -207,32 +129,40 @@ If `br ready --json` is empty and `bv` only surfaces tombstones, do not claim to
 |---------|---------|
 | `--robot-plan` | Parallel execution tracks with `unblocks` lists |
 | `--robot-priority` | Priority misalignment detection with confidence |
-| `--robot-recipes` | Available recipe filters for scoped triage |
 
 **Graph Analysis:**
 | Command | Returns |
 |---------|---------|
 | `--robot-insights` | Full metrics: PageRank, betweenness, HITS, eigenvector, critical path, cycles, k-core, articulation points, slack |
+| `--robot-label-health` | Per-label health: `health_level`, `velocity_score`, `staleness`, `blocked_count` |
+| `--robot-label-flow` | Cross-label dependency: `flow_matrix`, `dependencies`, `bottleneck_labels` |
+| `--robot-label-attention [--attention-limit=N]` | Attention-ranked labels |
 
 **History & Change Tracking:**
 | Command | Returns |
 |---------|---------|
+| `--robot-history` | Bead-to-commit correlations |
 | `--robot-diff --diff-since <ref>` | Changes since ref: new/closed/modified issues, cycles |
 
 **Other:**
 | Command | Returns |
 |---------|---------|
-| `--recipe <name>` | Apply recipe filters (for example `actionable`, `high-impact`) |
-| `--export-md <file.md>` | Markdown status/export report |
+| `--robot-burndown <sprint>` | Sprint burndown, scope changes, at-risk items |
+| `--robot-forecast <id\|all>` | ETA predictions with dependency-aware scheduling |
+| `--robot-alerts` | Stale issues, blocking cascades, priority mismatches |
+| `--robot-suggest` | Hygiene: duplicates, missing deps, label suggestions |
+| `--robot-graph [--graph-format=json\|dot\|mermaid]` | Dependency graph export |
+| `--export-graph <file.html>` | Interactive HTML visualization |
 
 ### Scoping & Filtering
 
 ```bash
-bv --robot-plan --as-of HEAD~30              # Historical point-in-time
+bv --robot-plan --label backend              # Scope to label's subgraph
+bv --robot-insights --as-of HEAD~30          # Historical point-in-time
 bv --recipe actionable --robot-plan          # Pre-filter: ready to work
-bv --recipe high-impact --robot-plan         # Pre-filter: top-impact set
-bv --robot-priority                          # Cross-check priority drift
-bv --robot-recipes                           # Discover installed recipe names
+bv --recipe high-impact --robot-triage       # Pre-filter: top PageRank
+bv --robot-triage --robot-triage-by-track    # Group by parallel work streams
+bv --robot-triage --robot-triage-by-label    # Group by domain
 ```
 
 ### Understanding Robot Output
@@ -249,18 +179,178 @@ bv --robot-recipes                           # Discover installed recipe names
 ### jq Quick Reference
 
 ```bash
+bv --robot-triage | jq '.quick_ref'                        # At-a-glance summary
+bv --robot-triage | jq '.recommendations[0]'               # Top recommendation
 bv --robot-plan | jq '.plan.summary.highest_impact'        # Best unblock target
-bv --robot-plan | jq '.plan.tracks[0].items[0]'            # First candidate in first track
-bv --robot-priority | jq '.recommendations[0]'             # Top priority recommendation
 bv --robot-insights | jq '.status'                         # Check metric readiness
 bv --robot-insights | jq '.Cycles'                         # Circular deps (must fix!)
 ```
 
 ---
+## Beads Workflow Integration
+
+This project uses [beads_rust](https://github.com/Dicklesworthstone/beads_rust) (`br`) for issue tracking. Issues are stored in `.beads/` and tracked in git.
+
+**Important:** `br` is non-invasive—it NEVER executes git commands. After `br sync --flush-only`, you must manually run `git add .beads/ && git commit`.
+
+### Essential Commands
+
+```bash
+# View issues (launches TUI - avoid in automated sessions)
+bv
+
+# CLI commands for agents (use these instead)
+br ready              # Show issues ready to work (no blockers)
+br list --status=open # All open issues
+br show <id>          # Full issue details with dependencies
+br create --title="..." --type=task --priority=2
+br update <id> --status=in_progress
+br close <id> --reason "Completed"
+br close <id1> <id2>  # Close multiple issues at once
+br sync --flush-only  # Export to JSONL (NO git operations)
+```
+
+### Workflow Pattern
+
+1. **Start**: Run `br ready` to find actionable work
+2. **Claim**: Use `br update <id> --status=in_progress`
+3. **Work**: Implement the task
+4. **Complete**: Use `br close <id>`
+5. **Sync**: Run `br sync --flush-only` then manually commit
+
+### Key Concepts
+
+- **Dependencies**: Issues can block other issues. `br ready` shows only unblocked work.
+- **Priority**: P0=critical, P1=high, P2=medium, P3=low, P4=backlog (use numbers, not words)
+- **Types**: task, bug, feature, epic, question, docs
+- **Blocking**: `br dep add <issue> <depends-on>` to add dependencies
+
+### Session Protocol
+
+**Before ending any session, run this checklist:**
+
+```bash
+git status              # Check what changed
+git add <files>         # Stage code changes
+br sync --flush-only    # Export beads to JSONL
+git add .beads/         # Stage beads changes
+git commit -m "..."     # Commit everything together
+git push                # Push to remote
+```
+
+### Best Practices
+
+- Check `br ready` at session start to find available work
+- Update status as you work (in_progress → closed)
+- Create new issues with `br create` when you discover tasks
+- Use descriptive titles and set appropriate priority/type
+- Always `br sync --flush-only && git add .beads/` before ending session
+
+<!-- end-bv-agent-instructions -->
+
+## Landing the Plane (Session Completion)
+
+**When ending a work session**, you MUST complete ALL steps below.
+
+**MANDATORY WORKFLOW:**
+
+1. **File issues for remaining work** - Create issues for anything that needs follow-up
+2. **Run quality gates** (if code changed) - Tests, linters, builds
+3. **Update issue status** - Close finished work, update in-progress items
+4. **Sync beads** - `br sync --flush-only` to export to JSONL
+5. **Hand off** - Provide context for next session
 
 ---
 
-## Note for Codex
+## CASS — Cross-Agent Session Search
+
+`cass` indexes prior agent conversations (Claude Code, Codex, Cursor, Gemini, ChatGPT, etc.) so we can reuse solved problems.
+
+**Rules:** Never run bare `cass` (TUI). Always use `--robot` or `--json`.
+
+### Examples
+
+```bash
+cass health
+cass search "async runtime" --robot --limit 5
+cass view /path/to/session.jsonl -n 42 --json
+cass expand /path/to/session.jsonl -n 42 -C 3 --json
+cass capabilities --json
+cass robot-docs guide
+```
+
+### Tips
+
+- Use `--fields minimal` for lean output
+- Filter by agent with `--agent`
+- Use `--days N` to limit to recent history
+
+stdout is data-only, stderr is diagnostics; exit code 0 means success.
+
+Treat cass as a way to avoid re-solving problems other agents already handled.
+---
+
+## Memory System: cass-memory
+
+The Cass Memory System (cm) is a tool for giving agents an effective memory based on the ability to quickly search across previous coding agent sessions across an array of different coding agent tools (e.g., Claude Code, Codex, Gemini-CLI, Cursor, etc.) and projects (and even across multiple machines, optionally) and then reflect on what they find and learn in new sessions to draw out useful lessons and takeaways; these lessons are then stored and can be queried and retrieved later, much like how human memory works.
+
+The `cm onboard` command guides you through analyzing historical sessions and extracting valuable rules.
+
+### Quick Start
+
+```bash
+# 1. Check status and see recommendations
+cm onboard status
+
+# 2. Get sessions to analyze (filtered by gaps in your playbook)
+cm onboard sample --fill-gaps
+
+# 3. Read a session with rich context
+cm onboard read /path/to/session.jsonl --template
+
+# 4. Add extracted rules (one at a time or batch)
+cm playbook add "Your rule content" --category "debugging"
+# Or batch add:
+cm playbook add --file rules.json
+
+# 5. Mark session as processed
+cm onboard mark-done /path/to/session.jsonl
+```
+
+Before starting complex tasks, retrieve relevant context:
+
+```bash
+cm context "<task description>" --json
+```
+
+This returns:
+- **relevantBullets**: Rules that may help with your task
+- **antiPatterns**: Pitfalls to avoid
+- **historySnippets**: Past sessions that solved similar problems
+- **suggestedCassQueries**: Searches for deeper investigation
+
+### Protocol
+
+1. **START**: Run `cm context "<task>" --json` before non-trivial work
+2. **WORK**: Reference rule IDs when following them (e.g., "Following b-8f3a2c...")
+3. **FEEDBACK**: Leave inline comments when rules help/hurt:
+   - `// [cass: helpful b-xyz] - reason`
+   - `// [cass: harmful b-xyz] - reason`
+4. **END**: Just finish your work. Learning happens automatically.
+
+### Key Flags
+
+| Flag | Purpose |
+|------|---------|
+| `--json` | Machine-readable JSON output (required!) |
+| `--limit N` | Cap number of rules returned |
+| `--no-history` | Skip historical snippets for faster response |
+
+stdout = data only, stderr = diagnostics. Exit 0 = success.
+
+---
+
+## Note for Codex/GPT-5.4:
 
 You constantly bother me and stop working with concerned questions that look similar to this:
 
@@ -273,104 +363,82 @@ Next steps (pick one)
 
 1. Decide how to handle the unrelated modified files above so we can resume cleanly.
 2. Triage beads_rust-orko (clippy/cargo warnings) and beads_rust-ydqr (rustfmt failures).
-3. If you want a full suite run later, fix conformance/clippy blockers and re‑run cargo test --all.
+3. If you want a full suite run later, fix conformance/clippy blockers and re-run cargo test --all.
 ```
 
-NEVER EVER DO THAT AGAIN. The answer is literally ALWAYS the same: those are changes created by the potentially dozen of other agents working on the project at the same time. This is not only a common occurence, it happens multiple times PER MINUTE. The way to deal with it is simple: you NEVER, under ANY CIRCUMSTANCE, stash, revert, overwrite, or otherwise disturb in ANY way the work of other agents. Just treat those changes identically to changes that you yourself made. Just fool yourself into thinking YOU made the changes and simply don't recall it for some reason.
+NEVER EVER DO THAT AGAIN. The answer is literally ALWAYS the same: those are changes created by the potentially dozen of other agents working on the project at the same time. This is not only a common occurrence, it happens multiple times PER MINUTE. The way to deal with it is simple: you NEVER, under ANY CIRCUMSTANCE, stash, revert, overwrite, or otherwise disturb in ANY way the work of other agents. Just treat those changes identically to changes that you yourself made. Just fool yourself into thinking YOU made the changes and simply don't recall it for some reason.
 
 ---
 
-<!-- bv-agent-instructions-v2 -->
+## Note on Built-in TODO Functionality
 
----
+Also, if I ask you to explicitly use your built-in TODO functionality, don't complain about this and say you need to use beads. You can use built-in TODOs if I tell you specifically to do so. Always comply with such orders.
 
-## Beads Workflow Integration
+<!-- KHUYM:START -->
+# Khuym Workflow
 
-This project uses [beads_rust](https://github.com/Dicklesworthstone/beads_rust) (`br`) for issue tracking and [beads_viewer](https://github.com/Dicklesworthstone/beads_viewer) (`bv`) for graph-aware triage. Issues are stored in `.beads/` and tracked in git.
+Use `khuym:using-khuym` first in this repo unless you are resuming an already approved Khuym handoff.
 
-### Using bv as an AI sidecar
+## Startup
 
-bv is a graph-aware triage engine for Beads projects (.beads/beads.jsonl). Instead of parsing JSONL or hallucinating graph traversal, use robot flags for deterministic, dependency-aware outputs with precomputed metrics (PageRank, betweenness, critical path, cycles, HITS, eigenvector, k-core).
+1. Read this file at session start and again after any context compaction.
+2. If `.khuym/onboarding.json` is missing or outdated, stop and run `khuym:using-khuym` before continuing.
+3. If `.khuym/HANDOFF.json` exists, do not auto-resume. Surface the saved state and wait for user confirmation.
+4. If `history/learnings/critical-patterns.md` exists, read it before planning or execution work.
 
-**Scope boundary:** bv handles *what to work on* (triage, priority, planning). `br` handles creating, modifying, and closing beads.
+## Chain
 
-**CRITICAL: Use ONLY --robot-* flags. Bare bv launches an interactive TUI that blocks your session.**
-
-#### The Workflow: Start With Triage
-
-**`bv --robot-triage` is your single entry point.** It returns everything you need in one call:
-- `quick_ref`: at-a-glance counts + top 3 picks
-- `recommendations`: ranked actionable items with scores, reasons, unblock info
-- `quick_wins`: low-effort high-impact items
-- `blockers_to_clear`: items that unblock the most downstream work
-- `project_health`: status/type/priority distributions, graph metrics
-- `commands`: copy-paste shell commands for next steps
-
-```bash
-bv --robot-triage        # THE MEGA-COMMAND: start here
-bv --robot-next          # Minimal: just the single top pick + claim command
-
-# Token-optimized output (TOON) for lower LLM context usage:
-bv --robot-triage --format toon
+```
+khuym:using-khuym
+  → khuym:exploring
+  → khuym:planning
+  → khuym:validating
+  → khuym:swarming
+  → khuym:executing
+  → khuym:reviewing
+  → khuym:compounding
 ```
 
-#### Other bv Commands
+## Critical Rules
 
-| Command | Returns |
-|---------|---------|
-| `--robot-plan` | Parallel execution tracks with unblocks lists |
-| `--robot-priority` | Priority misalignment detection with confidence |
-| `--robot-insights` | Full metrics: PageRank, betweenness, HITS, eigenvector, critical path, cycles, k-core |
-| `--robot-alerts` | Stale issues, blocking cascades, priority mismatches |
-| `--robot-suggest` | Hygiene: duplicates, missing deps, label suggestions, cycle breaks |
-| `--robot-diff --diff-since <ref>` | Changes since ref: new/closed/modified issues |
-| `--robot-graph [--graph-format=json\|dot\|mermaid]` | Dependency graph export |
+1. Never execute without validating.
+2. `CONTEXT.md` is the source of truth for locked decisions.
+3. If context usage passes roughly 65%, write `.khuym/HANDOFF.json` and pause cleanly.
+4. After compaction, re-read `AGENTS.md`, `.khuym/HANDOFF.json` if present, `.khuym/STATE.md`, and the active feature context before more work.
+5. P1 review findings block merge.
 
-#### Scoping & Filtering
+## Working Files
 
-```bash
-bv --robot-plan --label backend              # Scope to label's subgraph
-bv --robot-insights --as-of HEAD~30          # Historical point-in-time
-bv --recipe actionable --robot-plan          # Pre-filter: ready to work (no blockers)
-bv --recipe high-impact --robot-triage       # Pre-filter: top PageRank scores
+```
+.khuym/
+  onboarding.json     ← onboarding state for the Khuym plugin
+  STATE.md            ← current phase and focus
+  HANDOFF.json        ← pause/resume artifact
+
+history/<feature>/
+  CONTEXT.md          ← locked decisions
+  discovery.md        ← research findings
+  approach.md         ← approach + risk map
+
+history/learnings/
+  critical-patterns.md
+
+.beads/               ← bead/task files when beads are in use
+.spikes/              ← spike outputs when validation requires them
 ```
 
-### br Commands for Issue Management
+## Codex Guardrails
 
-```bash
-br ready              # Show issues ready to work (no blockers)
-br list --status=open # All open issues
-br show <id>          # Full issue details with dependencies
-br create --title="..." --type=task --priority=2
-br update <id> --status=in_progress
-br close <id> --reason="Completed"
-br close <id1> <id2>  # Close multiple issues at once
-br sync --flush-only  # Export DB to JSONL
-```
+- Repo-local `.codex/` files installed by Khuym are workflow guardrails, not optional decoration.
+- Treat `compact_prompt` recovery instructions as mandatory.
+- Use `bv` only with `--robot-*` flags. Bare `bv` launches the TUI and should be avoided in agent sessions.
+- If the repo is only partially onboarded, stay in bootstrap/planning mode and surface what is missing before implementation.
 
-### Workflow Pattern
+## Session Finish
 
-1. **Triage**: Run `bv --robot-triage` to find the highest-impact actionable work
-2. **Claim**: Use `br update <id> --status=in_progress`
-3. **Work**: Implement the task
-4. **Complete**: Use `br close <id>`
-5. **Sync**: Always run `br sync --flush-only` at session end
+Before ending a substantial Khuym work chunk:
 
-### Key Concepts
-
-- **Dependencies**: Issues can block other issues. `br ready` shows only unblocked work.
-- **Priority**: P0=critical, P1=high, P2=medium, P3=low, P4=backlog (use numbers 0-4, not words)
-- **Types**: task, bug, feature, epic, chore, docs, question
-- **Blocking**: `br dep add <issue> <depends-on>` to add dependencies
-
-### Session Protocol
-
-```bash
-git status              # Check what changed
-git add <files>         # Stage code changes
-br sync --flush-only    # Export beads changes to JSONL
-git commit -m "..."     # Commit everything
-git push                # Push to remote
-```
-
-<!-- end-bv-agent-instructions -->
+1. Update or close the active bead/task if one exists.
+2. Leave `.khuym/STATE.md` and `.khuym/HANDOFF.json` consistent with the current pause/resume state.
+3. Mention any remaining blockers, open questions, or next actions in the final response.
+<!-- KHUYM:END -->
