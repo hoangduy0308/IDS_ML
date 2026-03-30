@@ -2,13 +2,8 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-import sys
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-
-from scripts.stage_kaggle_scaling import RUN_MATRIX, main
+from ml_pipeline.benchmark.stage_kaggle_scaling import RUN_MATRIX, main
 
 
 def test_stage_scaling_generates_all_notebooks(tmp_path: Path, monkeypatch) -> None:

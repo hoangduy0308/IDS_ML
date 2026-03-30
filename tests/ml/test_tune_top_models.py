@@ -1,16 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-import sys
 
 import pandas as pd
 
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-
-from scripts.tune_top_models import (  # noqa: E402
+from ml_pipeline.training.tune_top_models import (
     passes_selection_gate,
     persist_reports,
     select_promoted_trials,
