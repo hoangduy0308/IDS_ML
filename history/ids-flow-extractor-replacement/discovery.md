@@ -222,3 +222,20 @@ The short version:
 - `java` and `jnetpcap` are current live-path `hard dependency` items because preflight, service wiring, stack defaults, and tests all enforce them today.
 - `Cmd`, `_Flow.csv`, `cicflowmeter_primary_v1`, and CICFlowMeter-style headers are current `configurable dependency` items because the bridge/adapter already expose them as explicit config or profile surfaces.
 - The real hard runtime boundary remains the activation-record bundle contract plus the 72 canonical numeric features; CICFlowMeter branding itself is not the source of truth.
+
+## Addendum: Research Summary And D4 Drift Log
+
+Bead `ids_ml_new-vii9.11` wrote two follow-on artifacts:
+
+- `history/ids-flow-extractor-replacement/research-summary.md`
+- `history/ids-flow-extractor-replacement/doc-code-mismatches.md`
+
+Use them together when planning the replacement seam:
+
+- `research-summary.md` captures the repo-backed extractor contract from docs, code, and tests.
+- `doc-code-mismatches.md` records the places where docs overstate or blur the enforced contract and where `D4` requires code/tests to win.
+
+Key downstream reminder:
+
+- the strongest enforced boundary is still `closed pcap -> bridge -> adapter -> 72 canonical features -> active bundle runtime`
+- Java, `jnetpcap`, and CICFlowMeter naming are current live-path packaging facts, but not the deepest model-facing contract
