@@ -72,9 +72,7 @@ python /opt/ids_ml_new/scripts/ids_same_host_stack_manage.py \
   --operator-env-file /etc/ids-operator-console/ids-operator-console.env \
   --activation-path /var/lib/ids-live-sensor/active_bundle.json \
   --dumpcap-binary /usr/bin/dumpcap \
-  --java-binary /usr/bin/java \
-  --extractor-binary /opt/cicflowmeter/Cmd \
-  --jnetpcap-path /opt/cicflowmeter/lib/jnetpcap.jar \
+  --extractor-command-prefix /opt/cicflowmeter/Cmd \
   --spool-dir /var/lib/ids-live-sensor \
   --alerts-output-path /var/log/ids-live-sensor/ids_live_alerts.jsonl \
   --quarantine-output-path /var/log/ids-live-sensor/ids_live_quarantine.jsonl \
@@ -86,6 +84,7 @@ python /opt/ids_ml_new/scripts/ids_same_host_stack_manage.py \
 ```
 
 The bootstrap flow delegates to the existing component owners. It does not own bundle restore, console restore, or service-specific mutation logic.
+The same-host stack contract carries the live-sensor extractor command prefix explicitly and leaves deeper extractor/runtime validation to the live-sensor preflight owner.
 `bootstrap` does not report success until the post-start `status` and `smoke` checks run; it returns a degraded result and exit code `2` when those checks fail.
 
 ## Preflight, Status, and Smoke

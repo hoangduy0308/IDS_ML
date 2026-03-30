@@ -49,16 +49,10 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--interface", default="eth0")
     parser.add_argument("--dumpcap-binary", type=Path, default=Path("/usr/bin/dumpcap"))
-    parser.add_argument("--java-binary", type=Path, default=Path("/usr/bin/java"))
     parser.add_argument(
-        "--extractor-binary",
-        type=Path,
-        default=Path("/opt/cicflowmeter/Cmd"),
-    )
-    parser.add_argument(
-        "--jnetpcap-path",
-        type=Path,
-        default=Path("/opt/cicflowmeter/lib/jnetpcap.jar"),
+        "--extractor-command-prefix",
+        nargs="+",
+        default=["/opt/cicflowmeter/Cmd"],
     )
     parser.add_argument("--spool-dir", type=Path, default=Path("/var/lib/ids-live-sensor"))
     parser.add_argument(
@@ -150,9 +144,11 @@ def build_config_from_args(args: argparse.Namespace) -> SameHostStackConfig:
         activation_path=Path(args.activation_path).resolve(),
         live_sensor_interface=str(args.interface).strip(),
         dumpcap_binary=Path(args.dumpcap_binary).resolve(),
-        java_binary=Path(args.java_binary).resolve(),
-        extractor_binary=Path(args.extractor_binary).resolve(),
-        jnetpcap_path=Path(args.jnetpcap_path).resolve(),
+        extractor_command_prefix=tuple(
+            str(part).strip()
+            for part in (args.extractor_command_prefix or [])
+            if str(part).strip()
+        ),
         spool_dir=Path(args.spool_dir).resolve(),
         alerts_output_path=Path(args.alerts_output_path).resolve(),
         quarantine_output_path=Path(args.quarantine_output_path).resolve(),

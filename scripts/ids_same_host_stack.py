@@ -54,9 +54,7 @@ class SameHostStackConfig:
     activation_path: Path
     live_sensor_interface: str
     dumpcap_binary: Path
-    java_binary: Path
-    extractor_binary: Path
-    jnetpcap_path: Path
+    extractor_command_prefix: tuple[str, ...]
     spool_dir: Path
     alerts_output_path: Path
     quarantine_output_path: Path
@@ -194,9 +192,7 @@ def build_sensor_preflight_config(config: SameHostStackConfig) -> LiveSensorPref
     return LiveSensorPreflightConfig(
         interface=str(config.live_sensor_interface).strip(),
         dumpcap_binary=Path(config.dumpcap_binary).resolve(),
-        java_binary=Path(config.java_binary).resolve(),
-        extractor_binary=Path(config.extractor_binary).resolve(),
-        jnetpcap_path=Path(config.jnetpcap_path).resolve(),
+        extractor_command_prefix=tuple(str(part).strip() for part in config.extractor_command_prefix if str(part).strip()),
         activation_path=Path(config.activation_path).resolve(),
         spool_dir=Path(config.spool_dir).resolve(),
         alerts_output_path=Path(config.alerts_output_path).resolve(),

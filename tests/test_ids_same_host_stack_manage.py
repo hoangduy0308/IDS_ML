@@ -66,8 +66,7 @@ def _build_config(
 
     python_binary = _make_executable(tmp_path / "bin" / "python3")
     _make_executable(tmp_path / "bin" / "dumpcap")
-    _make_executable(tmp_path / "bin" / "java")
-    _make_executable(tmp_path / "bin" / "Cmd")
+    extractor_binary = _make_executable(tmp_path / "bin" / "extractor")
 
     secret_key_file = tmp_path / "secrets" / "console.secret"
     secret_key_file.parent.mkdir(parents=True, exist_ok=True)
@@ -93,9 +92,7 @@ def _build_config(
         activation_path=tmp_path / "runtime" / "active_bundle.json",
         live_sensor_interface="eth0",
         dumpcap_binary=tmp_path / "bin" / "dumpcap",
-        java_binary=tmp_path / "bin" / "java",
-        extractor_binary=tmp_path / "bin" / "Cmd",
-        jnetpcap_path=tmp_path / "lib" / "jnetpcap.jar",
+        extractor_command_prefix=(str(extractor_binary),),
         spool_dir=tmp_path / "runtime" / "sensor",
         alerts_output_path=tmp_path / "logs" / "ids_live_alerts.jsonl",
         quarantine_output_path=tmp_path / "logs" / "ids_live_quarantine.jsonl",
@@ -143,8 +140,6 @@ def test_validate_stack_preflight_bootstrap_or_preflight_delegates_component_con
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config = _build_config(tmp_path)
-    config.jnetpcap_path.parent.mkdir(parents=True, exist_ok=True)
-    config.jnetpcap_path.write_text("jar\n", encoding="utf-8")
 
     sensor_calls: list[stack.LiveSensorPreflightConfig] = []
     operator_calls: list[stack.OperatorConsolePreflightConfig] = []
@@ -174,6 +169,7 @@ def test_validate_stack_preflight_bootstrap_or_preflight_delegates_component_con
     assert payload["ready"] is True
     assert payload["components"]["notification"]["status"] == "disabled"
     assert sensor_calls and sensor_calls[0].summary_output_path == config.summary_output_path.resolve()
+    assert sensor_calls and sensor_calls[0].extractor_command_prefix == config.extractor_command_prefix
     assert operator_calls and operator_calls[0].database_path == (
         tmp_path / "runtime" / "operator_console.db"
     ).resolve()
@@ -405,12 +401,8 @@ def test_manage_main_bootstrap_or_preflight_prints_json_payload(
             str(config.activation_path),
             "--dumpcap-binary",
             str(config.dumpcap_binary),
-            "--java-binary",
-            str(config.java_binary),
-            "--extractor-binary",
-            str(config.extractor_binary),
-            "--jnetpcap-path",
-            str(config.jnetpcap_path),
+            "--extractor-command-prefix",
+            *config.extractor_command_prefix,
             "--spool-dir",
             str(config.spool_dir),
             "--alerts-output-path",
@@ -453,12 +445,8 @@ def test_manage_main_bootstrap_returns_degraded_exit_code(
             str(config.activation_path),
             "--dumpcap-binary",
             str(config.dumpcap_binary),
-            "--java-binary",
-            str(config.java_binary),
-            "--extractor-binary",
-            str(config.extractor_binary),
-            "--jnetpcap-path",
-            str(config.jnetpcap_path),
+            "--extractor-command-prefix",
+            *config.extractor_command_prefix,
             "--spool-dir",
             str(config.spool_dir),
             "--alerts-output-path",
@@ -683,12 +671,8 @@ def test_manage_main_status_or_smoke_prints_json_payload(
             str(config.activation_path),
             "--dumpcap-binary",
             str(config.dumpcap_binary),
-            "--java-binary",
-            str(config.java_binary),
-            "--extractor-binary",
-            str(config.extractor_binary),
-            "--jnetpcap-path",
-            str(config.jnetpcap_path),
+            "--extractor-command-prefix",
+            *config.extractor_command_prefix,
             "--spool-dir",
             str(config.spool_dir),
             "--alerts-output-path",
@@ -895,12 +879,8 @@ def test_manage_main_restart_or_recovery_path_prints_json_payload(
             str(config.activation_path),
             "--dumpcap-binary",
             str(config.dumpcap_binary),
-            "--java-binary",
-            str(config.java_binary),
-            "--extractor-binary",
-            str(config.extractor_binary),
-            "--jnetpcap-path",
-            str(config.jnetpcap_path),
+            "--extractor-command-prefix",
+            *config.extractor_command_prefix,
             "--spool-dir",
             str(config.spool_dir),
             "--alerts-output-path",
@@ -1379,12 +1359,8 @@ def test_manage_main_restore_or_post_restore_prints_json_payload(
             str(config.activation_path),
             "--dumpcap-binary",
             str(config.dumpcap_binary),
-            "--java-binary",
-            str(config.java_binary),
-            "--extractor-binary",
-            str(config.extractor_binary),
-            "--jnetpcap-path",
-            str(config.jnetpcap_path),
+            "--extractor-command-prefix",
+            *config.extractor_command_prefix,
             "--spool-dir",
             str(config.spool_dir),
             "--alerts-output-path",
