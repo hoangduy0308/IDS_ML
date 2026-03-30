@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Bảng điều hành IDS{% endblock %}</title>
+  <link rel="stylesheet" href="/static/console.css">
+</head>
+<body class="{% if admin %}console-app{% else %}console-auth{% endif %}" data-nav-open="false">
+  <div class="shell{% if not admin %} shell-auth{% endif %}">
+    {% if admin %}
+      {% include "partials/app_sidebar.html" %}
+    {% endif %}
+
+    <div class="shell__main">
+      {% if admin %}
+        {% include "partials/top_utility_bar.html" %}
+      {% endif %}
+
+      <main id="console-main" class="layout">
+        {% block content %}{% endblock %}
+      </main>
+
+      <footer class="footer">
+        <small>
+          <span>Cập nhật</span>
+          <span data-client-stamp>{{ generated_at }}</span>
+        </small>
+      </footer>
+    </div>
+  </div>
+  <script src="/static/console.js"></script>
+</body>
+</html>

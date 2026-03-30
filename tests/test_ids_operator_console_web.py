@@ -10,12 +10,12 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.ids_operator_console.alerts import add_investigation_note, transition_alert_status  # noqa: E402
-from scripts.ids_operator_console.auth import ensure_admin_user  # noqa: E402
-from scripts.ids_operator_console.config import load_operator_console_config  # noqa: E402
-from scripts.ids_operator_console.db import open_existing_operator_store  # noqa: E402
-from scripts.ids_operator_console.migrations import migrate_operator_store  # noqa: E402
-from scripts.ids_operator_console.web import create_operator_console_web_app  # noqa: E402
+from ids.console.alerts import add_investigation_note, transition_alert_status  # noqa: E402
+from ids.console.auth import ensure_admin_user  # noqa: E402
+from ids.console.config import load_operator_console_config  # noqa: E402
+from ids.console.db import open_existing_operator_store  # noqa: E402
+from ids.console.migrations import migrate_operator_store  # noqa: E402
+from ids.console.web import create_operator_console_web_app  # noqa: E402
 
 
 def _build_test_app(
@@ -29,8 +29,8 @@ def _build_test_app(
         "IDS_OPERATOR_CONSOLE_ENVIRONMENT": environment,
         "IDS_OPERATOR_CONSOLE_SECRET_KEY": "web-test-secret",
         "IDS_OPERATOR_CONSOLE_DATABASE_PATH": str(tmp_path / "operator_console.db"),
-        "IDS_OPERATOR_CONSOLE_TEMPLATES_DIR": str(REPO_ROOT / "scripts/ids_operator_console/templates"),
-        "IDS_OPERATOR_CONSOLE_STATIC_DIR": str(REPO_ROOT / "scripts/ids_operator_console/static"),
+        "IDS_OPERATOR_CONSOLE_TEMPLATES_DIR": str(REPO_ROOT / "ids/console/templates"),
+        "IDS_OPERATOR_CONSOLE_STATIC_DIR": str(REPO_ROOT / "ids/console/static"),
     }
     if environment == "production":
         env["IDS_OPERATOR_CONSOLE_PUBLIC_BASE_URL"] = "https://console.example"

@@ -9,8 +9,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.ids_operator_console.db import OperatorStore  # noqa: E402
-from scripts.ids_operator_console.ingest import SensorOutputIngestor  # noqa: E402
+from ids.console.db import OperatorStore  # noqa: E402
+from ids.console.ingest import SensorOutputIngestor  # noqa: E402
 
 
 def _append_jsonl(path: Path, payload: dict[str, object]) -> None:

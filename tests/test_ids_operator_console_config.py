@@ -11,9 +11,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.ids_operator_console import load_operator_console_config, migrate_operator_store  # noqa: E402
-from scripts.ids_operator_console.auth import ensure_admin_user  # noqa: E402
-from scripts.ids_operator_console.db import open_existing_operator_store  # noqa: E402
+from ids.console import load_operator_console_config, migrate_operator_store  # noqa: E402
+from ids.console.auth import ensure_admin_user  # noqa: E402
+from ids.console.db import open_existing_operator_store  # noqa: E402
 import scripts.ids_operator_console_server as server  # noqa: E402
 
 
@@ -36,8 +36,8 @@ def test_load_operator_console_config_resolves_repo_relative_defaults(tmp_path: 
     assert config.host == "127.0.0.1"
     assert config.port == 8765
     assert config.database_path == (repo_root / "artifacts/operator_console/operator_console.db").resolve()
-    assert config.templates_dir == (repo_root / "scripts/ids_operator_console/templates").resolve()
-    assert config.static_dir == (repo_root / "scripts/ids_operator_console/static").resolve()
+    assert config.templates_dir == (repo_root / "ids/console/templates").resolve()
+    assert config.static_dir == (repo_root / "ids/console/static").resolve()
     assert config.session_cookie_https_only is False
     assert config.root_path == ""
 
@@ -93,8 +93,8 @@ def test_load_operator_console_config_rejects_insecure_production_contract(tmp_p
 def test_build_operator_console_app_wires_health_and_console_routes(tmp_path: Path) -> None:
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
-    templates_dir = REPO_ROOT / "scripts/ids_operator_console/templates"
-    static_dir = REPO_ROOT / "scripts/ids_operator_console/static"
+    templates_dir = REPO_ROOT / "ids/console/templates"
+    static_dir = REPO_ROOT / "ids/console/static"
     db_path = repo_root / "runtime" / "operator_console.db"
     _bootstrap_runtime_store(db_path)
     env = {
@@ -142,8 +142,8 @@ def test_main_loads_config_and_invokes_run_server(monkeypatch: pytest.MonkeyPatc
 
     monkeypatch.setenv("IDS_OPERATOR_CONSOLE_SECRET_KEY", "test-secret")
     monkeypatch.setenv("IDS_OPERATOR_CONSOLE_DATABASE_PATH", str(db_path))
-    monkeypatch.setenv("IDS_OPERATOR_CONSOLE_TEMPLATES_DIR", str(REPO_ROOT / "scripts/ids_operator_console/templates"))
-    monkeypatch.setenv("IDS_OPERATOR_CONSOLE_STATIC_DIR", str(REPO_ROOT / "scripts/ids_operator_console/static"))
+    monkeypatch.setenv("IDS_OPERATOR_CONSOLE_TEMPLATES_DIR", str(REPO_ROOT / "ids/console/templates"))
+    monkeypatch.setenv("IDS_OPERATOR_CONSOLE_STATIC_DIR", str(REPO_ROOT / "ids/console/static"))
 
     captured: dict[str, object] = {}
 

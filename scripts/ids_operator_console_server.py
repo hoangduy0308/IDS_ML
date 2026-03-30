@@ -14,8 +14,8 @@ if __package__ in (None, ""):
     if str(REPO_ROOT) not in sys.path:
         sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.ids_operator_console import OperatorConsoleConfig, load_operator_console_config
-from scripts.ids_operator_console.web import create_operator_console_web_app
+from ids.console import OperatorConsoleConfig, load_operator_console_config
+from ids.console.web import create_operator_console_web_app
 
 
 def build_operator_console_app(config: OperatorConsoleConfig) -> FastAPI:

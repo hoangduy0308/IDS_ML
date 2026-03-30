@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% block title %}Cảnh báo {{ alert.id }} | Bảng điều hành IDS{% endblock %}
+{% block content %}
+<section class="detail-hero panel panel-primary">
+  <div class="detail-hero__copy">
+    <a href="/alerts" class="back-link">Quay lại hàng đợi</a>
+    <span class="eyebrow">Không gian điều tra</span>
+    <h2>Cảnh báo {{ alert.id }}</h2>
+    <p>Đi từ quét hàng đợi sang đọc sâu tại đây mà không mất trạng thái triage, dấu vết bằng chứng hay ghi chú analyst.</p>
+  </div>
+  <div class="alert-badges">
+    <span class="badge status-{{ alert.triage_status|replace('_', '-') }}">{{ triage_labels.get(alert.triage_status, alert.triage_status) }}</span>
+    <span class="badge severity-{{ (alert.severity or 'unknown')|lower }}">{{ severity_labels.get((alert.severity or 'unknown')|lower, alert.severity or "Chưa rõ") }}</span>
+    {% if alert.suppressed %}
+    <span class="badge badge-muted">Đã suppress</span>
+    {% endif %}
+  </div>
+</section>
+
+<section class="panel">
+  <div class="section-heading">
+    <div>
+      <span class="eyebrow">Ngữ cảnh cảnh báo</span>
+      <h3>Mặt bằng điều tra</h3>
+    </div>
+    <p class="section-copy">Bề mặt này giữ nguyên các định danh thô trong khi thao tác workflow nằm kề bên, không bị chôn xuống dưới phần event detail.</p>
+  </div>
+  <dl class="detail-grid">
+    <div>
+      <dt>Sự kiện nguồn</dt>
+      <dd><code>{{ alert.source_event_id or "-" }}</code></dd>
+    </div>
+    <div>
+      <dt>Thời điểm</dt>
+      <dd>{{ alert.event_ts }}</dd>
+    </div>
+    <div>
+      <dt>IP nguồn</dt>
+      <dd><code>{{ alert.src_ip or "-" }}</code></dd>
+    </div>
+    <div>
+      <dt>IP đích</dt>
+      <dd><code>{{ alert.dst_ip or "-" }}</code></dd>
+    </div>
+    <div>
+      <dt>Giao thức</dt>
+      <dd>{{ alert.protocol or alert.payload.protocol or "-" }}</dd>
+    </div>
+    <div>
+      <dt>Cổng</dt>
+      <dd>{{ alert.src_port or "-" }} -> {{ alert.dst_port or "-" }}</dd>
+    </div>
+    <div>
+      <dt>Điểm</dt>
+      <dd>{{ alert.payload.score if alert.payload and alert.payload.score is defined else "-" }}</dd>
+    </div>
+    <div>
+      <dt>Fingerprint</dt>
+      <dd><code>{{ alert.fingerprint or "-" }}</code></dd>
+    </div>
+    <div>
+      <dt>Sensor</dt>
+      <dd>{{ alert.sensor_id or "sensor-local" }}</dd>
+    </div>
+    <div>
+      <dt>Suppression</dt>
+      <dd>{{ "Đang bật" if alert.suppressed else "Không có" }}</dd>
+    </div>
+  </dl>
+</section>
+
+<section class="grid two-col">
+  <article class="panel">
+    <div class="section-heading">
+      <div>
+        <span class="eyebrow">Luồng xử lý</span>
+        <h3>Cập nhật trạng thái triage</h3>
+      </div>
+    </div>
+    <form method="post" action="/alerts/{{ alert.id }}/status" class="stack-form">
+      <input type="hidden" name="csrf_token" value="{{ admin.csrf_token }}">
+      <label>
+        Trạng thái mới
+        <select name="to_status">
+          {% for state in triage_states %}
+          <option value="{{ state }}" {% if alert.triage_status == state %}selected{% endif %}>{{ triage_labels.get(state, state) }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button type="submit" class="button">Lưu trạng thái</button>
+    </form>
+  </article>
+
+  <article class="panel">
+    <div class="section-heading">
+      <div>
+        <span class="eyebrow">Bằng chứng</span>
+        <h3>Thêm ghi chú điều tra</h3>
+      </div>
+    </div>
+    <form method="post" action="/alerts/{{ alert.id }}/notes" class="stack-form">
+      <input type="hidden" name="csrf_token" value="{{ admin.csrf_token }}">
+      <label>
+        Ghi chú
+        <textarea name="note_text" rows="5" required placeholder="Ghi nhận nhận định analyst, tương quan hoặc hành động tiếp theo."></textarea>
+      </label>
+      <button type="submit" class="button">Lưu ghi chú</button>
+    </form>
+  </article>
+</section>
+
+<section class="grid two-col">
+  <article class="panel">
+    <div class="section-heading">
+      <div>
+        <span class="eyebrow">Timeline</span>
+        <h3>Lịch sử trạng thái</h3>
+      </div>
+    </div>
+    {% if timeline.status_history %}
+    <ul class="timeline-list">
+      {% for item in timeline.status_history %}
+      <li class="timeline-item">
+        <strong>{{ item.changed_at }}</strong>
+        <span>{{ triage_labels.get(item.from_status or "new", item.from_status or "new") }} -> {{ triage_labels.get(item.to_status, item.to_status) }}</span>
+        <span>Thay đổi bởi {{ item.changed_by }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <div class="empty-state">
+      <h4>Chưa có lịch sử trạng thái.</h4>
+      <p>Cảnh báo này chưa đi qua bước triage nào khác.</p>
+    </div>
+    {% endif %}
+  </article>
+
+  <article class="panel">
+    <div class="section-heading">
+      <div>
+        <span class="eyebrow">Nhật ký hồ sơ</span>
+        <h3>Ghi chú</h3>
+      </div>
+    </div>
+    {% if timeline.notes %}
+    <ul class="timeline-list">
+      {% for note in timeline.notes %}
+      <li class="timeline-item timeline-item-note">
+        <strong>{{ note.created_at }}</strong>
+        <span>{{ note.author }}</span>
+        <p>{{ note.note_text }}</p>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <div class="empty-state">
+      <h4>Chưa có ghi chú.</h4>
+      <p>Hãy thêm ghi chú đầu tiên để giữ mạch điều tra liền mạch.</p>
+    </div>
+    {% endif %}
+  </article>
+</section>
+{% endblock %}

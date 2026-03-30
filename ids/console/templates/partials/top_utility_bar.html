@@ -1,0 +1,36 @@
+<!-- top_utility_bar partial -->
+{% set current_path = request.url.path %}
+{% set default_page = page_meta if page_meta is defined else (
+  {"eyebrow": "Báo cáo", "title": "Báo cáo", "summary": "Xem lại các cửa sổ giám sát, sản lượng cảnh báo và lịch sử bất thường."}
+  if current_path == "/reports" else
+  {"eyebrow": "Vận hành", "title": "Vận hành", "summary": "Tách bất thường dữ liệu, lệch readiness và tư thế runtime khỏi hàng đợi cảnh báo."}
+  if current_path == "/anomalies" or current_path == "/operations" else
+  {"eyebrow": "Điều tra", "title": "Chi tiết cảnh báo", "summary": "Đọc sâu trạng thái triage, bằng chứng và ghi chú điều tra."}
+  if current_path.startswith("/alerts/") else
+  {"eyebrow": "Không gian điều hành", "title": "Tổng quan", "summary": "Giữ tải cảnh báo cạnh sức khỏe hệ thống để có thể quét nhanh và quyết định ngay."}
+) %}
+
+<header class="top-utility-bar">
+  <div class="top-utility-bar__intro">
+    <button type="button" class="drawer-toggle" data-drawer-toggle aria-expanded="false" aria-controls="console-main">
+      Điều hướng
+    </button>
+    <div>
+      <p class="top-utility-bar__track">IDS / operator workspace</p>
+      <p class="top-utility-bar__eyebrow">{{ default_page.eyebrow }}</p>
+      <h2>{{ default_page.title }}</h2>
+      <p>{{ default_page.summary }}</p>
+    </div>
+  </div>
+
+  <div class="top-utility-bar__meta">
+    <div class="utility-pill">
+      <span class="utility-pill__label">Phiên</span>
+      <strong>{{ admin.username }}</strong>
+    </div>
+    <div class="utility-pill utility-pill--subtle">
+      <span class="utility-pill__label">Cập nhật</span>
+      <span data-client-stamp>{{ generated_at }}</span>
+    </div>
+  </div>
+</header>

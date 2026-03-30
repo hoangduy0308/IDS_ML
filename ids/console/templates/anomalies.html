@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Anomalies | IDS Operator Console{% endblock %}
+{% block content %}
+<section class="panel">
+  <h2>Anomaly Lane</h2>
+  <p>Schema and pipeline anomalies are visible independently from model alerts.</p>
+  {% if anomalies %}
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Type</th>
+        <th>Reason</th>
+        <th>Summary</th>
+        <th>Event Time</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for anomaly in anomalies %}
+      <tr>
+        <td>{{ anomaly.id }}</td>
+        <td>{{ anomaly.anomaly_type }}</td>
+        <td>{{ anomaly.reason or "-" }}</td>
+        <td>{{ anomaly.redacted_summary or "-" }}</td>
+        <td>{{ anomaly.event_ts }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>No anomalies available.</p>
+  {% endif %}
+</section>
+{% endblock %}
