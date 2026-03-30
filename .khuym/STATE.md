@@ -1,7 +1,7 @@
-STATUS: swarming-complete
+STATUS: reviewing-blocked-p1
 FEATURE: repo-structure-rationalization
-SKILL: swarming
-PHASE: handoff-to-review
+SKILL: reviewing
+PHASE: blocked-on-p1-review
 EPIC_ID: ids_ml_new-br4g
 TOPIC: epic-ids_ml_new-br4g
 COORDINATOR: QuietRiver
@@ -35,7 +35,7 @@ SWARM INTENT:
 - File coordination via Agent Mail reservations
 - Blockers, completions, and course corrections flow through epic thread ids_ml_new-br4g
 
-NEXT: hand off to reviewing; all execution beads are now closed
+NEXT: resolve blocking review bead `ids_ml_new-br4g.25` before artifact verification, UAT, epic close, or compounding
 
 Notes:
 - User approved execution after validation summary.
@@ -59,4 +59,7 @@ Notes:
 - `ids_ml_new-br4g.8` is now closed from the worker report and live graph; the runtime/core tests now mirror the new domain layout.
 - `ids_ml_new-br4g.15` is now closed from the worker report and live graph; the console/ops tests now mirror the new domain layout.
 - `ids_ml_new-br4g.17` is now closed from the worker report and live graph; canonical docs now live under `docs/current` with superseded material archived under `docs/archive`.
-- The final cleanup bead `.10` is complete and the swarm can move to reviewing.
+- The final cleanup bead `.10` is complete and the swarm moved into reviewing.
+- Review created 8 follow-up beads: P1 `ids_ml_new-br4g.24`, `ids_ml_new-br4g.25`; P2 `ids_ml_new-tv8z`, `ids_ml_new-9ku3`, `ids_ml_new-0hbt`; P3 `ids_ml_new-bs63`, `ids_ml_new-elz0`, `ids_ml_new-5fty`.
+- Review is hard-gated because P1 findings are present. Artifact verification, UAT, epic close, and compounding are blocked until the P1 beads are acknowledged and resolved.
+- `ids_ml_new-br4g.24` has been completed by GrayCliff; the remaining hard gate is `ids_ml_new-br4g.25`.

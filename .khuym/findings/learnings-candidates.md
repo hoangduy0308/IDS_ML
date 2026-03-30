@@ -1,37 +1,26 @@
-## Candidate: collapse-live-extractor-dependency-configuration-into-one-canonical-contract
+## Candidate: keep-canonical-contracts-separate-from-lifecycle-and-compatibility-layers
 Category: pattern
-Tags: systemd, preflight, deployment, configuration, legacy-contract
-Summary: Live extractor wiring should expose one canonical dependency/configuration contract rather than a split surface with both new multi-argv prefix handling and deprecated runtime knobs. The service unit, preflight, and stack entrypoints should agree on one representation so deployment behavior stays reasoned and testable.
-Evidence: review findings about multi-token extractor prefixes in `deploy/systemd/ids-live-sensor.service` and split-source runtime knobs in `scripts/ids_live_sensor_preflight.py`, `scripts/ids_same_host_stack.py`, and `scripts/ids_same_host_stack_manage.py`.
-Related patterns: `history/learnings/20260328-live-sensor-runtime-contracts.md`, `history/learnings/20260329-same-host-stack-runtime-hardening.md`
-Recommended title: YYYYMMDD-collapse-live-extractor-dependency-configuration-into-one-canonical-contract.md
+Tags: architecture, model-bundle, activation, ops, compatibility, canonical-imports
+Applies to review beads: `ids_ml_new-tv8z`
+Summary: Canonical package code should depend on canonical contracts only, while activation, promotion, rollback, status management, and compatibility wrappers stay in the operational or wrapper layer. When contract modules absorb lifecycle behavior or canonical runtime code imports through `scripts.*`, the repo recreates the same drift seam the restructure was meant to remove.
+Evidence: review bead `ids_ml_new-tv8z` consolidates four overlapping findings around `ids/core/model_bundle.py`, `ids/runtime/inference.py`, and `scripts/ids_model_bundle.py`: split lifecycle operations out of `ids.core`, keep runtime imports off the `scripts` layer, and restore the D8/D9 boundary.
+Related patterns: `history/learnings/20260329-model-bundle-promotion-hardening.md`, `history/learnings/20260329-operator-console-production-hardening.md`, `history/learnings/20260330-extractor-contract-hardening.md`
+Recommended title: YYYYMMDD-keep-canonical-contracts-separate-from-lifecycle-and-compatibility-layers.md
 
-## Candidate: separate-canonical-extractor-semantics-from-adapter-serialization
-Category: pattern
-Tags: extractor, adapter, serializer, contract-boundary, maintainability
-Summary: The replacement extractor should own canonical flow semantics only, while profile mapping and CSV serialization stay in a separate adapter/serializer layer. Keeping semantic extraction, compatibility mapping, and row emission in one module makes the boundary brittle and forces adapter/profile churn to change extractor internals.
-Evidence: review finding about the replacement extractor being coupled to adapter serialization in `scripts/ids_offline_window_extractor.py`, plus the bridge-side single-row/quarantine coverage gap in `scripts/ids_live_flow_bridge.py`.
-Related patterns: `history/learnings/20260328-adapter-rollback-contract.md`, `history/learnings/20260329-model-bundle-promotion-hardening.md`
-Recommended title: YYYYMMDD-separate-canonical-extractor-semantics-from-adapter-serialization.md
-
-## Candidate: pin-extractor-semantic-and-parser-edge-cases-with-negative-fixtures
+## Candidate: treat-compatibility-wrappers-and-entrypoints-as-executable-contracts
 Category: failure
-Tags: test-coverage, pcap, parser, flow-classification, regression
-Summary: The new extractor and bridge need negative-path coverage for malformed pcaps, unsupported link types, non-IP filtering, VLAN/UDP branches, reverse-first aggregation, sub-second duration math, and multi-row bridge handling. Happy-path golden output is not enough to protect the contract surface from silent regressions.
-Evidence: review findings about missing parser/flow-classification coverage in `scripts/ids_offline_window_extractor.py` / `tests/test_ids_offline_window_extractor.py`, bridge multi-row coverage gaps in `scripts/ids_live_flow_bridge.py` / `tests/test_ids_live_flow_bridge.py`, and sub-second rate undercounting in `scripts/ids_offline_window_extractor.py`.
-Related patterns: `history/learnings/20260328-live-sensor-runtime-contracts.md`, `history/learnings/20260328-adapter-rollback-contract.md`
-Recommended title: YYYYMMDD-pin-extractor-semantic-and-parser-edge-cases-with-negative-fixtures.md
+Tags: wrappers, smoke-tests, entrypoints, stack, runtime, ml-pipeline, compatibility
+Applies to review beads: `ids_ml_new-br4g.24`, `ids_ml_new-br4g.25`, `ids_ml_new-0hbt`, `ids_ml_new-bs63`
+Summary: Phase-1 compatibility wrappers are not documentation-only seams; they are supported execution contracts and need explicit smoke coverage plus intentional wrapper surfaces. If the suite tests only canonical modules and leaves `scripts.*` wrappers implicit or wildcard-exported, deployment and automation can drift away from the code paths CI actually proves.
+Evidence: review beads `ids_ml_new-br4g.24` and `ids_ml_new-br4g.25` require smoke coverage for runtime and ops wrappers, `ids_ml_new-0hbt` extends the same gap into migrated `ml_pipeline` entrypoints, and `ids_ml_new-bs63` shows that wildcard re-exports keep the compatibility promise implicit instead of explicit.
+Related patterns: `history/learnings/20260328-operator-console-runtime-wiring.md`, `history/learnings/20260329-same-host-stack-runtime-hardening.md`, `history/learnings/20260330-extractor-contract-hardening.md`
+Recommended title: YYYYMMDD-treat-compatibility-wrappers-and-entrypoints-as-executable-contracts.md
 
-## Candidate: typed-serializer-seam
-Category: pattern
-Tags: serializer, typing, seam, extractor, contract
-Summary: When splitting extractor and serializer responsibilities, keep the seam strongly typed so the contract does not drift into `Any`-based plumbing.
-Evidence: serializer seam follow-up review on `scripts/ids_offline_window_serializer.py` and `scripts/ids_offline_window_extractor.py`.
-Recommended title: YYYYMMDD-typed-serializer-seam.md
-
-## Candidate: tokenization-roundtrip-coverage
+## Candidate: harden-post-migration-test-layouts-against-hidden-coverage-drift
 Category: failure
-Tags: cli, systemd, shell, tokenization, roundtrip, tests
-Summary: Multi-token command-prefix handling needs explicit round-trip coverage across argparse, systemd, and shell tokenization to prevent compatibility regressions.
-Evidence: review follow-up on `scripts/ids_live_sensor_preflight.py`, `deploy/systemd/ids-live-sensor.service`, and `tests/test_ids_live_sensor.py`.
-Recommended title: YYYYMMDD-tokenization-roundtrip-coverage.md
+Tags: pytest, test-layout, bootstrap, duplicate-tests, migration, coverage
+Applies to review beads: `ids_ml_new-9ku3`, `ids_ml_new-5fty`
+Summary: After a mirrored test-tree migration, shared bootstrap and test identity need to be treated as first-class contracts. Duplicate test names and per-file `sys.path` surgery can make the suite look comprehensive while silently dropping cases or masking import-layout breakage.
+Evidence: review bead `ids_ml_new-9ku3` captures the shadowed duplicate definitions in `tests/runtime/test_ids_live_sensor_health.py`, while `ids_ml_new-5fty` captures the remaining per-file bootstrap hacks despite the new shared `tests/conftest.py`.
+Related patterns: no direct prior match in `history/learnings/`; this is a new candidate surfaced by the current review rather than a confirmed repeat pattern
+Recommended title: YYYYMMDD-harden-post-migration-test-layouts-against-hidden-coverage-drift.md
