@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 from pathlib import Path
 import sys
 import json
@@ -230,6 +231,25 @@ def test_parse_args_requires_extractor_command_prefix(tmp_path: Path) -> None:
                 str(log_dir / "summary.jsonl"),
             ]
         )
+
+
+def test_script_wrapper_help_runs_through_module_entrypoint() -> None:
+    help_run = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "scripts.ids_live_sensor_preflight",
+            "--help",
+        ],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert help_run.returncode == 0, help_run.stderr
+    assert "staged-live IDS sensor runtime contract" in help_run.stdout
+    assert "Validate the staged-live IDS sensor runtime contract" in help_run.stdout
 
 
 def test_validate_preflight_rejects_missing_interface(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

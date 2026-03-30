@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 import json
+import subprocess
 from pathlib import Path
 import sys
 from types import SimpleNamespace
@@ -1378,6 +1379,59 @@ def test_manage_main_restore_or_post_restore_prints_json_payload(
 
     assert exit_code == 0
     assert json.loads(capsys.readouterr().out)["command"] == "post-restore-check"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "preflight",
+        "status",
+        "smoke",
+        "recover",
+        "restore-inventory",
+        "post-restore-check",
+        "bootstrap",
+    ],
+)
+def test_script_wrapper_manage_help_runs_through_module_entrypoint(command: str) -> None:
+    help_run = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "scripts.ids_same_host_stack_manage",
+            command,
+            "--help",
+        ],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert help_run.returncode == 0, help_run.stderr
+    assert command in help_run.stdout
+    assert "usage:" in help_run.stdout
+    assert "options:" in help_run.stdout
+
+
+def test_script_wrapper_same_host_stack_imports_reexported_surface() -> None:
+    import_run = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from scripts import ids_same_host_stack as stack; "
+            "print(stack.SameHostStackConfig.__name__); "
+            "print(hasattr(stack, 'validate_stack_preflight'))",
+        ],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert import_run.returncode == 0, import_run.stderr
+    assert "SameHostStackConfig" in import_run.stdout
+    assert "True" in import_run.stdout
 
 
 def test_stack_runbook_runbook_or_docs_matches_cli_surface() -> None:
