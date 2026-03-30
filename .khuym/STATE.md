@@ -1,7 +1,7 @@
-STATUS: swarming-in-progress
+STATUS: swarming-complete
 FEATURE: repo-structure-rationalization
 SKILL: swarming
-PHASE: tending
+PHASE: handoff-to-review
 EPIC_ID: ids_ml_new-br4g
 TOPIC: epic-ids_ml_new-br4g
 COORDINATOR: QuietRiver
@@ -20,22 +20,22 @@ ARTIFACTS:
 
 GRAPH:
 - Epic: ids_ml_new-br4g
-- Open execution tasks: 4
-- Current active/ready set: ids_ml_new-br4g.15 (ready), ids_ml_new-br4g.17 (ready)
+- Open execution tasks: 0
+- Current active/ready set: none
 - Live graph: acyclic, validation blockers cleared
 
 ACTIVE WORKERS:
-- GrayCliff - `ids_ml_new-br4g.8` completed and closed; runtime/core test relayout is done
-- CopperCave - `ids_ml_new-br4g.13` completed and closed; same-host stack orchestration is done
+- GrayCliff - `ids_ml_new-br4g.10` completed and closed; swarm is ready for review handoff
+- CopperCave - `ids_ml_new-br4g.15` completed and closed; console/ops test relayout is done
 - LavenderReef - withdrawn; startup blocked because Agent Mail tools were unavailable in that worker session
-- IndigoBrook - `ids_ml_new-br4g.16` completed and is parked on standby until the next unlock
+- IndigoBrook - `ids_ml_new-br4g.17` completed and closed; docs current/archive repoint is done
 
 SWARM INTENT:
 - Orchestrator only; workers self-route via bv --robot-priority
 - File coordination via Agent Mail reservations
 - Blockers, completions, and course corrections flow through epic thread ids_ml_new-br4g
 
-NEXT: tend the newly opened frontier at `.15` and `.17`; hold `.10` until the remaining test/doc dependencies clear
+NEXT: hand off to reviewing; all execution beads are now closed
 
 Notes:
 - User approved execution after validation summary.
@@ -57,4 +57,6 @@ Notes:
 - `ids_ml_new-br4g.11` is also closed from the worker report and live graph; the runtime daemon, capture, health, and sink slice now lives under `ids.runtime`.
 - `ids_ml_new-br4g.13` is now closed from the worker report and live graph; same-host stack orchestration now lives under `ids.ops`.
 - `ids_ml_new-br4g.8` is now closed from the worker report and live graph; the runtime/core tests now mirror the new domain layout.
-- The current wave is now `.15`, with `.10` still blocked until the remaining test/doc beads land and the docs spine work now complete under `docs/current` / `docs/archive`.
+- `ids_ml_new-br4g.15` is now closed from the worker report and live graph; the console/ops tests now mirror the new domain layout.
+- `ids_ml_new-br4g.17` is now closed from the worker report and live graph; canonical docs now live under `docs/current` with superseded material archived under `docs/archive`.
+- The final cleanup bead `.10` is complete and the swarm can move to reviewing.

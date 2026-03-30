@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from ids.runtime.live_sensor_sinks import DEFAULT_SUMMARY_OUTPUT_PATH
-from scripts.ids_model_bundle import (
+from ids.core.model_bundle import (
     ActiveBundleResolutionError,
     ModelBundleContractError,
     build_bundle_status_payload,

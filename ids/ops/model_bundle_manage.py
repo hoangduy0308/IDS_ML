@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Any, Sequence
 
-from scripts.ids_model_bundle import (
+from ids.core.model_bundle import (
     ActiveBundleResolutionError,
     ModelBundleContractError,
     build_bundle_status_payload,

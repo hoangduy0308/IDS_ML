@@ -10,30 +10,30 @@ import sys
 from typing import Any, Callable, Sequence
 from urllib.request import urlopen
 
-from scripts.ids_live_sensor_preflight import (
-    LiveSensorPreflightConfig,
-    validate_preflight as validate_live_sensor_preflight,
-)
-from scripts.ids_live_sensor_health import (
-    LiveSensorHealthConfig,
-    build_live_sensor_health_payload,
-)
-from scripts.ids_model_bundle import build_bundle_status_payload
-from scripts.ids_operator_console.config import (
+from ids.core.model_bundle import build_bundle_status_payload
+from ids.console.config import (
     OperatorConsoleConfig,
     PLACEHOLDER_SECRET_VALUES,
     load_operator_console_config,
 )
-from scripts.ids_operator_console.health import (
+from ids.console.health import (
     build_notification_component,
     build_readiness_payload,
 )
-from scripts.ids_operator_console.ops import (
+from ids.console.ops import (
     notification_status,
     redrive_notification_failures,
     run_smoke_checks,
 )
-from scripts.ids_operator_console_preflight import (
+from ids.runtime.live_sensor_health import (
+    LiveSensorHealthConfig,
+    build_live_sensor_health_payload,
+)
+from ids.ops.live_sensor_preflight import (
+    LiveSensorPreflightConfig,
+    validate_preflight as validate_live_sensor_preflight,
+)
+from ids.ops.operator_console_preflight import (
     OperatorConsolePreflightConfig,
     validate_preflight as validate_operator_console_preflight,
 )
