@@ -35,7 +35,8 @@ Validated At: 2026-03-30T15:49:00+07:00
 - CoralCanyon - completed `ids_ml_new-vii9.5`, handed off at .1 startup, now stood down
 - PearlSnow - completed `ids_ml_new-vii9.1`, now stood down
 - PinkSnow - completed `ids_ml_new-vii9.3`, now stood down
+- ChartreuseGrove - completed `ids_ml_new-vii9.6`, now stood down
 
 ## Next
 
-Claim and complete `ids_ml_new-vii9.6`, then advance the epic through `.7` and `.2` before handing off to khuym:reviewing.
+Claim and complete `ids_ml_new-vii9.2`, then hand off to khuym:reviewing.
