@@ -14,7 +14,7 @@ import pandas as pd
 from catboost import CatBoostClassifier
 from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier
 
-from scripts.posttrain_threshold_analysis import (
+from ml_pipeline.training.posttrain_threshold_analysis import (
     build_threshold_sweep,
     evaluate_at_threshold,
     select_threshold_under_fpr_cap,
