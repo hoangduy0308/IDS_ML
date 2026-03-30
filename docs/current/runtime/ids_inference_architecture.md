@@ -16,7 +16,7 @@ Schema feature:
 
 Quyết định chốt:
 
-- [final_model_decision.md](F:/Work/IDS_ML_New/docs/final_model_decision.md)
+- [final_model_decision.md](F:/Work/IDS_ML_New/docs/current/ml/final_model_decision.md)
 
 ## Luồng xử lý
 
@@ -84,7 +84,11 @@ Cần phân biệt rõ:
 
 ## File triển khai
 
-Module inference:
+Canonical inference module:
+
+- [ids/runtime/inference.py](F:/Work/IDS_ML_New/ids/runtime/inference.py)
+
+Compatibility entrypoint:
 
 - [ids_inference.py](F:/Work/IDS_ML_New/scripts/ids_inference.py)
 
@@ -97,7 +101,11 @@ Script này hỗ trợ:
 
 Lớp realtime mới được mô tả riêng tại:
 
-- [ids_realtime_pipeline_architecture.md](F:/Work/IDS_ML_New/docs/ids_realtime_pipeline_architecture.md)
+- [ids_realtime_pipeline_architecture.md](F:/Work/IDS_ML_New/docs/current/runtime/ids_realtime_pipeline_architecture.md)
+- [ids/runtime/realtime_pipeline.py](F:/Work/IDS_ML_New/ids/runtime/realtime_pipeline.py)
+
+Compatibility entrypoint:
+
 - [ids_realtime_pipeline.py](F:/Work/IDS_ML_New/scripts/ids_realtime_pipeline.py)
 
 CLI cơ bản:

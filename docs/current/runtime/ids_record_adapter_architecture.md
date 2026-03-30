@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The structured record adapter sits upstream of `ids_realtime_pipeline.py`. Its job is narrow:
+The structured record adapter sits upstream of `ids.runtime.realtime_pipeline`. Its job is narrow:
 
 - accept CICFlowMeter-like structured records
 - normalize profile-specific field names and envelope metadata
@@ -58,7 +58,7 @@ Successful adaptation produces a flat JSON object with:
   - `source_timestamp`
 - controlled extras such as `flow_family`, `transport_family`, and `capture_mode`
 
-These records are already consumable by `ids_realtime_pipeline.py`.
+These records are already consumable by `ids.runtime.realtime_pipeline`.
 
 The fixed adapter metadata keys are adapter-owned output fields. Upstream payloads cannot set `adapter_profile`, `source_flow_id`, `source_collector_id`, or `source_timestamp` directly; those values must come from the selected profile mapping and adapter state.
 
@@ -88,8 +88,8 @@ The handoff is intentionally flat:
 
 ```mermaid
 flowchart LR
-    A["CICFlowMeter-like upstream record"] --> B["ids_record_adapter.py"]
-    B -->|adapted JSONL| C["ids_realtime_pipeline.py"]
+    A["CICFlowMeter-like upstream record"] --> B["ids.runtime.adapter.record_adapter"]
+    B -->|adapted JSONL| C["ids.runtime.realtime_pipeline"]
     B -->|adapter quarantine JSONL| D["adapter quarantine sink"]
     C --> E["FlowFeatureContract"]
     E --> F["RealtimePipelineRunner"]
@@ -137,7 +137,8 @@ Those fixtures are synthetic and intentionally small. They exist to exercise pro
 
 ## Code references
 
-- [scripts/ids_record_adapter.py](F:/Work/IDS_ML_New/scripts/ids_record_adapter.py)
-- [tests/test_ids_record_adapter.py](F:/Work/IDS_ML_New/tests/test_ids_record_adapter.py)
-- [scripts/ids_realtime_pipeline.py](F:/Work/IDS_ML_New/scripts/ids_realtime_pipeline.py)
-- [docs/ids_realtime_pipeline_architecture.md](F:/Work/IDS_ML_New/docs/ids_realtime_pipeline_architecture.md)
+- [ids/runtime/adapter/record_adapter.py](F:/Work/IDS_ML_New/ids/runtime/adapter/record_adapter.py)
+- [tests/runtime/test_ids_record_adapter.py](F:/Work/IDS_ML_New/tests/runtime/test_ids_record_adapter.py)
+- [ids/runtime/realtime_pipeline.py](F:/Work/IDS_ML_New/ids/runtime/realtime_pipeline.py)
+- compatibility wrappers: [scripts/ids_record_adapter.py](F:/Work/IDS_ML_New/scripts/ids_record_adapter.py), [scripts/ids_realtime_pipeline.py](F:/Work/IDS_ML_New/scripts/ids_realtime_pipeline.py)
+- [ids_realtime_pipeline_architecture.md](F:/Work/IDS_ML_New/docs/current/runtime/ids_realtime_pipeline_architecture.md)

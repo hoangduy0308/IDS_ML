@@ -30,7 +30,7 @@ The architecture follows the locked decisions from `history/ids-live-host-based-
 
 ## Runtime shape
 
-The daemon in [scripts/ids_live_sensor.py](F:/Work/IDS_ML_New/scripts/ids_live_sensor.py) composes four layers:
+The canonical daemon in [ids/runtime/live_sensor.py](F:/Work/IDS_ML_New/ids/runtime/live_sensor.py) composes four layers, and [scripts/ids_live_sensor.py](F:/Work/IDS_ML_New/scripts/ids_live_sensor.py) remains the phase-1 compatibility entrypoint:
 
 1. `RollingDumpcapCaptureManager` creates closed capture windows.
 2. `LiveFlowBridge` runs the extractor command prefix on each closed window and adapts rows.
@@ -108,7 +108,7 @@ Required runtime pieces:
 - the final model bundle
 - writable spool and log paths
 
-The sample service unit in [deploy/systemd/ids-live-sensor.service](F:/Work/IDS_ML_New/deploy/systemd/ids-live-sensor.service) calls [ids_live_sensor_preflight.py](F:/Work/IDS_ML_New/scripts/ids_live_sensor_preflight.py) so deployment fails early if one of those dependencies is missing. The preflight boundary keeps the extractor dependency explicit and separate from the adapter/runtime contract.
+The sample service unit in [deploy/systemd/ids-live-sensor.service](F:/Work/IDS_ML_New/deploy/systemd/ids-live-sensor.service) calls [ids_live_sensor_preflight.py](F:/Work/IDS_ML_New/scripts/ids_live_sensor_preflight.py) so deployment fails early if one of those dependencies is missing. The canonical preflight implementation lives in `ids.ops.live_sensor_preflight`; the wrapper keeps the phase-1 deploy contract intact.
 
 ## Filesystem layout
 
@@ -144,10 +144,11 @@ These remain out of scope for this feature:
 
 ## Related code
 
-- [scripts/ids_live_sensor.py](F:/Work/IDS_ML_New/scripts/ids_live_sensor.py)
-- [scripts/ids_live_capture.py](F:/Work/IDS_ML_New/scripts/ids_live_capture.py)
-- [scripts/ids_live_flow_bridge.py](F:/Work/IDS_ML_New/scripts/ids_live_flow_bridge.py)
-- [scripts/ids_live_sensor_sinks.py](F:/Work/IDS_ML_New/scripts/ids_live_sensor_sinks.py)
-- [scripts/ids_realtime_pipeline.py](F:/Work/IDS_ML_New/scripts/ids_realtime_pipeline.py)
-- [docs/ids_realtime_pipeline_architecture.md](F:/Work/IDS_ML_New/docs/ids_realtime_pipeline_architecture.md)
-- [docs/ids_record_adapter_architecture.md](F:/Work/IDS_ML_New/docs/ids_record_adapter_architecture.md)
+- [ids/runtime/live_sensor.py](F:/Work/IDS_ML_New/ids/runtime/live_sensor.py)
+- [ids/runtime/live_capture.py](F:/Work/IDS_ML_New/ids/runtime/live_capture.py)
+- [ids/runtime/live_flow_bridge.py](F:/Work/IDS_ML_New/ids/runtime/live_flow_bridge.py)
+- [ids/runtime/live_sensor_sinks.py](F:/Work/IDS_ML_New/ids/runtime/live_sensor_sinks.py)
+- [ids/runtime/realtime_pipeline.py](F:/Work/IDS_ML_New/ids/runtime/realtime_pipeline.py)
+- compatibility wrappers: [scripts/ids_live_sensor.py](F:/Work/IDS_ML_New/scripts/ids_live_sensor.py), [scripts/ids_live_capture.py](F:/Work/IDS_ML_New/scripts/ids_live_capture.py), [scripts/ids_live_flow_bridge.py](F:/Work/IDS_ML_New/scripts/ids_live_flow_bridge.py), [scripts/ids_live_sensor_sinks.py](F:/Work/IDS_ML_New/scripts/ids_live_sensor_sinks.py), [scripts/ids_realtime_pipeline.py](F:/Work/IDS_ML_New/scripts/ids_realtime_pipeline.py)
+- [ids_realtime_pipeline_architecture.md](F:/Work/IDS_ML_New/docs/current/runtime/ids_realtime_pipeline_architecture.md)
+- [ids_record_adapter_architecture.md](F:/Work/IDS_ML_New/docs/current/runtime/ids_record_adapter_architecture.md)

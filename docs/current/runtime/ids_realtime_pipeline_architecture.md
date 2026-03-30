@@ -32,7 +32,11 @@ flowchart LR
 
 ## Runtime entry modes
 
-Script triển khai:
+Canonical module:
+
+- [ids/runtime/realtime_pipeline.py](F:/Work/IDS_ML_New/ids/runtime/realtime_pipeline.py)
+
+Compatibility entrypoint:
 
 - [ids_realtime_pipeline.py](F:/Work/IDS_ML_New/scripts/ids_realtime_pipeline.py)
 
@@ -72,7 +76,7 @@ Nguồn schema chuẩn:
 
 Alias chỉ là `one-to-one field-name normalization` cho một tập tên đã khai báo sẵn trong:
 
-- [ids_feature_contract.py](F:/Work/IDS_ML_New/scripts/ids_feature_contract.py)
+- [ids/core/feature_contract.py](F:/Work/IDS_ML_New/ids/core/feature_contract.py)
 
 Các ràng buộc chính:
 
@@ -142,13 +146,13 @@ Các anomaly này phải được xử lý như tín hiệu vận hành hoặc f
 
 Pipeline mới dùng lại:
 
-- [ids_inference.py](F:/Work/IDS_ML_New/scripts/ids_inference.py)
-- [final_model_bundle.md](F:/Work/IDS_ML_New/docs/final_model_bundle.md)
+- [ids/runtime/inference.py](F:/Work/IDS_ML_New/ids/runtime/inference.py)
+- [final_model_bundle.md](F:/Work/IDS_ML_New/docs/current/runtime/final_model_bundle.md)
 
 Điểm khác biệt:
 
-- `ids_inference.py` tập trung vào bundle loading, schema-aligned scoring, và output prediction cho batch đã hợp lệ
-- `ids_realtime_pipeline.py` thêm runtime boundary trước model: ingest JSONL, validate/quarantine per record, micro-batch flush, rồi mới gọi inferencer
+- `ids.runtime.inference` tập trung vào bundle loading, schema-aligned scoring, và output prediction cho batch đã hợp lệ
+- `ids.runtime.realtime_pipeline` thêm runtime boundary trước model: ingest JSONL, validate/quarantine per record, micro-batch flush, rồi mới gọi inferencer
 
 Như vậy, batch inference cũ vẫn là lõi scoring, còn realtime pipeline là lớp orchestration quanh lõi đó.
 
@@ -171,10 +175,10 @@ Thứ tự giải thích cho report:
 
 ## Tài liệu liên quan
 
-- [ids_inference_architecture.md](F:/Work/IDS_ML_New/docs/ids_inference_architecture.md)
-- [final_model_bundle.md](F:/Work/IDS_ML_New/docs/final_model_bundle.md)
+- [ids_inference_architecture.md](F:/Work/IDS_ML_New/docs/current/runtime/ids_inference_architecture.md)
+- [final_model_bundle.md](F:/Work/IDS_ML_New/docs/current/runtime/final_model_bundle.md)
 - [CONTEXT.md](F:/Work/IDS_ML_New/history/ids-pre-model-realtime-pipeline/CONTEXT.md)
 
 ## Related adapter layer
 
-- [ids_record_adapter_architecture.md](F:/Work/IDS_ML_New/docs/ids_record_adapter_architecture.md) documents the upstream adapter that normalizes CICFlowMeter-like records before this runtime consumes them.
+- [ids_record_adapter_architecture.md](F:/Work/IDS_ML_New/docs/current/runtime/ids_record_adapter_architecture.md) documents the upstream adapter that normalizes CICFlowMeter-like records before this runtime consumes them.

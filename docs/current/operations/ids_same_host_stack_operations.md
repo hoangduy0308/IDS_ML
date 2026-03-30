@@ -16,10 +16,10 @@ It coordinates the existing component owners. It does not replace them.
 
 Component ownership remains:
 
-- model activation: `scripts/ids_model_bundle_manage.py`
-- live sensor runtime: `deploy/systemd/ids-live-sensor.service` plus `scripts/ids_live_sensor_preflight.py`
-- operator console runtime and restore: `scripts/ids_operator_console_manage.py`
-- notification worker runtime: `deploy/systemd/ids-operator-console-notify.service` plus `scripts/ids_operator_console_manage.py`
+- model activation: `ids.ops.model_bundle_lifecycle` with `scripts/ids_model_bundle_manage.py` as the compatibility entrypoint
+- live sensor runtime: `ids.runtime.live_sensor` with `deploy/systemd/ids-live-sensor.service` plus `scripts/ids_live_sensor_preflight.py` as the compatibility entrypoint
+- operator console runtime and restore: `ids.console.web`, `ids.console.ops`, and `ids.ops.operator_console_manage` with `scripts/ids_operator_console_manage.py` as the compatibility entrypoint
+- notification worker runtime: `ids.console.notification_runtime` with `deploy/systemd/ids-operator-console-notify.service` plus `scripts/ids_operator_console_manage.py`
 
 ## Required Host Paths
 
@@ -39,7 +39,7 @@ Deploy references already shipped in-tree:
 
 ## Canonical Stack Commands
 
-The stack surface is `scripts/ids_same_host_stack_manage.py`.
+The canonical stack implementation lives in `ids.ops.same_host_stack_manage`; `scripts/ids_same_host_stack_manage.py` remains the compatibility entrypoint.
 
 Supported commands:
 

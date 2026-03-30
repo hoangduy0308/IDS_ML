@@ -7,9 +7,9 @@ This hardening pass does not turn it into an IPS/control-plane component and doe
 
 ## Runtime Contract
 
-- Service entrypoint: `scripts/ids_operator_console_server.py`
-- Notification worker entrypoint: `scripts/ids_operator_console_manage.py notify-worker --poll-interval-seconds <seconds>` for supervised mode, or `notify-run-once` for a single maintenance cycle
-- Canonical app factory: `scripts/ids_operator_console/web.py:create_operator_console_web_app`
+- Canonical app factory: `ids.console.web:create_operator_console_web_app`
+- Service entrypoint: `scripts/ids_operator_console_server.py` as the phase-1 compatibility wrapper over `ids.console.web`
+- Notification worker entrypoint: `scripts/ids_operator_console_manage.py notify-worker --poll-interval-seconds <seconds>` for supervised mode, or `notify-run-once` for a single maintenance cycle; the canonical implementation lives in `ids.ops.operator_console_manage`
 - App topology: FastAPI + Jinja2 + SQLite, bound on loopback/internal network only
 - Edge topology: reverse proxy terminates TLS and forwards `Host`, `X-Forwarded-Proto`, and `X-Forwarded-For`
 - Canonical public origin: `IDS_OPERATOR_CONSOLE_PUBLIC_BASE_URL`
@@ -18,7 +18,7 @@ The runtime now fails closed when the operator database is missing, still on leg
 
 ## Config And Secrets
 
-Config is centralized in `scripts/ids_operator_console/config.py`.
+Config is centralized in `ids.console.config`.
 
 - Non-secret runtime values come from environment or env-file style configuration.
 - Sensitive values support secret-file references:
@@ -34,9 +34,9 @@ Config is centralized in `scripts/ids_operator_console/config.py`.
 
 Schema lifecycle is explicit:
 
-- inspection/migration logic: `scripts/ids_operator_console/migrations.py`
-- admin/operator CLI: `scripts/ids_operator_console_manage.py`
-- worker-aware preflight gate: `scripts/ids_operator_console_preflight.py`
+- inspection/migration logic: `ids.console.migrations`
+- admin/operator CLI: `ids.ops.operator_console_manage` with `scripts/ids_operator_console_manage.py` as the compatibility entrypoint
+- worker-aware preflight gate: `ids.ops.operator_console_preflight` with `scripts/ids_operator_console_preflight.py` as the compatibility entrypoint
 
 Expected operator flow:
 
@@ -63,7 +63,7 @@ Readiness distinguishes:
 
 ## Backup And Restore
 
-Operational backup/restore lives in `scripts/ids_operator_console/ops.py`.
+Operational backup/restore lives in `ids.console.ops`.
 
 - Backup uses SQLite backup primitives against the live WAL database.
 - Backup manifest records config and secret references, never secret material.
@@ -75,7 +75,7 @@ Operational backup/restore lives in `scripts/ids_operator_console/ops.py`.
 
 - systemd unit: `deploy/systemd/ids-operator-console.service`
 - notification worker unit: `deploy/systemd/ids-operator-console-notify.service`
-- preflight gate: `scripts/ids_operator_console_preflight.py`
+- preflight gate: `scripts/ids_operator_console_preflight.py` as the compatibility entrypoint for `ids.ops.operator_console_preflight`
 - reverse proxy example: `deploy/nginx/ids-operator-console.conf.example`
 - operations runbook: `docs/ids_operator_console_operations.md`
 
