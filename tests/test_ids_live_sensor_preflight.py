@@ -91,23 +91,40 @@ def make_config(tmp_path: Path, **overrides: object) -> LiveSensorPreflightConfi
     kwargs: dict[str, object] = {
         "interface": "eth0",
         "dumpcap_binary": make_executable(tmp_path / "bin" / "dumpcap"),
-        "java_binary": make_executable(tmp_path / "bin" / "java"),
-        "extractor_binary": make_executable(tmp_path / "bin" / "Cmd"),
-        "jnetpcap_path": tmp_path / "lib" / "jnetpcap.jar",
+        "extractor_command_prefix": (str(make_executable(tmp_path / "bin" / "extractor")),),
         "activation_path": activation_path,
         "spool_dir": spool_dir,
         "alerts_output_path": log_dir / "alerts.jsonl",
         "quarantine_output_path": log_dir / "quarantine.jsonl",
         "summary_output_path": log_dir / "summary.jsonl",
     }
-    Path(kwargs["jnetpcap_path"]).parent.mkdir(parents=True, exist_ok=True)
-    Path(kwargs["jnetpcap_path"]).write_text("jar", encoding="utf-8")
     kwargs.update(overrides)
     return LiveSensorPreflightConfig(**kwargs)
 
 
 def test_validate_preflight_accepts_existing_runtime_contract(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     config = make_config(tmp_path)
+    network_root = tmp_path / "sys" / "class" / "net" / config.interface
+    network_root.mkdir(parents=True)
+
+    real_exists = Path.exists
+
+    def fake_exists(path: Path) -> bool:
+        if path == Path("/sys/class/net") / config.interface:
+            return True
+        return real_exists(path)
+
+    monkeypatch.setattr(Path, "exists", fake_exists)
+    monkeypatch.setattr(preflight, "_is_executable_file", lambda path: True)
+
+    validate_preflight(config)
+
+
+def test_validate_preflight_does_not_require_legacy_java_or_jnetpcap_paths(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = make_config(tmp_path, java_binary=None, extractor_binary=None, jnetpcap_path=None)
     network_root = tmp_path / "sys" / "class" / "net" / config.interface
     network_root.mkdir(parents=True)
 
@@ -140,11 +157,14 @@ def test_validate_preflight_rejects_missing_interface(tmp_path: Path, monkeypatc
         validate_preflight(config)
 
 
-def test_validate_preflight_rejects_non_executable_helper(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    non_exec_binary = tmp_path / "bin" / "dumpcap-nonexec"
+def test_validate_preflight_rejects_non_executable_extractor_command_prefix(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    non_exec_binary = tmp_path / "bin" / "extractor-nonexec"
     non_exec_binary.parent.mkdir(parents=True, exist_ok=True)
     non_exec_binary.write_text("not executable\n", encoding="utf-8")
-    config = make_config(tmp_path, dumpcap_binary=non_exec_binary)
+    config = make_config(tmp_path, extractor_command_prefix=(str(non_exec_binary),))
     real_exists = Path.exists
 
     def fake_exists(path: Path) -> bool:
@@ -156,10 +176,10 @@ def test_validate_preflight_rejects_non_executable_helper(tmp_path: Path, monkey
     monkeypatch.setattr(
         preflight,
         "_is_executable_file",
-        lambda path: False if Path(path) == config.dumpcap_binary else True,
+        lambda path: False if Path(path) == non_exec_binary else True,
     )
 
-    with pytest.raises(PermissionError, match="dumpcap_binary is not executable"):
+    with pytest.raises(PermissionError, match="extractor_command_prefix\\[0\\] is not executable"):
         validate_preflight(config)
 
 

@@ -507,16 +507,15 @@ def test_service_unit_keeps_preflight_and_stdout_journal_contract() -> None:
     content = service_path.read_text(encoding="utf-8")
 
     assert "IDS_LIVE_SENSOR_DUMPCAP_BINARY=" in content
-    assert "IDS_LIVE_SENSOR_JAVA_BINARY=" in content
-    assert "IDS_LIVE_SENSOR_EXTRACTOR_BINARY=" in content
-    assert "IDS_LIVE_SENSOR_JNETPCAP_PATH=" in content
+    assert "IDS_LIVE_SENSOR_EXTRACTOR_COMMAND_PREFIX=" in content
     assert "IDS_LIVE_SENSOR_ACTIVE_BUNDLE_PATH=" in content
     assert "ids_live_sensor_preflight.py" in content
     assert '--dumpcap-binary ${IDS_LIVE_SENSOR_DUMPCAP_BINARY}' in content
+    assert '--extractor-command-prefix ${IDS_LIVE_SENSOR_EXTRACTOR_COMMAND_PREFIX}' in content
     assert '--activation-path ${IDS_LIVE_SENSOR_ACTIVE_BUNDLE_PATH}' in content
     assert '--interface "$IDS_LIVE_SENSOR_INTERFACE"' in content
     assert '--dumpcap-binary "$IDS_LIVE_SENSOR_DUMPCAP_BINARY"' in content
-    assert '--extractor-command-prefix "$IDS_LIVE_SENSOR_EXTRACTOR_BINARY"' in content
+    assert '--extractor-command-prefix "$IDS_LIVE_SENSOR_EXTRACTOR_COMMAND_PREFIX"' in content
     assert '--activation-path "$IDS_LIVE_SENSOR_ACTIVE_BUNDLE_PATH"' in content
     assert "StandardOutput=journal" in content
     assert "StandardError=journal" in content

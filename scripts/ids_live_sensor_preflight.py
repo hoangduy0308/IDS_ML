@@ -13,14 +13,41 @@ from scripts.ids_model_bundle import resolve_active_model_bundle
 class LiveSensorPreflightConfig:
     interface: str
     dumpcap_binary: Path
-    java_binary: Path
-    extractor_binary: Path
-    jnetpcap_path: Path
     activation_path: Path
     spool_dir: Path
     alerts_output_path: Path
     quarantine_output_path: Path
     summary_output_path: Path
+    extractor_command_prefix: tuple[str, ...] | None = None
+    java_binary: Path | None = None
+    extractor_binary: Path | None = None
+    jnetpcap_path: Path | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "interface", _require_non_blank(self.interface, name="interface"))
+        object.__setattr__(self, "dumpcap_binary", Path(self.dumpcap_binary))
+        object.__setattr__(self, "activation_path", Path(self.activation_path))
+        object.__setattr__(self, "spool_dir", Path(self.spool_dir))
+        object.__setattr__(self, "alerts_output_path", Path(self.alerts_output_path))
+        object.__setattr__(self, "quarantine_output_path", Path(self.quarantine_output_path))
+        object.__setattr__(self, "summary_output_path", Path(self.summary_output_path))
+        if self.java_binary is not None:
+            object.__setattr__(self, "java_binary", Path(self.java_binary))
+        if self.extractor_binary is not None:
+            object.__setattr__(self, "extractor_binary", Path(self.extractor_binary))
+        if self.jnetpcap_path is not None:
+            object.__setattr__(self, "jnetpcap_path", Path(self.jnetpcap_path))
+
+        normalized_prefix = tuple(
+            str(part).strip()
+            for part in (self.extractor_command_prefix or ())
+            if str(part).strip()
+        )
+        if not normalized_prefix and self.extractor_binary is not None:
+            normalized_prefix = (str(Path(self.extractor_binary)),)
+        if not normalized_prefix:
+            raise ValueError("extractor_command_prefix must not be blank")
+        object.__setattr__(self, "extractor_command_prefix", normalized_prefix)
 
 
 def _require_non_blank(value: str, *, name: str) -> str:
@@ -37,7 +64,7 @@ def _require_existing_file(path: Path, *, name: str, executable: bool = False) -
     if not resolved.is_file():
         raise FileNotFoundError(f"{name} not found: {resolved}")
     if executable and not _is_executable_file(resolved):
-            raise PermissionError(f"{name} is not executable: {resolved}")
+        raise PermissionError(f"{name} is not executable: {resolved}")
     if not executable and not os.access(resolved, os.R_OK):
         raise PermissionError(f"{name} is not readable: {resolved}")
     return resolved
@@ -87,12 +114,22 @@ def _require_interface(interface: str) -> str:
     return normalized
 
 
+def _require_extractor_command_prefix(prefix: Sequence[str]) -> tuple[str, ...]:
+    normalized = tuple(str(part).strip() for part in prefix if str(part).strip())
+    if not normalized:
+        raise ValueError("extractor_command_prefix must not be blank")
+    _require_existing_file(
+        Path(normalized[0]),
+        name="extractor_command_prefix[0]",
+        executable=True,
+    )
+    return normalized
+
+
 def validate_preflight(config: LiveSensorPreflightConfig) -> None:
     _require_interface(config.interface)
     _require_existing_file(config.dumpcap_binary, name="dumpcap_binary", executable=True)
-    _require_existing_file(config.java_binary, name="java_binary", executable=True)
-    _require_existing_file(config.extractor_binary, name="extractor_binary", executable=True)
-    _require_existing_path(config.jnetpcap_path, name="jnetpcap_path")
+    _require_extractor_command_prefix(config.extractor_command_prefix or ())
     activation_path = _require_existing_file(config.activation_path, name="activation_path")
     resolve_active_model_bundle(activation_path)
     _require_writable_directory(config.spool_dir, name="spool_dir")
@@ -107,9 +144,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--interface", required=True)
     parser.add_argument("--dumpcap-binary", type=Path, required=True)
-    parser.add_argument("--java-binary", type=Path, required=True)
-    parser.add_argument("--extractor-binary", type=Path, required=True)
-    parser.add_argument("--jnetpcap-path", type=Path, required=True)
+    parser.add_argument("--extractor-command-prefix", nargs="+", default=None)
+    parser.add_argument("--java-binary", type=Path, default=None)
+    parser.add_argument("--extractor-binary", type=Path, default=None)
+    parser.add_argument("--jnetpcap-path", type=Path, default=None)
     parser.add_argument("--activation-path", type=Path, required=True)
     parser.add_argument("--spool-dir", type=Path, required=True)
     parser.add_argument("--alerts-output-path", type=Path, required=True)
@@ -122,14 +160,19 @@ def build_config_from_args(args: argparse.Namespace) -> LiveSensorPreflightConfi
     return LiveSensorPreflightConfig(
         interface=args.interface,
         dumpcap_binary=Path(args.dumpcap_binary),
-        java_binary=Path(args.java_binary),
-        extractor_binary=Path(args.extractor_binary),
-        jnetpcap_path=Path(args.jnetpcap_path),
         activation_path=Path(args.activation_path),
         spool_dir=Path(args.spool_dir),
         alerts_output_path=Path(args.alerts_output_path),
         quarantine_output_path=Path(args.quarantine_output_path),
         summary_output_path=Path(args.summary_output_path),
+        extractor_command_prefix=(
+            tuple(args.extractor_command_prefix)
+            if args.extractor_command_prefix is not None
+            else None
+        ),
+        java_binary=Path(args.java_binary) if args.java_binary is not None else None,
+        extractor_binary=Path(args.extractor_binary) if args.extractor_binary is not None else None,
+        jnetpcap_path=Path(args.jnetpcap_path) if args.jnetpcap_path is not None else None,
     )
 
 
