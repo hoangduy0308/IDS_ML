@@ -12,8 +12,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-import scripts.ids_live_sensor_preflight as preflight  # noqa: E402
-from scripts.ids_live_sensor_preflight import (  # noqa: E402
+import ids.ops.live_sensor_preflight as preflight  # noqa: E402
+from ids.ops.live_sensor_preflight import (  # noqa: E402
     LiveSensorPreflightConfig,
     build_config_from_args,
     parse_args,

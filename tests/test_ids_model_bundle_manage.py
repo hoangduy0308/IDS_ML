@@ -11,7 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-import scripts.ids_model_bundle_manage as manage  # noqa: E402
+import ids.ops.model_bundle_manage as manage  # noqa: E402
 from scripts.ids_model_bundle import (  # noqa: E402
     build_feature_schema_metadata,
     build_inference_contract_metadata,

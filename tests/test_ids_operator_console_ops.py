@@ -12,14 +12,14 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-import scripts.ids_operator_console_manage as manage  # noqa: E402
-import scripts.ids_operator_console.notifications as notifications  # noqa: E402
-import scripts.ids_operator_console.ops as ops  # noqa: E402
-import scripts.ids_operator_console_preflight as preflight  # noqa: E402
-from scripts.ids_operator_console.config import load_operator_console_config  # noqa: E402
-from scripts.ids_operator_console.db import OperatorStore  # noqa: E402
-from scripts.ids_operator_console.ops import run_smoke_checks  # noqa: E402
-from scripts.ids_operator_console_preflight import (  # noqa: E402
+import ids.ops.operator_console_manage as manage  # noqa: E402
+import ids.console.notifications as notifications  # noqa: E402
+import ids.console.ops as ops  # noqa: E402
+import ids.ops.operator_console_preflight as preflight  # noqa: E402
+from ids.console.config import load_operator_console_config  # noqa: E402
+from ids.console.db import OperatorStore  # noqa: E402
+from ids.console.ops import run_smoke_checks  # noqa: E402
+from ids.ops.operator_console_preflight import (  # noqa: E402
     OperatorConsolePreflightConfig,
     validate_preflight,
 )
