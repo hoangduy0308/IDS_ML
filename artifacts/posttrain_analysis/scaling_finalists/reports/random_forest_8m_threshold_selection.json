@@ -1,0 +1,12 @@
+{
+  "model": "random_forest_8m",
+  "model_label": "Random Forest 8M",
+  "recommended_fpr_cap": 0.02,
+  "recommended_threshold": 0.6175,
+  "thresholds_by_cap": {
+    "0.005": 0.8375,
+    "0.010": 0.74,
+    "0.020": 0.6175,
+    "0.050": 0.4175
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "model": "catboost_full",
+  "model_label": "CatBoost Full-Data",
+  "recommended_fpr_cap": 0.02,
+  "recommended_threshold": 0.475,
+  "thresholds_by_cap": {
+    "0.005": 0.86,
+    "0.010": 0.69,
+    "0.020": 0.475,
+    "0.050": 0.1975
+  }
+}

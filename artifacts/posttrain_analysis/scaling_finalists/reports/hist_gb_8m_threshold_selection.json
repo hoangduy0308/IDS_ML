@@ -1,0 +1,12 @@
+{
+  "model": "hist_gb_8m",
+  "model_label": "HistGradientBoosting 8M",
+  "recommended_fpr_cap": 0.02,
+  "recommended_threshold": 0.335,
+  "thresholds_by_cap": {
+    "0.005": 0.7025,
+    "0.010": 0.5275,
+    "0.020": 0.335,
+    "0.050": 0.1475
+  }
+}

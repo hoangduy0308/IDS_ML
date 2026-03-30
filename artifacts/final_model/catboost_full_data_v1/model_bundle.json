@@ -1,0 +1,50 @@
+{
+  "manifest_version": 2,
+  "bundle_name": "catboost_full_data_v1",
+  "created_at": "2026-03-27T03:44:01.161160+07:00",
+  "model_key": "catboost_full_data",
+  "model_family": "CatBoostClassifier",
+  "model_artifact": "model.cbm",
+  "feature_columns_file": "feature_columns.json",
+  "threshold": 0.5,
+  "positive_label": "Attack",
+  "negative_label": "Benign",
+  "feature_count": 72,
+  "train_rows": 18679445,
+  "recommended_threshold_from_validation_fpr_cap_0_02": 0.475,
+  "decision": {
+    "selected_threshold": 0.5,
+    "selected_model": "CatBoost full-data",
+    "reason": "Chosen as the final IDS model because it balances detection quality, FPR, scalability, and training cost."
+  },
+  "metrics_file": "metrics.json",
+  "training_summary_file": "training_summary.json",
+  "compatibility": {
+    "feature_schema": {
+      "kind": "feature_columns_json.v1",
+      "path": "feature_columns.json",
+      "feature_count": 72,
+      "sha256": "c36074099703b19204bcc080aad5587155294fc843833db09d613a1576a36214"
+    },
+    "inference_contract": {
+      "version": "ids_binary_classifier.v1",
+      "prediction_type": "binary_classifier",
+      "score_field": "attack_score",
+      "alert_field": "is_alert",
+      "threshold_source": "bundle",
+      "threshold": 0.5,
+      "positive_label": "Attack",
+      "negative_label": "Benign",
+      "allows_external_model_path": false,
+      "allows_external_feature_columns_path": false,
+      "allows_external_threshold_override": false
+    }
+  },
+  "source_artifacts": {
+    "model_path": "F:\\Work\\IDS_ML_New\\artifacts\\kaggle\\outputs\\catboost_full_data_attempt\\catboost_full_data_attempt_results\\catboost_full_data_attempt.cbm",
+    "feature_columns_path": "F:\\Work\\IDS_ML_New\\artifacts\\cic_iot_diad_2024_binary\\manifests\\feature_columns.json",
+    "summary_path": "F:\\Work\\IDS_ML_New\\artifacts\\kaggle\\outputs\\catboost_full_data_attempt\\catboost_full_data_attempt_results\\reports\\summary.csv",
+    "training_summary_path": "F:\\Work\\IDS_ML_New\\artifacts\\kaggle\\outputs\\catboost_full_data_attempt\\catboost_full_data_attempt_results\\reports\\training_summary.json",
+    "threshold_selection_path": "F:\\Work\\IDS_ML_New\\artifacts\\posttrain_analysis\\scaling_finalists\\reports\\catboost_full_threshold_selection.json"
+  }
+}

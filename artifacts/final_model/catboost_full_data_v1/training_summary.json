@@ -1,0 +1,56 @@
+{
+  "run_key": "catboost_full_data_attempt",
+  "model_key": "catboost",
+  "model_title": "IDS Scaling CatBoost full",
+  "dataset_slug": "cic-iot-diad-2024",
+  "backend": "catboost",
+  "train_seconds": 181.00935032299998,
+  "feature_count": 72,
+  "train_rows": 18679445,
+  "fit_context": {
+    "train_sampling": {
+      "total_attack_rows": 18457115,
+      "total_benign_rows": 222330,
+      "sampled_attack_rows": 18457115,
+      "sampled_benign_rows": 222330,
+      "attack_keep_prob": 1.0,
+      "benign_keep_prob": 1.0
+    },
+    "train_target_rows": null,
+    "resolved_train_attack_cap": null,
+    "resolved_train_benign_cap": null,
+    "fit_val_sampling": {
+      "total_attack_rows": 4318898,
+      "total_benign_rows": 91166,
+      "sampled_attack_rows": 999228,
+      "sampled_benign_rows": 91166,
+      "attack_keep_prob": 0.2315405457595896,
+      "benign_keep_prob": 1.0
+    },
+    "train_rows": 18679445
+  },
+  "runtime": {
+    "run_key": "catboost_full_data_attempt",
+    "model_key": "catboost",
+    "base_input_root": "/kaggle/input",
+    "expected_dataset_slug": "cic-iot-diad-2024",
+    "expected_dataset_subdir": "cic-iot-diad-2024-binary-ids",
+    "dataset_root": "/kaggle/input/datasets/hdiiii/cic-iot-diad-2024/cic-iot-diad-2024-binary-ids",
+    "output_root": "/kaggle/working/catboost_full_data_attempt_results",
+    "gpu_count": 2,
+    "gpu_indices": [
+      "0",
+      "1"
+    ],
+    "gpu_names": [
+      "Tesla T4",
+      "Tesla T4"
+    ],
+    "catboost_device_spec": "0:1",
+    "cuda_visible_devices": null,
+    "kaggle_kernel_run_type": "Batch",
+    "train_target_rows": null,
+    "fit_val_attack_cap": 1000000,
+    "fit_val_benign_cap": null
+  }
+}

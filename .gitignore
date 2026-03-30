@@ -1,7 +1,19 @@
 CIC-IoT-DIAD-2024/
 _iot_diad*.html
 .codex/
-artifacts/
+# Keep generated artifacts out of git by default, but allow publishable outputs.
+artifacts/**
+!artifacts/final_model/
+!artifacts/final_model/**
+!artifacts/posttrain_analysis/
+!artifacts/posttrain_analysis/**
+!artifacts/presentation/
+!artifacts/presentation/**
+artifacts/presentation/**/node_modules/
+artifacts/presentation/**/_tmp*
+artifacts/presentation/**/*.zip
+artifacts/presentation/**/pptx_unzip_current/
+artifacts/presentation/**/rendered/
 __pycache__/
 .pytest_cache/
 .ipynb_checkpoints/
