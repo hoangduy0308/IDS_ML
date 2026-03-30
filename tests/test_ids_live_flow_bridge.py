@@ -388,6 +388,34 @@ def test_bridge_emits_adapter_quarantine_for_bad_extractor_rows(tmp_path: Path) 
     assert quarantine["extractor_output_path"].endswith("_Flow.csv")
 
 
+def test_bridge_preserves_row_order_for_mixed_adapted_and_quarantine_rows(tmp_path: Path) -> None:
+    window = make_window(tmp_path)
+    good_row = load_primary_sample_row()
+    bad_row = dict(good_row)
+    bad_row["FlowDuration"] = "bad"
+
+    def fake_runner(
+        command: list[str] | tuple[str, ...],
+        window_arg: ClosedCaptureWindow,
+        output_path: Path,
+    ) -> ExtractorRunResult:
+        write_csv_output(output_path, [good_row, bad_row])
+        return ExtractorRunResult(returncode=0, stdout="ok", stderr="")
+
+    bridge = LiveFlowBridge(
+        LiveFlowBridgeConfig(extractor_command_prefix=("cfm", "Cmd")),
+        extractor_runner=fake_runner,
+    )
+
+    result = bridge.bridge_window(window, output_dir=tmp_path / "flows")
+
+    assert result.window_errors == ()
+    assert len(result.adapted_records) == 1
+    assert len(result.adapter_quarantines) == 1
+    assert result.adapted_records[0]["record_index"] == 0
+    assert result.adapter_quarantines[0]["record_index"] == 1
+
+
 def test_bridge_surfaces_unknown_adapter_profile_with_window_stage_error(tmp_path: Path) -> None:
     window = make_window(tmp_path)
 

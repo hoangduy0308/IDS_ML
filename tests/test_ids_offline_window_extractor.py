@@ -15,6 +15,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from scripts.ids_offline_window_extractor import (  # noqa: E402
     OfflineExtractorConfig,
+    PcapFormatError,
     extract_flows,
     extract_window,
     main,
@@ -45,7 +46,7 @@ def _build_tcp_frame(
     ack: int,
     flags: int,
     payload: bytes,
-) -> bytes:
+    ) -> bytes:
     tcp_header_len = 20
     ip_header_len = 20
     total_length = ip_header_len + tcp_header_len + len(payload)
@@ -76,6 +77,45 @@ def _build_tcp_frame(
         0,
     )
     return ethernet + ip_header + tcp_header + payload
+
+
+def _build_udp_frame(
+    *,
+    src_mac: str,
+    dst_mac: str,
+    src_ip: str,
+    dst_ip: str,
+    src_port: int,
+    dst_port: int,
+    payload: bytes,
+    vlan_tag: int | None = None,
+) -> bytes:
+    udp_header_len = 8
+    ip_header_len = 20
+    total_length = ip_header_len + udp_header_len + len(payload)
+    ethernet = _mac(dst_mac) + _mac(src_mac)
+    if vlan_tag is None:
+        ethernet += struct.pack("!H", 0x0800)
+    else:
+        ethernet += struct.pack("!H", 0x8100)
+        ethernet += struct.pack("!H", vlan_tag)
+        ethernet += struct.pack("!H", 0x0800)
+    ip_header = struct.pack(
+        "!BBHHHBBH4s4s",
+        (4 << 4) | 5,
+        0,
+        total_length,
+        0,
+        0,
+        64,
+        17,
+        0,
+        _ipv4(src_ip),
+        _ipv4(dst_ip),
+    )
+    udp_length = udp_header_len + len(payload)
+    udp_header = struct.pack("!HHHH", src_port, dst_port, udp_length, 0)
+    return ethernet + ip_header + udp_header + payload
 
 
 def _write_pcap(path: Path, frames: list[tuple[float, bytes]]) -> None:
@@ -208,6 +248,132 @@ def test_extract_flows_exposes_canonical_core_without_adapter_aliasing(tmp_path:
     assert canonical["Bwd Packets/s"] == pytest.approx(1.111111)
     assert canonical["Bwd Bulk Rate Avg"] == pytest.approx(16.666667)
     assert flow.metadata_values()["flow_id"].endswith("-00000")
+
+
+def test_extract_flows_handles_vlan_udp_frames_and_ignores_non_ip_frames(tmp_path: Path) -> None:
+    pcap_path = tmp_path / "capture-vlan-udp.pcap"
+    client_mac = "02:00:00:00:00:01"
+    server_mac = "02:00:00:00:00:02"
+    client_ip = "10.0.1.10"
+    server_ip = "10.0.1.20"
+    vlan_udp_frame = _build_udp_frame(
+        src_mac=client_mac,
+        dst_mac=server_mac,
+        src_ip=client_ip,
+        dst_ip=server_ip,
+        src_port=5353,
+        dst_port=53,
+        payload=b"dns-query",
+        vlan_tag=7,
+    )
+    non_ip_frame = _mac(server_mac) + _mac(client_mac) + struct.pack("!H", 0x86DD) + (b"\x00" * 40)
+    _write_pcap(
+        pcap_path,
+        [
+            (1_700_000_002.0, vlan_udp_frame),
+            (1_700_000_002.1, non_ip_frame),
+        ],
+    )
+
+    flows = extract_flows(pcap_path)
+
+    assert len(flows) == 1
+    flow = flows[0]
+    canonical = flow.canonical_feature_values()
+    assert flow.protocol == 17
+    assert flow.forward_src_port == 5353
+    assert flow.forward_dst_port == 53
+    assert canonical["Protocol"] == 17.0
+    assert canonical["Total Fwd Packet"] == 1
+    assert canonical["Total Bwd packets"] == 0
+
+
+def test_extract_flows_merges_reverse_first_packets_into_one_flow(tmp_path: Path) -> None:
+    pcap_path = tmp_path / "capture-reverse-first.pcap"
+    client_mac = "02:00:00:00:00:01"
+    server_mac = "02:00:00:00:00:02"
+    client_ip = "10.0.2.10"
+    server_ip = "10.0.2.20"
+    frames = [
+        (
+            1_700_000_003.0,
+            _build_tcp_frame(
+                src_mac=server_mac,
+                dst_mac=client_mac,
+                src_ip=server_ip,
+                dst_ip=client_ip,
+                src_port=80,
+                dst_port=12345,
+                seq=2,
+                ack=2,
+                flags=0x12,
+                payload=b"reply",
+            ),
+        ),
+        (
+            1_700_000_003.4,
+            _build_tcp_frame(
+                src_mac=client_mac,
+                dst_mac=server_mac,
+                src_ip=client_ip,
+                dst_ip=server_ip,
+                src_port=12345,
+                dst_port=80,
+                seq=3,
+                ack=7,
+                flags=0x18,
+                payload=b"client-data",
+            ),
+        ),
+    ]
+    _write_pcap(pcap_path, frames)
+
+    flows = extract_flows(pcap_path)
+
+    assert len(flows) == 1
+    flow = flows[0]
+    canonical = flow.canonical_feature_values()
+    assert flow.forward_src_port == 80
+    assert flow.forward_dst_port == 12345
+    assert flow.source_flow_id.startswith("10.0.2.20:80-10.0.2.10:12345")
+    assert canonical["Total Fwd Packet"] == 1
+    assert canonical["Total Bwd packets"] == 1
+    assert canonical["Down/Up Ratio"] == 1.0
+
+
+@pytest.mark.parametrize(
+    ("pcap_bytes", "message"),
+    [
+        (
+            struct.pack("<IHHIIII", 0xDEADBEEF, 2, 4, 0, 0, 65535, 1),
+            "unsupported pcap magic number",
+        ),
+        (
+            struct.pack("<IHHIIII", 0xA1B2C3D4, 2, 4, 0, 0, 65535, 2),
+            "unsupported data link type: 2",
+        ),
+        (
+            struct.pack("<IHHIIII", 0xA1B2C3D4, 2, 4, 0, 0, 65535, 1) + struct.pack("<II", 1, 2),
+            "truncated pcap record header",
+        ),
+        (
+            struct.pack("<IHHIIII", 0xA1B2C3D4, 2, 4, 0, 0, 65535, 1)
+            + struct.pack("<IIII", 1, 2, 8, 8)
+            + b"1234",
+            "truncated pcap record payload",
+        ),
+    ],
+)
+def test_extract_flows_rejects_malformed_and_unsupported_pcap_variants(
+    tmp_path: Path,
+    pcap_bytes: bytes,
+    message: str,
+) -> None:
+    pcap_path = tmp_path / "invalid.pcap"
+    pcap_path.write_bytes(pcap_bytes)
+
+    with pytest.raises(PcapFormatError, match=message):
+        extract_flows(pcap_path)
 
 
 def test_extract_window_uses_zero_duration_guard_without_flooring_subsecond_flows(
