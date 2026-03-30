@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
 
-from ids.core.model_bundle import resolve_active_model_bundle
+from ids.ops.model_bundle_lifecycle import resolve_active_model_bundle
 
 
 @dataclass(frozen=True)

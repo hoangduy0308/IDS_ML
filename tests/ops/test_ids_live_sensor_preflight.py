@@ -20,11 +20,13 @@ from ids.ops.live_sensor_preflight import (  # noqa: E402
     parse_args,
     validate_preflight,
 )
-from scripts.ids_model_bundle import (  # noqa: E402
+from ids.core.model_bundle import (  # noqa: E402
     ModelBundleContractError,
-    build_activation_record_payload,
     build_feature_schema_metadata,
     build_inference_contract_metadata,
+)
+from ids.ops.model_bundle_lifecycle import (  # noqa: E402
+    build_activation_record_payload,
     write_activation_record,
 )
 

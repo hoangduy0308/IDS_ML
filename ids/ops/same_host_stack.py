@@ -10,7 +10,6 @@ import sys
 from typing import Any, Callable, Sequence
 from urllib.request import urlopen
 
-from ids.core.model_bundle import build_bundle_status_payload
 from ids.console.config import (
     OperatorConsoleConfig,
     PLACEHOLDER_SECRET_VALUES,
@@ -37,6 +36,7 @@ from ids.ops.operator_console_preflight import (
     OperatorConsolePreflightConfig,
     validate_preflight as validate_operator_console_preflight,
 )
+from ids.ops.model_bundle_lifecycle import build_bundle_status_payload
 
 
 CommandRunner = Callable[[Sequence[str]], str]

@@ -36,7 +36,10 @@ from ids.runtime.realtime_pipeline import (
     DEFAULT_MAX_BATCH_SIZE,
     RealtimePipelineRunner,
 )
-from ids.core.model_bundle import DEFAULT_ACTIVATION_RECORD_NAME, build_bundle_status_payload
+from ids.ops.model_bundle_lifecycle import (
+    DEFAULT_ACTIVATION_RECORD_NAME,
+    build_bundle_status_payload,
+)
 
 
 DEFAULT_INTERFACE = "eth0"

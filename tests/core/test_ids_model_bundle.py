@@ -10,14 +10,14 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 from ids.core.model_bundle import (  # noqa: E402
     ModelBundleContractError,
-    build_activation_record_payload,
     build_feature_schema_metadata,
     build_inference_contract_metadata,
-)
-from scripts.ids_model_bundle import (  # noqa: E402
-    DEFAULT_ACTIVATION_RECORD_NAME,
-    load_activation_record,
     load_model_bundle_manifest,
+)
+from ids.ops.model_bundle_lifecycle import (  # noqa: E402
+    DEFAULT_ACTIVATION_RECORD_NAME,
+    build_activation_record_payload,
+    load_activation_record,
     resolve_active_model_bundle,
     write_activation_record,
 )

@@ -20,13 +20,13 @@ from ids.runtime.live_sensor import (  # noqa: E402
     LiveSensorDaemonConfig,
 )
 from ids.runtime.live_sensor_sinks import LiveSensorLocalSink  # noqa: E402
-from ids.core.model_bundle import ActiveBundleResolutionError  # noqa: E402
 from ids.core.model_bundle import (  # noqa: E402
-    build_activation_record_payload,
     build_feature_schema_metadata,
     build_inference_contract_metadata,
 )
-from scripts.ids_model_bundle import (  # noqa: E402
+from ids.ops.model_bundle_lifecycle import (  # noqa: E402
+    ActiveBundleResolutionError,
+    build_activation_record_payload,
     write_activation_record,
 )
 

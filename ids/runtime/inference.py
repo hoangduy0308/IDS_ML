@@ -9,12 +9,12 @@ import pandas as pd
 from catboost import CatBoostClassifier
 
 from ids.core.feature_contract import load_feature_columns
-from ids.core.model_bundle import ModelBundleContractError
-from scripts.ids_model_bundle import (
+from ids.core.model_bundle import (
     DEFAULT_BUNDLE_CONFIG_NAME,
+    ModelBundleContractError,
     load_model_bundle_manifest,
-    resolve_active_model_bundle,
 )
+from ids.ops.model_bundle_lifecycle import ActiveBundleResolutionError, resolve_active_model_bundle
 
 
 DEFAULT_MODEL_PATH = Path(
@@ -61,7 +61,10 @@ class IDSModelConfig:
 
     @classmethod
     def from_activation_path(cls, activation_path: Path) -> "IDSModelConfig":
-        manifest = resolve_active_model_bundle(activation_path)
+        try:
+            manifest = resolve_active_model_bundle(activation_path)
+        except ModelBundleContractError as exc:
+            raise ActiveBundleResolutionError(str(exc)) from exc
         return cls(
             model_path=manifest.model_path,
             feature_columns_path=manifest.feature_columns_path,
