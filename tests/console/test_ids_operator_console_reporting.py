@@ -4,13 +4,13 @@ from pathlib import Path
 import sys
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.ids_operator_console.alerts import transition_alert_status  # noqa: E402
-from scripts.ids_operator_console.db import OperatorStore  # noqa: E402
-from scripts.ids_operator_console.reporting import (  # noqa: E402
+from ids.console.alerts import transition_alert_status  # noqa: E402
+from ids.console.db import OperatorStore  # noqa: E402
+from ids.console.reporting import (  # noqa: E402
     build_report_bundle,
     build_report_rollup,
     export_alert_rows,
@@ -127,4 +127,3 @@ def test_report_bundle_and_rollup_cover_alerts_anomalies_and_summaries(tmp_path:
         assert rollup["latest_summary_ts"] == "2026-03-28T16:03:00+00:00"
     finally:
         store.close()
-

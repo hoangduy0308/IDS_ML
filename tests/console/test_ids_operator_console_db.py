@@ -5,16 +5,16 @@ import json
 import sys
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.ids_operator_console.db import (  # noqa: E402
+from ids.console.db import (  # noqa: E402
     OperatorStore,
     bootstrap_operator_store,
     connect_operator_db,
 )
-from scripts.ids_operator_console.migrations import inspect_operator_store, migrate_operator_store  # noqa: E402
+from ids.console.migrations import inspect_operator_store, migrate_operator_store  # noqa: E402
 
 
 def test_bootstrap_operator_store_is_idempotent(tmp_path: Path) -> None:

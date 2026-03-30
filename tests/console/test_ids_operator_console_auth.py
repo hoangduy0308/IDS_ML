@@ -9,11 +9,11 @@ from starlette.middleware.sessions import SessionMiddleware
 from starlette.testclient import TestClient
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.ids_operator_console.auth import (  # noqa: E402
+from ids.console.auth import (  # noqa: E402
     ensure_admin_user,
     hash_password,
     login_admin_with_password,
@@ -23,7 +23,7 @@ from scripts.ids_operator_console.auth import (  # noqa: E402
     validate_csrf_form,
     verify_password,
 )
-from scripts.ids_operator_console.db import OperatorStore  # noqa: E402
+from ids.console.db import OperatorStore  # noqa: E402
 
 
 def _build_test_app(database_path: Path) -> FastAPI:

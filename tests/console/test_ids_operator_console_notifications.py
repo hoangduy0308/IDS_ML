@@ -6,12 +6,12 @@ import sys
 import pytest
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.ids_operator_console.db import OperatorStore  # noqa: E402
-from scripts.ids_operator_console.notifications import (  # noqa: E402
+from ids.console.db import OperatorStore  # noqa: E402
+from ids.console.notifications import (  # noqa: E402
     NotificationDeliveryError,
     TelegramNotifierConfig,
     dispatch_pending_telegram_notifications,

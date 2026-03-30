@@ -5,17 +5,17 @@ import json
 import sys
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.ids_operator_console.db import OperatorStore  # noqa: E402
-from scripts.ids_operator_console.notification_runtime import (  # noqa: E402
+from ids.console.db import OperatorStore  # noqa: E402
+from ids.console.notification_runtime import (  # noqa: E402
     NotificationRuntimeConfig,
     run_notification_maintenance_cycle,
     run_notification_worker,
 )
-from scripts.ids_operator_console.notifications import (  # noqa: E402
+from ids.console.notifications import (  # noqa: E402
     NotificationDeliveryError,
     TelegramNotifierConfig,
 )

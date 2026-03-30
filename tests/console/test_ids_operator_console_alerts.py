@@ -7,11 +7,11 @@ import sys
 import pytest
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.ids_operator_console.alerts import (  # noqa: E402
+from ids.console.alerts import (  # noqa: E402
     add_investigation_note,
     get_alert_timeline,
     list_alerts_for_notification,
@@ -19,7 +19,7 @@ from scripts.ids_operator_console.alerts import (  # noqa: E402
     load_console_snapshot,
     transition_alert_status,
 )
-from scripts.ids_operator_console.db import OperatorStore  # noqa: E402
+from ids.console.db import OperatorStore  # noqa: E402
 
 
 def _new_store(tmp_path: Path) -> OperatorStore:
@@ -161,4 +161,3 @@ def test_console_snapshot_keeps_alerts_anomalies_and_summaries_separate(tmp_path
         assert len(snapshot["summaries"]) == 1
     finally:
         store.close()
-
