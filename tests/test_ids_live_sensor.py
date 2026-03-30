@@ -14,17 +14,17 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.ids_live_capture import CaptureBacklogExceededError, ClosedCaptureWindow  # noqa: E402
+from ids.runtime.live_capture import CaptureBacklogExceededError, ClosedCaptureWindow  # noqa: E402
 from scripts.ids_live_flow_bridge import BridgeWindowResult  # noqa: E402
-from scripts.ids_live_sensor import (  # noqa: E402
+from ids.runtime.live_sensor import (  # noqa: E402
     CaptureSessionFatalError,
     DEFAULT_CAPTURE_WINDOW_DURATION_SECONDS,
     LiveSensorDaemon,
     LiveSensorDaemonConfig,
 )
-from scripts.ids_live_sensor_sinks import LiveSensorLocalSink  # noqa: E402
+from ids.runtime.live_sensor_sinks import LiveSensorLocalSink  # noqa: E402
+from ids.core.model_bundle import ActiveBundleResolutionError  # noqa: E402
 from scripts.ids_model_bundle import (  # noqa: E402
-    ActiveBundleResolutionError,
     build_activation_record_payload,
     build_feature_schema_metadata,
     build_inference_contract_metadata,
@@ -556,8 +556,11 @@ def test_daemon_uses_activation_contract_for_runtime_wiring(
         observed_feature_paths.append(Path(path))
         return object()
 
-    monkeypatch.setattr("scripts.ids_inference.CatBoostClassifier", DummyModel)
-    monkeypatch.setattr("scripts.ids_live_sensor.FlowFeatureContract.from_feature_file", fake_contract_loader)
+    monkeypatch.setattr("ids.runtime.inference.CatBoostClassifier", DummyModel)
+    monkeypatch.setattr(
+        "ids.runtime.live_sensor.FlowFeatureContract.from_feature_file",
+        fake_contract_loader,
+    )
 
     daemon = LiveSensorDaemon(make_config(tmp_path))
 

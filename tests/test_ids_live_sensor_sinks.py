@@ -12,7 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.ids_live_sensor_sinks import (  # noqa: E402
+from ids.runtime.live_sensor_sinks import (  # noqa: E402
     LiveSensorLocalSink,
     DEFAULT_ALERTS_OUTPUT_PATH,
     DEFAULT_QUARANTINE_OUTPUT_PATH,
