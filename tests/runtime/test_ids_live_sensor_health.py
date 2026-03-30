@@ -356,7 +356,7 @@ def test_build_live_sensor_health_payload_rejects_unexpected_event_type(tmp_path
     assert "not a live_sensor_summary" in runtime_evidence["detail"]
 
 
-def test_build_live_sensor_health_payload_rejects_malformed_summary_json(tmp_path: Path) -> None:
+def test_build_live_sensor_health_payload_rejects_truncated_malformed_summary_json(tmp_path: Path) -> None:
     config, _ = make_config(tmp_path)
     config.summary_output_path.parent.mkdir(parents=True, exist_ok=True)
     config.summary_output_path.write_text("{bad-json\n", encoding="utf-8")
