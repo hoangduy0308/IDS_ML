@@ -21,7 +21,7 @@
 
 ## Cấu trúc chính
 
-- [docs](F:/Work/IDS_ML_New/docs): tài liệu kỹ thuật và thực nghiệm
+- [docs](F:/Work/IDS_ML_New/docs): cổng vào tài liệu; xem [docs/README.md](F:/Work/IDS_ML_New/docs/README.md) để đi theo luồng `current` trước, `archive` sau
 - [scripts](F:/Work/IDS_ML_New/scripts): preprocessing, training, inference, runtime IDS
 - [artifacts](F:/Work/IDS_ML_New/artifacts): dataset đã freeze, output thực nghiệm, final model bundle, demo fixtures
 - [tests](F:/Work/IDS_ML_New/tests): regression tests cho các thành phần chính
@@ -68,17 +68,14 @@ python -m scripts.ids_inference `
 
 Nếu cần đọc đúng theo logic đồ án, nên đi theo thứ tự sau:
 
-1. [docs/dataset_preprocessing_protocol.md](F:/Work/IDS_ML_New/docs/dataset_preprocessing_protocol.md)
-2. [docs/training_benchmark_results.md](F:/Work/IDS_ML_New/docs/training_benchmark_results.md)
-3. [docs/learning_curve_analysis.md](F:/Work/IDS_ML_New/docs/learning_curve_analysis.md)
-4. [docs/scaling_experiment_results.md](F:/Work/IDS_ML_New/docs/scaling_experiment_results.md)
-5. [docs/scaling_threshold_analysis.md](F:/Work/IDS_ML_New/docs/scaling_threshold_analysis.md)
-6. [docs/final_model_decision.md](F:/Work/IDS_ML_New/docs/final_model_decision.md)
-7. [docs/final_model_bundle.md](F:/Work/IDS_ML_New/docs/final_model_bundle.md)
-8. [docs/ids_inference_architecture.md](F:/Work/IDS_ML_New/docs/ids_inference_architecture.md)
-9. [docs/ids_realtime_pipeline_architecture.md](F:/Work/IDS_ML_New/docs/ids_realtime_pipeline_architecture.md)
-10. [docs/e2e_demo_runbook.md](F:/Work/IDS_ML_New/docs/e2e_demo_runbook.md)
-11. [docs/system_evaluation.md](F:/Work/IDS_ML_New/docs/system_evaluation.md)
+1. [docs/README.md](F:/Work/IDS_ML_New/docs/README.md)
+2. [docs/current/README.md](F:/Work/IDS_ML_New/docs/current/README.md)
+3. [docs/archive/README.md](F:/Work/IDS_ML_New/docs/archive/README.md)
+
+Tài liệu hiện hành vẫn sống ở `docs/`, nhưng các file đã được nhóm theo vai trò:
+
+- `current`: tài liệu đang dùng để ra quyết định, vận hành, hoặc đọc như nguồn chuẩn
+- `archive`: memo, ghi chú lịch sử, và nội dung đã thay thế
 
 ## Tài liệu lịch sử và tài liệu đã bị thay thế
 
