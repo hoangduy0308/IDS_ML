@@ -1,5 +1,9 @@
 # Phân tích threshold tuning cho 3 mô hình mạnh nhất
 
+> Status: superseded by later finalist analysis. Tài liệu này thuộc vòng threshold analysis sớm cho nhóm top model sau benchmark ban đầu. Phân tích threshold chuẩn để dùng cho kết luận cuối hiện là [scaling_threshold_analysis.md](F:/Work/IDS_ML_New/docs/scaling_threshold_analysis.md), vì nó dựa trên nhóm finalist sau scaling công bằng và full-data training.
+
+> Superseded for final decision: tài liệu này thuộc vòng threshold tuning trước khi có scaling experiment công bằng và `CatBoost full-data`. Để lấy kết luận cuối cho đồ án, dùng [scaling_threshold_analysis.md](F:/Work/IDS_ML_New/docs/scaling_threshold_analysis.md) và [final_model_decision.md](F:/Work/IDS_ML_New/docs/final_model_decision.md).
+
 ## Mục tiêu
 
 Sau khi benchmark 5 mô hình, ba mô hình được giữ lại để đi tiếp là:

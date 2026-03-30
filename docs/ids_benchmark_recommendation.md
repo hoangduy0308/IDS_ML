@@ -1,5 +1,9 @@
 # Khuyến nghị dataset và hướng benchmark cho đề tài IDS dùng Machine Learning
 
+> Status: historical planning memo. Tài liệu này phản ánh giai đoạn chọn dataset và định hướng benchmark ban đầu. Kết luận chuẩn hiện tại nên đọc ở [training_benchmark_results.md](F:/Work/IDS_ML_New/docs/training_benchmark_results.md), [scaling_experiment_results.md](F:/Work/IDS_ML_New/docs/scaling_experiment_results.md), [scaling_threshold_analysis.md](F:/Work/IDS_ML_New/docs/scaling_threshold_analysis.md), và [final_model_decision.md](F:/Work/IDS_ML_New/docs/final_model_decision.md).
+
+> Historical note: tài liệu này là ghi chú định hướng ở giai đoạn đầu để chọn dataset và hướng benchmark. Kết luận cuối cùng của repo hiện đã được thay thế bởi [training_benchmark_results.md](F:/Work/IDS_ML_New/docs/training_benchmark_results.md), [scaling_experiment_results.md](F:/Work/IDS_ML_New/docs/scaling_experiment_results.md), và [final_model_decision.md](F:/Work/IDS_ML_New/docs/final_model_decision.md). Không dùng file này làm nguồn kết luận model cuối.
+
 ## Mục tiêu
 
 Mục tiêu của đề tài là xây dựng một hệ thống IDS dựa trên machine learning, vì vậy lựa chọn bộ dữ liệu cần ưu tiên:

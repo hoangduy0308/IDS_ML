@@ -1,5 +1,9 @@
 # Checkpoint Thực Nghiệm IDS
 
+> Status: historical checkpoint. Tài liệu này hữu ích để theo dõi tiến trình phát triển theo thời gian, nhưng không phải nguồn kết luận cuối ưu tiên số một. Khi cần trích dẫn kết luận chuẩn cho đồ án, ưu tiên dùng [dataset_preprocessing_protocol.md](F:/Work/IDS_ML_New/docs/dataset_preprocessing_protocol.md), [training_benchmark_results.md](F:/Work/IDS_ML_New/docs/training_benchmark_results.md), [scaling_experiment_results.md](F:/Work/IDS_ML_New/docs/scaling_experiment_results.md), [scaling_threshold_analysis.md](F:/Work/IDS_ML_New/docs/scaling_threshold_analysis.md), và [final_model_decision.md](F:/Work/IDS_ML_New/docs/final_model_decision.md).
+
+> Historical checkpoint: file này hữu ích để truy vết quá trình phát triển, nhưng không phải nguồn kết luận cuối. Đối với bộ tài liệu chính của đồ án, ưu tiên [dataset_preprocessing_protocol.md](F:/Work/IDS_ML_New/docs/dataset_preprocessing_protocol.md), [scaling_experiment_results.md](F:/Work/IDS_ML_New/docs/scaling_experiment_results.md), [scaling_threshold_analysis.md](F:/Work/IDS_ML_New/docs/scaling_threshold_analysis.md), và [final_model_decision.md](F:/Work/IDS_ML_New/docs/final_model_decision.md).
+
 ## Mục đích tài liệu
 
 Tài liệu này ghi lại những gì đã hoàn thành trong quá trình xây dựng và đánh giá mô hình IDS trên `CIC IoT-DIAD 2024`, đồng thời phân biệt rõ:
