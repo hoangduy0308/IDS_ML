@@ -83,6 +83,8 @@ python /opt/ids_ml_new/scripts/ids_same_host_stack_manage.py \
   --admin-password-file /secure/admin.password
 ```
 
+Pass `--extractor-command-prefix` as separate argv tokens. Do not quote the prefix into a single shell word, or the live sensor service will collapse the extractor command structure.
+
 The bootstrap flow delegates to the existing component owners. It does not own bundle restore, console restore, or service-specific mutation logic.
 The same-host stack contract carries the live-sensor extractor command prefix explicitly and leaves deeper extractor/runtime validation to the live-sensor preflight owner.
 `bootstrap` does not report success until the post-start `status` and `smoke` checks run; it returns a degraded result and exit code `2` when those checks fail.

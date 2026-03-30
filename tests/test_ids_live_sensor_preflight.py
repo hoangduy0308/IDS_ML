@@ -120,11 +120,15 @@ def test_validate_preflight_accepts_existing_runtime_contract(tmp_path: Path, mo
     validate_preflight(config)
 
 
-def test_validate_preflight_does_not_require_legacy_java_or_jnetpcap_paths(
+def test_validate_preflight_accepts_canonical_multi_token_extractor_prefix(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    config = make_config(tmp_path, java_binary=None, extractor_binary=None, jnetpcap_path=None)
+    extractor_prefix = (
+        str(make_executable(tmp_path / "bin" / "extractor-prefix")),
+        str(make_executable(tmp_path / "bin" / "extractor-bridge")),
+    )
+    config = make_config(tmp_path, extractor_command_prefix=extractor_prefix)
     network_root = tmp_path / "sys" / "class" / "net" / config.interface
     network_root.mkdir(parents=True)
 
@@ -138,6 +142,7 @@ def test_validate_preflight_does_not_require_legacy_java_or_jnetpcap_paths(
     monkeypatch.setattr(Path, "exists", fake_exists)
     monkeypatch.setattr(preflight, "_is_executable_file", lambda path: True)
 
+    assert config.extractor_command_prefix == extractor_prefix
     validate_preflight(config)
 
 

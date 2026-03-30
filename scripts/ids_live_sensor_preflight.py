@@ -19,9 +19,6 @@ class LiveSensorPreflightConfig:
     quarantine_output_path: Path
     summary_output_path: Path
     extractor_command_prefix: tuple[str, ...] | None = None
-    java_binary: Path | None = None
-    extractor_binary: Path | None = None
-    jnetpcap_path: Path | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "interface", _require_non_blank(self.interface, name="interface"))
@@ -31,20 +28,11 @@ class LiveSensorPreflightConfig:
         object.__setattr__(self, "alerts_output_path", Path(self.alerts_output_path))
         object.__setattr__(self, "quarantine_output_path", Path(self.quarantine_output_path))
         object.__setattr__(self, "summary_output_path", Path(self.summary_output_path))
-        if self.java_binary is not None:
-            object.__setattr__(self, "java_binary", Path(self.java_binary))
-        if self.extractor_binary is not None:
-            object.__setattr__(self, "extractor_binary", Path(self.extractor_binary))
-        if self.jnetpcap_path is not None:
-            object.__setattr__(self, "jnetpcap_path", Path(self.jnetpcap_path))
-
         normalized_prefix = tuple(
             str(part).strip()
             for part in (self.extractor_command_prefix or ())
             if str(part).strip()
         )
-        if not normalized_prefix and self.extractor_binary is not None:
-            normalized_prefix = (str(Path(self.extractor_binary)),)
         if not normalized_prefix:
             raise ValueError("extractor_command_prefix must not be blank")
         object.__setattr__(self, "extractor_command_prefix", normalized_prefix)
@@ -145,9 +133,6 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--interface", required=True)
     parser.add_argument("--dumpcap-binary", type=Path, required=True)
     parser.add_argument("--extractor-command-prefix", nargs="+", default=None)
-    parser.add_argument("--java-binary", type=Path, default=None)
-    parser.add_argument("--extractor-binary", type=Path, default=None)
-    parser.add_argument("--jnetpcap-path", type=Path, default=None)
     parser.add_argument("--activation-path", type=Path, required=True)
     parser.add_argument("--spool-dir", type=Path, required=True)
     parser.add_argument("--alerts-output-path", type=Path, required=True)
@@ -170,9 +155,6 @@ def build_config_from_args(args: argparse.Namespace) -> LiveSensorPreflightConfi
             if args.extractor_command_prefix is not None
             else None
         ),
-        java_binary=Path(args.java_binary) if args.java_binary is not None else None,
-        extractor_binary=Path(args.extractor_binary) if args.extractor_binary is not None else None,
-        jnetpcap_path=Path(args.jnetpcap_path) if args.jnetpcap_path is not None else None,
     )
 
 
