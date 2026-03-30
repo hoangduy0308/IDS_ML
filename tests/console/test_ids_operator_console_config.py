@@ -1,16 +1,11 @@
 from __future__ import annotations
 
 from pathlib import Path
-import sys
 
 import pytest
 from starlette.testclient import TestClient
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-
 from ids.console import load_operator_console_config, migrate_operator_store  # noqa: E402
 from ids.console.auth import ensure_admin_user  # noqa: E402
 from ids.console.db import open_existing_operator_store  # noqa: E402

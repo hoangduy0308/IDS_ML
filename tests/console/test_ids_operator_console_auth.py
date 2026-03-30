@@ -1,17 +1,11 @@
 from __future__ import annotations
 
 from pathlib import Path
-import sys
 
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.testclient import TestClient
-
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from ids.console.auth import (  # noqa: E402
     ensure_admin_user,

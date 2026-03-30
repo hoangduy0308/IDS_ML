@@ -3,15 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 import json
 import os
-import sys
 
 import pytest
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-
 import ids.ops.operator_console_manage as manage  # noqa: E402
 import ids.console.notifications as notifications  # noqa: E402
 import ids.console.ops as ops  # noqa: E402

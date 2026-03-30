@@ -2,12 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 import json
-import sys
-
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from ids.console.db import OperatorStore  # noqa: E402
 from ids.console.ingest import SensorOutputIngestor  # noqa: E402

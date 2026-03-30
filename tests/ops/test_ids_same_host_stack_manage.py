@@ -9,11 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-
 import ids.ops.same_host_stack as stack  # noqa: E402
 import ids.ops.same_host_stack_manage as manage  # noqa: E402
 
