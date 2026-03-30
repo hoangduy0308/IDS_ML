@@ -181,13 +181,58 @@ def test_extract_window_writes_bridge_consumable_csv(tmp_path: Path) -> None:
     assert adapted.features["Src Port"] == 12345.0
     assert adapted.features["Dst Port"] == 80.0
     assert adapted.features["Flow Duration"] == 900.0
+    assert adapted.features["Flow Bytes/s"] == pytest.approx(208.888889)
+    assert adapted.features["Flow Packets/s"] == pytest.approx(3.333333)
+    assert adapted.features["Fwd Packets/s"] == pytest.approx(2.222222)
+    assert adapted.features["Bwd Packets/s"] == pytest.approx(1.111111)
+    assert adapted.features["Bwd Bulk Rate Avg"] == pytest.approx(16.666667)
     assert len(adapted.features) == 72
     assert adapted.metadata["source_flow_id"].endswith("-00000")
     assert adapted.controlled_extras["capture_mode"] == "closed-window"
 
 
-def test_extract_window_matches_golden_csv_fixture(tmp_path: Path) -> None:
-    pcap_path = _build_sample_pcap(tmp_path / "capture-00001.pcap")
+def test_extract_window_uses_zero_duration_guard_without_flooring_subsecond_flows(
+    tmp_path: Path,
+) -> None:
+    pcap_path = tmp_path / "capture-00002.pcap"
+    client_mac = "02:00:00:00:00:01"
+    server_mac = "02:00:00:00:00:02"
+    client_ip = "10.0.0.10"
+    server_ip = "10.0.0.20"
+    timestamp = 1_700_000_001.0
+    frames = [
+        (
+            timestamp,
+            _build_tcp_frame(
+                src_mac=client_mac,
+                dst_mac=server_mac,
+                src_ip=client_ip,
+                dst_ip=server_ip,
+                src_port=12345,
+                dst_port=80,
+                seq=1,
+                ack=0,
+                flags=0x02,
+                payload=b"",
+            ),
+        ),
+        (
+            timestamp,
+            _build_tcp_frame(
+                src_mac=server_mac,
+                dst_mac=client_mac,
+                src_ip=server_ip,
+                dst_ip=client_ip,
+                src_port=80,
+                dst_port=12345,
+                seq=2,
+                ack=2,
+                flags=0x12,
+                payload=b"reply-payload-1",
+            ),
+        ),
+    ]
+    _write_pcap(pcap_path, frames)
     output_dir = tmp_path / "flows"
 
     output_path = extract_window(
@@ -198,9 +243,15 @@ def test_extract_window_matches_golden_csv_fixture(tmp_path: Path) -> None:
         )
     )
 
-    assert output_path.read_text(encoding="utf-8") == EXPECTED_FIXTURE_PATH.read_text(
-        encoding="utf-8"
-    )
+    rows = _read_csv_rows(output_path)
+    adapted = adapt_record(rows[0], profile_id=PRIMARY_PROFILE_ID, record_index=0)
+
+    assert adapted.features["Flow Duration"] == 0.0
+    assert adapted.features["Flow Bytes/s"] == 0.0
+    assert adapted.features["Flow Packets/s"] == 0.0
+    assert adapted.features["Fwd Packets/s"] == 0.0
+    assert adapted.features["Bwd Packets/s"] == 0.0
+    assert adapted.features["Bwd Bulk Rate Avg"] == 0.0
 
 
 def test_cli_supports_positional_command_contract_and_help() -> None:
@@ -240,6 +291,9 @@ def test_cli_accepts_closed_pcap_and_writes_expected_output(tmp_path: Path) -> N
     assert output_path.read_text(encoding="utf-8") == EXPECTED_FIXTURE_PATH.read_text(
         encoding="utf-8"
     )
+    rows = _read_csv_rows(output_path)
+    assert len(rows) == 1
+    assert rows[0]["FlowDuration"] == "900"
 
 
 def test_cli_rejects_invalid_flow_suffix(tmp_path: Path) -> None:

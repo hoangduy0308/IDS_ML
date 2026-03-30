@@ -111,7 +111,7 @@ class FlowSummary:
         backward_packets = [packet for packet in packets if packet.direction == "backward"]
 
         duration_seconds = max(self.last_timestamp - self.first_timestamp, 0.0)
-        rate_duration_seconds = max(duration_seconds, 1.0)
+        rate_duration_seconds = duration_seconds
         all_lengths = [packet.packet_length for packet in packets]
         forward_lengths = [packet.packet_length for packet in forward_packets]
         backward_lengths = [packet.packet_length for packet in backward_packets]
