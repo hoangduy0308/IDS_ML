@@ -4,16 +4,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from ids.core.model_bundle import load_model_bundle_manifest
+from ids.core.model_bundle import load_model_bundle_manifest, write_json_atomic
 from ids.core.model_bundle_activation import (
     ActiveBundleRecord,
     ActiveBundleResolutionError,
     DEFAULT_ACTIVATION_RECORD_NAME,
     SUPPORTED_ACTIVATION_RECORD_VERSION,
+    build_bundle_status_payload,
     load_activation_record,
     resolve_active_model_bundle,
 )
-from ids.core.model_bundle import write_json_atomic
 
 
 def verify_candidate_bundle(bundle_root: Path) -> dict[str, Any]:
@@ -57,38 +57,6 @@ def build_activation_record_payload(
         payload["previous_bundle_root"] = str(Path(previous_bundle_root).resolve())
     if previous_bundle_name:
         payload["previous_bundle_name"] = str(previous_bundle_name)
-    return payload
-
-
-def build_bundle_status_payload(activation_path: Path) -> dict[str, Any]:
-    activation_path = Path(activation_path).resolve()
-    payload: dict[str, Any] = {
-        "activation_path": str(activation_path),
-        "activation_record_exists": activation_path.is_file(),
-    }
-    if not activation_path.is_file():
-        payload["runtime_ready"] = False
-        payload["detail"] = "activation record not found"
-        return payload
-
-    record = load_activation_record(activation_path)
-    manifest = load_model_bundle_manifest(record.active_bundle_root)
-    payload.update(
-        {
-            "runtime_ready": True,
-            "active_bundle_root": str(record.active_bundle_root),
-            "active_bundle_name": record.payload.get("active_bundle_name", manifest.bundle_name),
-            "activated_at": record.payload.get("activated_at"),
-            "verification_status": record.payload.get("verification_status"),
-            "manifest_version": manifest.manifest_version,
-            "threshold": manifest.threshold,
-            "feature_columns_path": str(manifest.feature_columns_path),
-            "model_path": str(manifest.model_path),
-        }
-    )
-    if record.previous_bundle_root is not None:
-        payload["previous_bundle_root"] = str(record.previous_bundle_root)
-        payload["previous_bundle_name"] = record.payload.get("previous_bundle_name")
     return payload
 
 

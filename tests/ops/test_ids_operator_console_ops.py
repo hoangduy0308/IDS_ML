@@ -4,6 +4,7 @@ from hashlib import sha256
 from pathlib import Path
 import json
 import os
+import sqlite3
 import shutil
 
 import pytest
@@ -42,6 +43,16 @@ def _file_digest(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _copy_backup_bundle(source_dir: Path, destination_root: Path) -> tuple[Path, Path]:
+    destination_root.mkdir(parents=True, exist_ok=True)
+    copied_backup_dir = destination_root / source_dir.name
+    shutil.copytree(source_dir, copied_backup_dir)
+    integrity_path = source_dir.parent / f"{source_dir.name}.integrity.json"
+    copied_integrity_path = destination_root / integrity_path.name
+    shutil.copy2(integrity_path, copied_integrity_path)
+    return copied_backup_dir, copied_integrity_path
 
 
 def _make_preflight_config(tmp_path: Path, **overrides: object) -> OperatorConsolePreflightConfig:
@@ -220,8 +231,12 @@ def test_manage_backup_restore_retention_and_smoke(tmp_path: Path, capsys: pytes
     backup_dir = Path(backup_payload["backup_dir"])
     assert (backup_dir / "manifest.json").is_file()
     manifest = json.loads((backup_dir / "manifest.json").read_text(encoding="utf-8"))
+    backup_integrity_path = backup_dir.parent / f"{backup_dir.name}.integrity.json"
+    assert backup_integrity_path.is_file()
+    backup_integrity = json.loads(backup_integrity_path.read_text(encoding="utf-8"))
     assert "ops-secret" not in json.dumps(manifest)
     assert manifest["secret_references"]["secret_key"]["source"] == "file"
+    assert backup_integrity["database"]["backup_sha256"] == manifest["database"]["backup_sha256"]
 
     restored_db = tmp_path / "restored" / "operator_console.db"
     with pytest.raises(Exception, match="service-stopped"):
@@ -285,13 +300,13 @@ def test_manage_backup_restore_retention_and_smoke(tmp_path: Path, capsys: pytes
     shutil.copy2(restored_db, tamper_target_db)
     tamper_target_digest = _file_digest(tamper_target_db)
 
-    digest_tampered_dir = tmp_path / "tampered-digest"
-    shutil.copytree(backup_dir, digest_tampered_dir)
-    digest_manifest_path = digest_tampered_dir / "manifest.json"
-    digest_manifest = json.loads(digest_manifest_path.read_text(encoding="utf-8"))
-    digest_manifest["database"]["backup_sha256"] = "0" * 64
-    digest_manifest_path.write_text(
-        json.dumps(digest_manifest, ensure_ascii=False, indent=2),
+    digest_blank_root = tmp_path / "tampered-digest-blank"
+    digest_blank_dir, _ = _copy_backup_bundle(backup_dir, digest_blank_root)
+    digest_blank_manifest_path = digest_blank_dir / "manifest.json"
+    digest_blank_manifest = json.loads(digest_blank_manifest_path.read_text(encoding="utf-8"))
+    digest_blank_manifest["database"]["backup_sha256"] = ""
+    digest_blank_manifest_path.write_text(
+        json.dumps(digest_blank_manifest, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
     with pytest.raises(Exception, match="digest"):
@@ -301,14 +316,73 @@ def test_manage_backup_restore_retention_and_smoke(tmp_path: Path, capsys: pytes
                 str(tamper_target_db),
                 "restore",
                 "--backup-dir",
-                str(digest_tampered_dir),
+                str(digest_blank_dir),
                 "--service-stopped",
             ]
         )
     assert _file_digest(tamper_target_db) == tamper_target_digest
 
-    path_tampered_dir = tmp_path / "tampered-path"
-    shutil.copytree(backup_dir, path_tampered_dir)
+    digest_missing_root = tmp_path / "tampered-digest-missing"
+    digest_missing_dir, _ = _copy_backup_bundle(backup_dir, digest_missing_root)
+    digest_missing_manifest_path = digest_missing_dir / "manifest.json"
+    digest_missing_manifest = json.loads(digest_missing_manifest_path.read_text(encoding="utf-8"))
+    digest_missing_manifest["database"].pop("backup_sha256", None)
+    digest_missing_manifest_path.write_text(
+        json.dumps(digest_missing_manifest, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    with pytest.raises(Exception, match="digest"):
+        manage.main(
+            [
+                "--database-path",
+                str(tamper_target_db),
+                "restore",
+                "--backup-dir",
+                str(digest_missing_dir),
+                "--service-stopped",
+            ]
+        )
+    assert _file_digest(tamper_target_db) == tamper_target_digest
+
+    schema_tampered_root = tmp_path / "tampered-schema"
+    schema_tampered_dir, schema_tampered_integrity_path = _copy_backup_bundle(backup_dir, schema_tampered_root)
+    schema_tampered_db = schema_tampered_dir / "operator_console.db"
+    schema_tampered_db.unlink()
+    legacy_conn = sqlite3.connect(schema_tampered_db)
+    try:
+        legacy_conn.execute("CREATE TABLE legacy_state (id INTEGER PRIMARY KEY)")
+        legacy_conn.commit()
+    finally:
+        legacy_conn.close()
+    schema_digest = _file_digest(schema_tampered_db)
+    schema_manifest_path = schema_tampered_dir / "manifest.json"
+    schema_manifest = json.loads(schema_manifest_path.read_text(encoding="utf-8"))
+    schema_manifest["database"]["backup_sha256"] = schema_digest
+    schema_manifest_path.write_text(
+        json.dumps(schema_manifest, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    schema_integrity = json.loads(schema_tampered_integrity_path.read_text(encoding="utf-8"))
+    schema_integrity["database"]["backup_sha256"] = schema_digest
+    schema_tampered_integrity_path.write_text(
+        json.dumps(schema_integrity, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    with pytest.raises(Exception, match="current schema"):
+        manage.main(
+            [
+                "--database-path",
+                str(tamper_target_db),
+                "restore",
+                "--backup-dir",
+                str(schema_tampered_dir),
+                "--service-stopped",
+            ]
+        )
+    assert _file_digest(tamper_target_db) == tamper_target_digest
+
+    path_tampered_root = tmp_path / "tampered-path"
+    path_tampered_dir, _ = _copy_backup_bundle(backup_dir, path_tampered_root)
     path_manifest_path = path_tampered_dir / "manifest.json"
     path_manifest = json.loads(path_manifest_path.read_text(encoding="utf-8"))
     outside_db = tmp_path / "outside.db"
@@ -318,7 +392,7 @@ def test_manage_backup_restore_retention_and_smoke(tmp_path: Path, capsys: pytes
         json.dumps(path_manifest, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
-    with pytest.raises(Exception, match="selected backup directory"):
+    with pytest.raises(Exception, match="trusted backup integrity metadata"):
         manage.main(
             [
                 "--database-path",
@@ -387,6 +461,7 @@ def test_manage_backup_restore_retention_and_smoke(tmp_path: Path, capsys: pytes
     assert prune_rc == 0
     assert len(prune_payload["kept"]) == 1
     assert len(prune_payload["removed"]) == 1
+    assert not (backup_root / f"{prune_payload['removed'][0]}.integrity.json").exists()
 
 
 def test_manage_notification_commands_surface_runtime_contract(
@@ -529,6 +604,87 @@ def test_manage_notification_commands_surface_runtime_contract(
     assert smoke_payload["notification"]["enabled"] is True
     assert smoke_payload["notification"]["channel"] == "telegram"
     assert smoke_payload["notification"]["target"] is None
+
+
+@pytest.mark.parametrize(
+    ("tamper_manifest", "expected_error"),
+    [
+        (lambda path: path.write_text("{", encoding="utf-8"), "backup manifest is not valid JSON"),
+        (
+            lambda path: (
+                path.parent.parent / f"{path.parent.name}.integrity.json"
+            ).write_text("{", encoding="utf-8"),
+            "backup integrity metadata is not valid JSON",
+        ),
+    ],
+)
+def test_restore_normalizes_corrupted_backup_metadata_json(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tamper_manifest,
+    expected_error: str,
+) -> None:
+    db_path = tmp_path / "operator_console.db"
+    templates_dir = REPO_ROOT / "scripts/ids_operator_console/templates"
+    static_dir = REPO_ROOT / "scripts/ids_operator_console/static"
+    secret_file = tmp_path / "console.secret"
+    secret_file.write_text("ops-secret\n", encoding="utf-8")
+
+    manage.main(["--database-path", str(db_path), "migrate", "--allow-bootstrap"])
+    capsys.readouterr()
+    manage.main(
+        [
+            "--database-path",
+            str(db_path),
+            "bootstrap-admin",
+            "--username",
+            "admin",
+            "--password",
+            "correct-password",
+        ]
+    )
+    capsys.readouterr()
+
+    monkeypatch.setenv("IDS_OPERATOR_CONSOLE_ENVIRONMENT", "production")
+    monkeypatch.setenv("IDS_OPERATOR_CONSOLE_PUBLIC_BASE_URL", "https://console.example")
+    monkeypatch.setenv("IDS_OPERATOR_CONSOLE_SECRET_KEY_FILE", str(secret_file))
+    monkeypatch.setenv("IDS_OPERATOR_CONSOLE_TEMPLATES_DIR", str(templates_dir))
+    monkeypatch.setenv("IDS_OPERATOR_CONSOLE_STATIC_DIR", str(static_dir))
+    monkeypatch.setenv("IDS_OPERATOR_CONSOLE_ALERTS_INPUT_PATH", str(tmp_path / "logs" / "ids_live_alerts.jsonl"))
+    monkeypatch.setenv("IDS_OPERATOR_CONSOLE_QUARANTINE_INPUT_PATH", str(tmp_path / "logs" / "ids_live_quarantine.jsonl"))
+    monkeypatch.setenv("IDS_OPERATOR_CONSOLE_SUMMARY_INPUT_PATH", str(tmp_path / "logs" / "ids_live_sensor_summary.jsonl"))
+    (tmp_path / "logs").mkdir()
+
+    backup_root = tmp_path / "backups"
+    backup_rc = manage.main(
+        [
+            "--database-path",
+            str(db_path),
+            "--json",
+            "backup",
+            "--output-dir",
+            str(backup_root),
+        ]
+    )
+    backup_payload = json.loads(capsys.readouterr().out)
+    assert backup_rc == 0
+    backup_dir = Path(backup_payload["backup_dir"])
+
+    restored_db = tmp_path / "restored" / "operator_console.db"
+    tamper_manifest(backup_dir / "manifest.json")
+
+    with pytest.raises(Exception, match=expected_error):
+        manage.main(
+            [
+                "--database-path",
+                str(restored_db),
+                "restore",
+                "--backup-dir",
+                str(backup_dir),
+                "--service-stopped",
+            ]
+        )
 
 
 def test_manage_requires_explicit_migrate_before_bootstrap(tmp_path: Path) -> None:

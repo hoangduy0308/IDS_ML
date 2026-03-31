@@ -8,8 +8,10 @@ if __package__ in (None, ""):
     if str(REPO_ROOT) not in sys.path:
         sys.path.insert(0, str(REPO_ROOT))
 
-from ids.ops.operator_console_preflight import *  # noqa: F401,F403
+from ids.ops import operator_console_preflight as _impl
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(_impl.main())
+else:
+    sys.modules[__name__] = _impl

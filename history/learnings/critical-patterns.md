@@ -113,3 +113,39 @@ This UI redesign hit repeated worker startup/progress drift even though the vali
 This feature's follow-up review found that preserving a multi-token extractor command prefix in code and service units was not enough; the real risk lived in the tokenization chain across systemd, shell expansion, and argparse. The issue only became truly closed after tests exercised both the success round-trip and the missing-argument failure path. Future host-service features should treat tokenization-sensitive startup flags as executable contracts and test them end to end.
 
 **Full entry:** history/learnings/20260330-extractor-contract-hardening.md
+
+## [20260331] Treat Compatibility Wrappers As Executable Contracts
+**Category:** failure
+**Feature:** repo-structure-rationalization
+**Tags:** [wrappers, testing, compatibility, migration]
+
+This refactor preserved `scripts/*` entrypoints during a large internal move, but review proved that wrapper stability is not real unless CI exercises those wrappers directly. Runtime, ops, and ML wrapper smoke coverage all had to be added after execution, costing a substantial review-fix wave. Future staged migrations should add wrapper-smoke coverage in the same bead that preserves an old entrypoint, not as a later review repair.
+
+**Full entry:** history/learnings/20260331-repo-structure-wrapper-contracts.md
+
+## [20260331] Keep Canonical Modules Independent From Compatibility Layers
+**Category:** decision
+**Feature:** repo-structure-rationalization
+**Tags:** [architecture, core, imports, compatibility]
+
+The new package tree only became real once canonical `ids/*` code stopped importing back through `scripts/*` and `ids.core` stopped carrying operational lifecycle behavior. If canonical modules depend on compatibility wrappers, the new structure is only cosmetic and boundary drift returns immediately. Future refactors should enforce one-way dependency flow (`scripts -> canonical`) and keep shared/core packages limited to true contract responsibilities.
+
+**Full entry:** history/learnings/20260331-repo-structure-wrapper-contracts.md
+
+## [20260331] Normalize Hostile Metadata At Contract Boundaries
+**Category:** failure
+**Feature:** repo-structure-rationalization
+**Tags:** [error-handling, metadata, fail-closed, contracts]
+
+This refactor only became review-clean after manifest, activation-record, and backup-metadata parsers stopped leaking raw `KeyError`, `ValueError`, and JSON parse exceptions. Boundary modules such as `ids/core/model_bundle.py`, `ids/core/model_bundle_activation.py`, and `ids/console/ops.py` need to translate hostile or malformed metadata into one domain-specific error type so runtime, CLI, and review logic all fail closed consistently. Future work should normalize malformed metadata at the boundary and add corrupted-input tests in the same bead.
+
+**Full entry:** history/learnings/20260331-repo-structure-wrapper-contracts.md
+
+## [20260331] Resolve Paths Then Prove Root Containment For Host-Level Operations
+**Category:** failure
+**Feature:** repo-structure-rationalization
+**Tags:** [filesystem, path-resolution, containment, restore, security]
+
+The same-host cleanup showed that `Path.resolve()` is not a security boundary. Host-level helpers and restore inventory logic were only safe after they rejected non-absolute inputs explicitly and proved that manifest-derived paths still lived under the selected backup root after normalization. Future ops/preflight/restore code should always separate path normalization from path authorization and enforce root containment before any filesystem action.
+
+**Full entry:** history/learnings/20260331-repo-structure-wrapper-contracts.md

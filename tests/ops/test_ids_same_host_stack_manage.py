@@ -12,6 +12,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 import ids.ops.same_host_stack as stack  # noqa: E402
 import ids.ops.same_host_stack_manage as manage  # noqa: E402
+from wrapper_smoke_support import run_command
 
 
 def _make_executable(path: Path) -> Path:
@@ -495,7 +496,11 @@ def test_build_stack_status_payload_status_or_smoke_keeps_failure_domains_explic
     monkeypatch.setattr(
         stack,
         "build_readiness_payload",
-        lambda _config: {"ready": True, "status": "ok"},
+        lambda _config, include_sensitive=False: {
+            "ready": True,
+            "status": "ok",
+            "include_sensitive": include_sensitive,
+        },
     )
     monkeypatch.setattr(
         stack,
@@ -519,6 +524,9 @@ def test_build_stack_status_payload_status_or_smoke_keeps_failure_domains_explic
     }
     assert payload["components"]["outbound_notification_path"]["state"] == "disabled"
     assert payload["components"]["reverse_proxy_edge_seam"]["state"] == "unconfigured"
+    assert (
+        payload["components"]["operator_visibility_path"]["payload"]["include_sensitive"] is False
+    )
 
 
 def test_build_stack_smoke_payload_status_or_smoke_keeps_proxy_non_gating(
@@ -549,6 +557,15 @@ def test_build_stack_smoke_payload_status_or_smoke_keeps_proxy_non_gating(
     )
     monkeypatch.setattr(
         stack,
+        "build_readiness_payload",
+        lambda _config, include_sensitive=False: {
+            "ready": True,
+            "status": "ok",
+            "include_sensitive": include_sensitive,
+        },
+    )
+    monkeypatch.setattr(
+        stack,
         "build_notification_component",
         lambda _config, include_sensitive=True: {
             "ok": True,
@@ -564,6 +581,12 @@ def test_build_stack_smoke_payload_status_or_smoke_keeps_proxy_non_gating(
 
     assert payload["ready"] is True
     assert payload["components"]["operator_visibility_path"]["payload"]["redirect_status"] == 307
+    assert (
+        payload["components"]["operator_visibility_path"]["payload"]["readiness_payload"][
+            "include_sensitive"
+        ]
+        is False
+    )
     assert payload["components"]["reverse_proxy_edge_seam"]["state"] == "degraded"
     assert payload["components"]["reverse_proxy_edge_seam"]["gating"] is False
 
@@ -587,7 +610,11 @@ def test_build_stack_status_payload_status_or_smoke_returns_degraded_payload_on_
     monkeypatch.setattr(
         stack,
         "build_readiness_payload",
-        lambda _config: {"ready": True, "status": "ok"},
+        lambda _config, include_sensitive=False: {
+            "ready": True,
+            "status": "ok",
+            "include_sensitive": include_sensitive,
+        },
     )
     monkeypatch.setattr(
         stack,
@@ -628,7 +655,11 @@ def test_build_stack_status_payload_status_or_smoke_redacts_notification_details
     monkeypatch.setattr(
         stack,
         "build_readiness_payload",
-        lambda _config: {"ready": True, "status": "ok"},
+        lambda _config, include_sensitive=False: {
+            "ready": True,
+            "status": "ok",
+            "include_sensitive": include_sensitive,
+        },
     )
 
     captured_sensitive_flags: list[bool] = []
@@ -721,6 +752,17 @@ def test_run_command_bootstrap_or_preflight_redacts_inline_password_on_failure()
     assert "***REDACTED***" in message
 
 
+def test_same_host_path_helpers_reject_relative_inputs(tmp_path: Path) -> None:
+    relative_file = Path("relative-file.txt")
+    relative_dir = Path("relative-dir")
+
+    with pytest.raises(ValueError, match="must be an absolute path"):
+        stack._require_existing_file(relative_file, name="relative file")
+
+    with pytest.raises(ValueError, match="must be an absolute path"):
+        stack._require_existing_directory(relative_dir, name="relative dir")
+
+
 def test_run_stack_recovery_restart_or_recovery_path_executes_supervisor_first_order(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -747,7 +789,11 @@ def test_run_stack_recovery_restart_or_recovery_path_executes_supervisor_first_o
     monkeypatch.setattr(
         stack,
         "build_readiness_payload",
-        lambda _config: {"ready": True, "status": "ok"},
+        lambda _config, include_sensitive=False: {
+            "ready": True,
+            "status": "ok",
+            "include_sensitive": include_sensitive,
+        },
     )
     monkeypatch.setattr(
         stack,
@@ -819,7 +865,11 @@ def test_run_stack_recovery_restart_or_recovery_path_reports_degraded_diagnosis(
     monkeypatch.setattr(
         stack,
         "build_readiness_payload",
-        lambda _config: {"ready": True, "status": "ok"},
+        lambda _config, include_sensitive=False: {
+            "ready": True,
+            "status": "ok",
+            "include_sensitive": include_sensitive,
+        },
     )
     monkeypatch.setattr(
         stack,
@@ -1039,6 +1089,38 @@ def test_build_stack_restore_inventory_restore_or_post_restore_reports_secret_re
     assert payload["inventory_ready"] is False
     operator_state = payload["components"]["operator_console_restore_state"]
     assert operator_state["detail"] == "production secret_key must not use a placeholder value"
+
+
+def test_build_stack_restore_inventory_rejects_manifest_path_escape(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _build_config(tmp_path)
+    backup_dir = tmp_path / "backups" / "backup-20260329T010203000000Z"
+    manifest_path = _write_backup_artifacts(
+        backup_dir,
+        database_path=tmp_path / "runtime" / "operator_console.db",
+    )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    outside_db = tmp_path / "outside.db"
+    outside_db.write_text("outside\n", encoding="utf-8")
+    manifest["database"]["backup_file"] = "../outside.db"
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    config = replace(config, operator_backup_dir=backup_dir)
+
+    monkeypatch.setattr(
+        stack,
+        "build_bundle_status_payload",
+        lambda path: {"runtime_ready": True, "activation_path": str(path)},
+    )
+
+    payload = stack.build_stack_restore_inventory_payload(config)
+
+    assert payload["inventory_ready"] is False
+    operator_state = payload["components"]["operator_console_restore_state"]
+    assert operator_state["state"] == "degraded"
+    assert operator_state["payload"]["error_type"] == "ValueError"
+    assert "must remain inside the selected backup directory" in operator_state["detail"]
 
 
 def test_run_stack_post_restore_check_restore_or_post_restore_redrives_notifications(
@@ -1399,7 +1481,7 @@ def test_manage_main_restore_or_post_restore_prints_json_payload(
     ],
 )
 def test_script_wrapper_manage_help_runs_through_module_entrypoint(command: str) -> None:
-    help_run = subprocess.run(
+    help_run = run_command(
         [
             sys.executable,
             "-m",
@@ -1407,10 +1489,6 @@ def test_script_wrapper_manage_help_runs_through_module_entrypoint(command: str)
             command,
             "--help",
         ],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
     )
 
     assert help_run.returncode == 0, help_run.stderr
@@ -1432,17 +1510,13 @@ def test_script_wrapper_manage_help_runs_through_module_entrypoint(command: str)
     ],
 )
 def test_script_wrapper_manage_help_runs_through_direct_file_entrypoint(command: str) -> None:
-    help_run = subprocess.run(
+    help_run = run_command(
         [
             sys.executable,
             str(REPO_ROOT / "scripts" / "ids_same_host_stack_manage.py"),
             command,
             "--help",
         ],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
     )
 
     assert help_run.returncode == 0, help_run.stderr

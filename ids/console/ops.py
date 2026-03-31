@@ -92,6 +92,20 @@ def _database_digest(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _backup_integrity_path(backup_dir: Path) -> Path:
+    return backup_dir.parent / f"{backup_dir.name}.integrity.json"
+
+
+def _load_json_object(path: Path, *, label: str) -> dict[str, Any]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise OpsError(f"{label} is not valid JSON: {path}") from exc
+    if not isinstance(payload, dict):
+        raise OpsError(f"{label} must contain a JSON object: {path}")
+    return payload
+
+
 def build_backup_manifest(config: OperatorConsoleConfig) -> dict[str, Any]:
     inspection = assert_runtime_ready(config.database_path)
     return {
@@ -153,6 +167,16 @@ def create_backup(config: OperatorConsoleConfig, *, backup_root: Path) -> Backup
     manifest["database"]["backup_sha256"] = _database_digest(database_backup_path)
     manifest_path = backup_dir / "manifest.json"
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    integrity_path = _backup_integrity_path(backup_dir)
+    integrity = {
+        "manifest_version": 1,
+        "backup_dir": backup_dir.name,
+        "database": {
+            "backup_file": database_backup_path.name,
+            "backup_sha256": manifest["database"]["backup_sha256"],
+        },
+    }
+    integrity_path.write_text(json.dumps(integrity, ensure_ascii=False, indent=2), encoding="utf-8")
     return BackupResult(
         backup_dir=backup_dir,
         database_backup_path=database_backup_path,
@@ -161,13 +185,32 @@ def create_backup(config: OperatorConsoleConfig, *, backup_root: Path) -> Backup
     )
 
 
-def _load_manifest(backup_dir: Path) -> tuple[Path, dict[str, Any], Path]:
+def _load_manifest(backup_dir: Path) -> tuple[Path, dict[str, Any]]:
     resolved = Path(backup_dir).resolve()
     manifest_path = resolved / "manifest.json"
     if not manifest_path.is_file():
         raise OpsError(f"backup manifest not found: {manifest_path}")
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    backup_name = str(manifest.get("database", {}).get("backup_file", "operator_console.db"))
+    manifest = _load_json_object(manifest_path, label="backup manifest")
+    return manifest_path, manifest
+
+
+def _load_backup_integrity(backup_dir: Path) -> tuple[Path, dict[str, Any], Path, str]:
+    resolved = Path(backup_dir).resolve()
+    integrity_path = _backup_integrity_path(resolved)
+    if not integrity_path.is_file():
+        raise OpsError(f"backup integrity metadata not found: {integrity_path}")
+    integrity = _load_json_object(integrity_path, label="backup integrity metadata")
+    if str(integrity.get("backup_dir", "")).strip() != resolved.name:
+        raise OpsError("backup integrity metadata does not match selected backup directory")
+
+    database_meta = integrity.get("database", {})
+    backup_name = str(database_meta.get("backup_file", "")).strip()
+    if not backup_name:
+        raise OpsError("backup integrity metadata is missing the recorded database file")
+    expected_digest = str(database_meta.get("backup_sha256", "")).strip()
+    if not expected_digest:
+        raise OpsError("backup integrity metadata is missing the recorded database digest")
+
     database_backup_path = (resolved / backup_name).resolve()
     try:
         database_backup_path.relative_to(resolved)
@@ -175,7 +218,26 @@ def _load_manifest(backup_dir: Path) -> tuple[Path, dict[str, Any], Path]:
         raise OpsError("backup database must remain inside the selected backup directory") from exc
     if not database_backup_path.is_file():
         raise OpsError(f"backup database not found: {database_backup_path}")
-    return manifest_path, manifest, database_backup_path
+    return integrity_path, integrity, database_backup_path, expected_digest
+
+
+def _validate_backup_manifest_consistency(manifest: dict[str, Any], integrity: dict[str, Any]) -> None:
+    manifest_database = manifest.get("database", {})
+    integrity_database = integrity.get("database", {})
+
+    manifest_backup_file = str(manifest_database.get("backup_file", "")).strip()
+    integrity_backup_file = str(integrity_database.get("backup_file", "")).strip()
+    if not manifest_backup_file:
+        raise OpsError("backup manifest is missing the recorded database file")
+    if manifest_backup_file != integrity_backup_file:
+        raise OpsError("backup manifest does not match trusted backup integrity metadata")
+
+    manifest_digest = str(manifest_database.get("backup_sha256", "")).strip()
+    if not manifest_digest:
+        raise OpsError("backup manifest is missing the recorded database digest")
+    integrity_digest = str(integrity_database.get("backup_sha256", "")).strip()
+    if manifest_digest != integrity_digest:
+        raise OpsError("backup manifest does not match trusted backup integrity metadata")
 
 
 def _validate_restore_secret_references(config: OperatorConsoleConfig, manifest: dict[str, Any]) -> None:
@@ -198,13 +260,12 @@ def restore_backup(
     if not service_stopped:
         raise OpsError("restore requires explicit offline confirmation via --service-stopped")
 
-    manifest_path, manifest, database_backup_path = _load_manifest(backup_dir)
+    manifest_path, manifest = _load_manifest(backup_dir)
+    _integrity_path, integrity, database_backup_path, expected_digest = _load_backup_integrity(backup_dir)
+    _validate_backup_manifest_consistency(manifest, integrity)
     _validate_restore_secret_references(config, manifest)
-    expected_digest = str(manifest.get("database", {}).get("backup_sha256", "")).strip()
-    if not expected_digest:
-        raise OpsError("backup manifest is missing the recorded database digest")
     if _database_digest(database_backup_path) != expected_digest:
-        raise OpsError("backup database digest does not match manifest")
+        raise OpsError("backup database digest does not match trusted backup integrity metadata")
 
     destination_path = config.database_path.resolve()
     destination_path.parent.mkdir(parents=True, exist_ok=True)
@@ -259,6 +320,9 @@ def prune_backup_retention(*, backup_root: Path, keep_last: int) -> RetentionRes
     kept_paths = backup_dirs[:keep_last]
     removed_paths = backup_dirs[keep_last:]
     for stale in removed_paths:
+        integrity_path = _backup_integrity_path(stale)
+        if integrity_path.exists():
+            integrity_path.unlink()
         shutil.rmtree(stale)
     return RetentionResult(
         backup_root=resolved,

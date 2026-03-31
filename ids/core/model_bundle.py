@@ -28,6 +28,40 @@ def read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _require_field(payload: dict[str, Any], key: str, *, manifest_path: Path) -> Any:
+    if key not in payload:
+        raise ModelBundleContractError(f"Bundle manifest missing {key}: {manifest_path}")
+    return payload[key]
+
+
+def _require_int(payload: dict[str, Any], key: str, *, manifest_path: Path) -> int:
+    raw_value = _require_field(payload, key, manifest_path=manifest_path)
+    try:
+        return int(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise ModelBundleContractError(
+            f"Bundle manifest has invalid {key}: {manifest_path}"
+        ) from exc
+
+
+def _require_float(payload: dict[str, Any], key: str, *, manifest_path: Path) -> float:
+    raw_value = _require_field(payload, key, manifest_path=manifest_path)
+    try:
+        return float(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise ModelBundleContractError(
+            f"Bundle manifest has invalid {key}: {manifest_path}"
+        ) from exc
+
+
+def _require_non_empty_string(payload: dict[str, Any], key: str, *, manifest_path: Path) -> str:
+    raw_value = _require_field(payload, key, manifest_path=manifest_path)
+    value = str(raw_value).strip()
+    if not value:
+        raise ModelBundleContractError(f"Bundle manifest missing {key}: {manifest_path}")
+    return value
+
+
 def write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -105,31 +139,49 @@ class ModelBundleManifest:
 
     @property
     def manifest_version(self) -> int:
-        return int(self.payload["manifest_version"])
+        return _require_int(self.payload, "manifest_version", manifest_path=self.manifest_path)
 
     @property
     def bundle_name(self) -> str:
-        return str(self.payload["bundle_name"])
+        return _require_non_empty_string(self.payload, "bundle_name", manifest_path=self.manifest_path)
 
     @property
     def model_path(self) -> Path:
-        return (self.bundle_root / str(self.payload["model_artifact"])).resolve()
+        model_artifact = _require_non_empty_string(
+            self.payload,
+            "model_artifact",
+            manifest_path=self.manifest_path,
+        )
+        return (self.bundle_root / model_artifact).resolve()
 
     @property
     def feature_columns_path(self) -> Path:
-        return (self.bundle_root / str(self.payload["feature_columns_file"])).resolve()
+        feature_columns_file = _require_non_empty_string(
+            self.payload,
+            "feature_columns_file",
+            manifest_path=self.manifest_path,
+        )
+        return (self.bundle_root / feature_columns_file).resolve()
 
     @property
     def threshold(self) -> float:
-        return float(self.payload["threshold"])
+        return _require_float(self.payload, "threshold", manifest_path=self.manifest_path)
 
     @property
     def positive_label(self) -> str:
-        return str(self.payload["positive_label"])
+        return _require_non_empty_string(
+            self.payload,
+            "positive_label",
+            manifest_path=self.manifest_path,
+        )
 
     @property
     def negative_label(self) -> str:
-        return str(self.payload["negative_label"])
+        return _require_non_empty_string(
+            self.payload,
+            "negative_label",
+            manifest_path=self.manifest_path,
+        )
 
     @property
     def compatibility(self) -> dict[str, Any]:
@@ -184,7 +236,16 @@ def validate_bundle_manifest(manifest: ModelBundleManifest) -> ModelBundleManife
             "Feature schema path in compatibility metadata does not match "
             f"{manifest.feature_columns_path.name!r}"
         )
-    expected_feature_count = int(feature_schema.get("feature_count", 0))
+    if "feature_count" not in feature_schema:
+        raise ModelBundleContractError(
+            f"Bundle manifest missing feature_count compatibility metadata: {manifest.manifest_path}"
+        )
+    try:
+        expected_feature_count = int(feature_schema["feature_count"])
+    except (TypeError, ValueError) as exc:
+        raise ModelBundleContractError(
+            f"Bundle manifest has invalid feature_count compatibility metadata: {manifest.manifest_path}"
+        ) from exc
     actual_feature_columns = load_feature_columns(manifest.feature_columns_path)
     if expected_feature_count != len(actual_feature_columns):
         raise ModelBundleContractError(
@@ -217,7 +278,16 @@ def validate_bundle_manifest(manifest: ModelBundleManifest) -> ModelBundleManife
         raise ModelBundleContractError(
             "Inference contract cannot allow external threshold overrides"
         )
-    contract_threshold = float(inference_contract.get("threshold", manifest.threshold))
+    if "threshold" not in inference_contract:
+        contract_threshold = manifest.threshold
+    else:
+        try:
+            contract_threshold = float(inference_contract["threshold"])
+        except (TypeError, ValueError) as exc:
+            raise ModelBundleContractError(
+                "Inference contract has invalid threshold metadata "
+                f"for {manifest.manifest_path}"
+            ) from exc
     if contract_threshold != manifest.threshold:
         raise ModelBundleContractError("Inference contract threshold does not match bundle threshold")
     if str(inference_contract.get("positive_label", "")).strip() != manifest.positive_label:
@@ -236,9 +306,13 @@ def load_model_bundle_manifest(bundle_root: Path) -> ModelBundleManifest:
     manifest_path = bundle_root / DEFAULT_BUNDLE_CONFIG_NAME
     if not manifest_path.is_file():
         raise ModelBundleContractError(f"Bundle manifest not found: {manifest_path}")
+    try:
+        payload = read_json(manifest_path)
+    except json.JSONDecodeError as exc:
+        raise ModelBundleContractError(f"Bundle manifest is not valid JSON: {manifest_path}") from exc
     manifest = ModelBundleManifest(
         bundle_root=bundle_root,
         manifest_path=manifest_path,
-        payload=read_json(manifest_path),
+        payload=payload,
     )
     return validate_bundle_manifest(manifest)

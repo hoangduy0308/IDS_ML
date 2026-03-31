@@ -1,1 +1,5 @@
-from ids.console.web import *  # noqa: F401,F403
+import sys
+
+from ids.console import web as _impl
+
+sys.modules[__name__] = _impl

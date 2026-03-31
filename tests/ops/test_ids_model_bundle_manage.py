@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import subprocess
-import sys
-from pathlib import Path
 import json
+from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from wrapper_smoke_support import assert_help_smoke, run_python_module_help, run_python_script_help
 
 import ids.ops.model_bundle_manage as manage  # noqa: E402
 from ids.core.model_bundle import (  # noqa: E402
@@ -203,37 +201,12 @@ def test_manage_failed_promote_preserves_previous_active_bundle(
 
 
 def test_script_wrapper_help_runs_through_module_entrypoint() -> None:
-    help_run = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "scripts.ids_model_bundle_manage",
-            "--help",
-        ],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
-    assert help_run.returncode == 0, help_run.stderr
+    help_run = run_python_module_help("scripts.ids_model_bundle_manage")
+    assert_help_smoke(help_run, "scripts.ids_model_bundle_manage")
     assert "usage:" in help_run.stdout.lower()
-    assert "traceback" not in help_run.stderr.lower()
 
 
 def test_script_wrapper_help_runs_through_direct_file_entrypoint() -> None:
-    help_run = subprocess.run(
-        [
-            sys.executable,
-            str(REPO_ROOT / "scripts" / "ids_model_bundle_manage.py"),
-            "--help",
-        ],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
-    assert help_run.returncode == 0, help_run.stderr
+    help_run = run_python_script_help("scripts/ids_model_bundle_manage.py")
+    assert_help_smoke(help_run, "scripts/ids_model_bundle_manage.py")
     assert "usage:" in help_run.stdout.lower()
-    assert "traceback" not in help_run.stderr.lower()

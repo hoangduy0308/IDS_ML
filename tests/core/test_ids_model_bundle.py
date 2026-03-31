@@ -18,12 +18,12 @@ from ids.core.model_bundle import (  # noqa: E402
 from ids.core.feature_contract import load_feature_columns as load_contract_feature_columns  # noqa: E402
 from ids.core.model_bundle_activation import (  # noqa: E402
     DEFAULT_ACTIVATION_RECORD_NAME,
+    build_bundle_status_payload,
     load_activation_record,
     resolve_active_model_bundle,
 )
 from ids.ops.model_bundle_lifecycle import (  # noqa: E402
     build_activation_record_payload,
-    build_bundle_status_payload,
     write_activation_record,
 )
 
@@ -125,6 +125,50 @@ def test_load_model_bundle_manifest_fails_on_unsupported_inference_contract(tmp_
 
     with pytest.raises(ModelBundleContractError, match="Unsupported inference contract version"):
         load_model_bundle_manifest(bundle_root)
+
+
+@pytest.mark.parametrize(
+    ("mutate_manifest", "error_message"),
+    [
+        (lambda payload: payload.__setitem__("manifest_version", "bogus"), "invalid manifest_version"),
+        (lambda payload: payload.__setitem__("threshold", "bogus"), "invalid threshold"),
+        (
+            lambda payload: payload["compatibility"]["feature_schema"].__setitem__("feature_count", "bogus"),
+            "invalid feature_count",
+        ),
+    ],
+)
+def test_load_model_bundle_manifest_normalizes_invalid_metadata_fields(
+    tmp_path: Path,
+    mutate_manifest,
+    error_message: str,
+) -> None:
+    bundle_root = tmp_path / "bundle"
+    bundle_root.mkdir()
+    write_bundle_manifest(bundle_root)
+    manifest_path = bundle_root / "model_bundle.json"
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    mutate_manifest(payload)
+    manifest_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ModelBundleContractError, match=error_message):
+        load_model_bundle_manifest(bundle_root)
+
+
+def test_load_activation_record_normalizes_invalid_record_version(tmp_path: Path) -> None:
+    activation_path = tmp_path / DEFAULT_ACTIVATION_RECORD_NAME
+    activation_path.write_text(
+        json.dumps(
+            {
+                "record_version": "bogus",
+                "active_bundle_root": str((tmp_path / "bundle").resolve()),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ModelBundleContractError, match="invalid record_version"):
+        load_activation_record(activation_path)
 
 
 def test_feature_column_loader_is_shared_and_bundle_wraps_errors(tmp_path: Path) -> None:

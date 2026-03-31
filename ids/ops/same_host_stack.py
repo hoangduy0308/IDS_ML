@@ -106,9 +106,10 @@ def _path_state_from_exception(exc: Exception) -> str:
 
 
 def _require_existing_file(path: Path, *, name: str, executable: bool = False) -> Path:
-    resolved = Path(path).resolve()
-    if not resolved.is_absolute():
+    candidate = Path(path)
+    if not candidate.is_absolute():
         raise ValueError(f"{name} must be an absolute path")
+    resolved = candidate.resolve()
     if not resolved.is_file():
         raise FileNotFoundError(f"{name} not found: {resolved}")
     if executable and not _is_executable_file(resolved):
@@ -117,11 +118,32 @@ def _require_existing_file(path: Path, *, name: str, executable: bool = False) -
 
 
 def _require_existing_directory(path: Path, *, name: str) -> Path:
-    resolved = Path(path).resolve()
-    if not resolved.is_absolute():
+    candidate = Path(path)
+    if not candidate.is_absolute():
         raise ValueError(f"{name} must be an absolute path")
+    resolved = candidate.resolve()
     if not resolved.is_dir():
         raise FileNotFoundError(f"{name} not found: {resolved}")
+    return resolved
+
+
+def _load_json_object(path: Path, *, label: str) -> dict[str, Any]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{label} is not valid JSON: {path}") from exc
+    if not isinstance(payload, dict):
+        raise ValueError(f"{label} must contain a JSON object: {path}")
+    return payload
+
+
+def _resolve_path_within_root(root: Path, candidate: str, *, label: str) -> Path:
+    root = Path(root).resolve()
+    resolved = (root / candidate).resolve()
+    try:
+        resolved.relative_to(root)
+    except ValueError as exc:
+        raise ValueError(f"{label} must remain inside the selected backup directory") from exc
     return resolved
 
 
@@ -278,7 +300,8 @@ def _build_live_sensor_component(config: SameHostStackConfig) -> dict[str, Any]:
 
 def _build_operator_status_component(config: SameHostStackConfig) -> dict[str, Any]:
     try:
-        payload = build_readiness_payload(load_stack_operator_config(config))
+        operator_config = load_stack_operator_config(config)
+        payload = build_readiness_payload(operator_config, include_sensitive=False)
     except Exception as exc:
         return _build_failure_component(
             exc=exc,
@@ -296,7 +319,9 @@ def _build_operator_status_component(config: SameHostStackConfig) -> dict[str, A
 
 def _build_operator_smoke_component(config: SameHostStackConfig) -> dict[str, Any]:
     try:
-        smoke = run_smoke_checks(load_stack_operator_config(config))
+        operator_config = load_stack_operator_config(config)
+        smoke = run_smoke_checks(operator_config)
+        readiness_payload = build_readiness_payload(operator_config, include_sensitive=False)
     except Exception as exc:
         return _build_failure_component(
             exc=exc,
@@ -313,7 +338,7 @@ def _build_operator_smoke_component(config: SameHostStackConfig) -> dict[str, An
             "health_status": smoke.health_status,
             "readiness_status": smoke.readiness_status,
             "redirect_status": smoke.redirect_status,
-            "readiness_payload": smoke.readiness_payload,
+            "readiness_payload": readiness_payload,
         },
     }
 
@@ -633,9 +658,15 @@ def _load_backup_manifest(backup_dir: Path) -> tuple[Path, dict[str, Any], Path]
     manifest_path = backup_dir / "manifest.json"
     if not manifest_path.is_file():
         raise FileNotFoundError(f"backup manifest not found: {manifest_path}")
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    backup_file_name = str(manifest.get("database", {}).get("backup_file", "operator_console.db"))
-    database_backup_path = (backup_dir / backup_file_name).resolve()
+    manifest = _load_json_object(manifest_path, label="backup manifest")
+    backup_file_name = str(manifest.get("database", {}).get("backup_file", "")).strip()
+    if not backup_file_name:
+        raise ValueError(f"backup manifest missing database backup_file: {manifest_path}")
+    database_backup_path = _resolve_path_within_root(
+        backup_dir,
+        backup_file_name,
+        label="backup database",
+    )
     if not database_backup_path.is_file():
         raise FileNotFoundError(f"backup database not found: {database_backup_path}")
     return manifest_path, manifest, database_backup_path

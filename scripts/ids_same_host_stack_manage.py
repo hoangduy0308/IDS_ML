@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pathlib import Path
 import sys
 
@@ -6,8 +8,10 @@ if __package__ in (None, ""):
     if str(REPO_ROOT) not in sys.path:
         sys.path.insert(0, str(REPO_ROOT))
 
-from ids.ops.same_host_stack_manage import *  # noqa: F401,F403
+from ids.ops import same_host_stack_manage as _impl
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(_impl.main())
+else:
+    sys.modules[__name__] = _impl

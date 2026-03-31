@@ -8,9 +8,10 @@ if __package__ in (None, ""):
     if str(REPO_ROOT) not in sys.path:
         sys.path.insert(0, str(REPO_ROOT))
 
-from ml_pipeline.benchmark.stage_kaggle_scaling import *  # noqa: F401,F403
-from ml_pipeline.benchmark.stage_kaggle_scaling import main
+from ml_pipeline.benchmark import stage_kaggle_scaling as _impl
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(_impl.main())
+else:
+    sys.modules[__name__] = _impl
