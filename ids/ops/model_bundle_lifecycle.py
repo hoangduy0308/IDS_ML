@@ -10,12 +10,10 @@ from ids.core.model_bundle_activation import (
     ActiveBundleResolutionError,
     DEFAULT_ACTIVATION_RECORD_NAME,
     SUPPORTED_ACTIVATION_RECORD_VERSION,
-    build_activation_record_payload,
-    build_bundle_status_payload,
     load_activation_record,
     resolve_active_model_bundle,
-    write_activation_record,
 )
+from ids.core.model_bundle import write_json_atomic
 
 
 def verify_candidate_bundle(bundle_root: Path) -> dict[str, Any]:
@@ -33,6 +31,65 @@ def verify_candidate_bundle(bundle_root: Path) -> dict[str, Any]:
 
 def utc_now_isoformat() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def write_activation_record(path: Path, payload: dict[str, Any]) -> None:
+    write_json_atomic(Path(path).resolve(), payload)
+
+
+def build_activation_record_payload(
+    *,
+    active_bundle_root: Path,
+    active_bundle_name: str,
+    activated_at: str,
+    previous_bundle_root: Path | None = None,
+    previous_bundle_name: str | None = None,
+    verification_status: str = "verified",
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "record_version": SUPPORTED_ACTIVATION_RECORD_VERSION,
+        "active_bundle_root": str(Path(active_bundle_root).resolve()),
+        "active_bundle_name": str(active_bundle_name),
+        "activated_at": str(activated_at),
+        "verification_status": str(verification_status),
+    }
+    if previous_bundle_root is not None:
+        payload["previous_bundle_root"] = str(Path(previous_bundle_root).resolve())
+    if previous_bundle_name:
+        payload["previous_bundle_name"] = str(previous_bundle_name)
+    return payload
+
+
+def build_bundle_status_payload(activation_path: Path) -> dict[str, Any]:
+    activation_path = Path(activation_path).resolve()
+    payload: dict[str, Any] = {
+        "activation_path": str(activation_path),
+        "activation_record_exists": activation_path.is_file(),
+    }
+    if not activation_path.is_file():
+        payload["runtime_ready"] = False
+        payload["detail"] = "activation record not found"
+        return payload
+
+    record = load_activation_record(activation_path)
+    manifest = load_model_bundle_manifest(record.active_bundle_root)
+    payload.update(
+        {
+            "runtime_ready": True,
+            "active_bundle_root": str(record.active_bundle_root),
+            "active_bundle_name": record.payload.get("active_bundle_name", manifest.bundle_name),
+            "activated_at": record.payload.get("activated_at"),
+            "verification_status": record.payload.get("verification_status"),
+            "manifest_version": manifest.manifest_version,
+            "threshold": manifest.threshold,
+            "feature_columns_path": str(manifest.feature_columns_path),
+            "model_path": str(manifest.model_path),
+        }
+    )
+    if record.previous_bundle_root is not None:
+        payload["previous_bundle_root"] = str(record.previous_bundle_root)
+        payload["previous_bundle_name"] = record.payload.get("previous_bundle_name")
+    return payload
 
 
 def promote_candidate_bundle(

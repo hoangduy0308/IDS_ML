@@ -36,7 +36,10 @@ def load_feature_columns(path: Path) -> list[str]:
     columns = payload.get("feature_columns")
     if not isinstance(columns, list) or not columns:
         raise ValueError(f"Invalid feature_columns payload in {path}")
-    return [str(column) for column in columns]
+    normalized = [str(column) for column in columns]
+    if any(not column.strip() for column in normalized):
+        raise ValueError(f"Blank feature column name found in {path}")
+    return normalized
 
 
 def coerce_numeric_feature(value: Any) -> float:

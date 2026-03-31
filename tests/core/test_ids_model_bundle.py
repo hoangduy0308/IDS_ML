@@ -12,14 +12,18 @@ from ids.core.model_bundle import (  # noqa: E402
     ModelBundleContractError,
     build_feature_schema_metadata,
     build_inference_contract_metadata,
+    load_feature_columns as load_bundle_feature_columns,
     load_model_bundle_manifest,
 )
+from ids.core.feature_contract import load_feature_columns as load_contract_feature_columns  # noqa: E402
 from ids.core.model_bundle_activation import (  # noqa: E402
     DEFAULT_ACTIVATION_RECORD_NAME,
-    build_activation_record_payload,
-    build_bundle_status_payload,
     load_activation_record,
     resolve_active_model_bundle,
+)
+from ids.ops.model_bundle_lifecycle import (  # noqa: E402
+    build_activation_record_payload,
+    build_bundle_status_payload,
     write_activation_record,
 )
 
@@ -121,6 +125,20 @@ def test_load_model_bundle_manifest_fails_on_unsupported_inference_contract(tmp_
 
     with pytest.raises(ModelBundleContractError, match="Unsupported inference contract version"):
         load_model_bundle_manifest(bundle_root)
+
+
+def test_feature_column_loader_is_shared_and_bundle_wraps_errors(tmp_path: Path) -> None:
+    feature_columns_path = tmp_path / "feature_columns.json"
+    feature_columns_path.write_text(
+        json.dumps({"feature_columns": ["f1", " "]}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="Blank feature column name found"):
+        load_contract_feature_columns(feature_columns_path)
+
+    with pytest.raises(ModelBundleContractError, match="Blank feature column name found"):
+        load_bundle_feature_columns(feature_columns_path)
 
 
 def test_resolve_active_model_bundle_uses_activation_record(tmp_path: Path) -> None:

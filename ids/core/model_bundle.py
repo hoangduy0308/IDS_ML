@@ -7,6 +7,8 @@ from typing import Any
 import json
 import tempfile
 
+from ids.core.feature_contract import load_feature_columns as _load_feature_columns
+
 
 DEFAULT_BUNDLE_CONFIG_NAME = "model_bundle.json"
 SUPPORTED_BUNDLE_MANIFEST_VERSION = 2
@@ -58,14 +60,10 @@ def sha256_file(path: Path) -> str:
 
 
 def load_feature_columns(path: Path) -> list[str]:
-    payload = read_json(path)
-    columns = payload.get("feature_columns")
-    if not isinstance(columns, list) or not columns:
-        raise ModelBundleContractError(f"Invalid feature_columns payload in {path}")
-    normalized = [str(column) for column in columns]
-    if any(not column.strip() for column in normalized):
-        raise ModelBundleContractError(f"Blank feature column name found in {path}")
-    return normalized
+    try:
+        return _load_feature_columns(path)
+    except ValueError as exc:
+        raise ModelBundleContractError(str(exc)) from exc
 
 
 def build_feature_schema_metadata(path: Path) -> dict[str, Any]:

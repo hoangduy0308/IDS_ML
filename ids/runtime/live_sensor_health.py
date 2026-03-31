@@ -9,7 +9,8 @@ from typing import Any, Sequence
 
 from ids.runtime.live_sensor_sinks import DEFAULT_SUMMARY_OUTPUT_PATH
 from ids.core.model_bundle import ModelBundleContractError
-from ids.core.model_bundle_activation import ActiveBundleResolutionError, build_bundle_status_payload
+from ids.core.model_bundle_activation import ActiveBundleResolutionError
+from ids.ops.model_bundle_lifecycle import build_bundle_status_payload
 
 
 DEFAULT_FRESHNESS_WINDOW_SECONDS = 300.0
