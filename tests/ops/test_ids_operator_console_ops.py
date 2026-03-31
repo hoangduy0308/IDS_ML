@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from hashlib import sha256
 from pathlib import Path
 import json
 import os
+import shutil
 
 import pytest
 
@@ -32,6 +34,14 @@ def _append_jsonl(path: Path, payload: dict[str, object]) -> None:
     with path.open("a", encoding="utf-8", newline="\n") as handle:
         handle.write(json.dumps(payload, ensure_ascii=False))
         handle.write("\n")
+
+
+def _file_digest(path: Path) -> str:
+    digest = sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _make_preflight_config(tmp_path: Path, **overrides: object) -> OperatorConsolePreflightConfig:
@@ -269,6 +279,57 @@ def test_manage_backup_restore_retention_and_smoke(tmp_path: Path, capsys: pytes
     assert restored_smoke.readiness_payload["components"]["notification"]["last_error"]["present"] is True
     assert "message" not in restored_smoke.readiness_payload["components"]["notification"]["last_error"]
     assert restored_smoke.readiness_payload["ready"] is True
+
+    tamper_target_db = tmp_path / "tamper-target" / "operator_console.db"
+    tamper_target_db.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(restored_db, tamper_target_db)
+    tamper_target_digest = _file_digest(tamper_target_db)
+
+    digest_tampered_dir = tmp_path / "tampered-digest"
+    shutil.copytree(backup_dir, digest_tampered_dir)
+    digest_manifest_path = digest_tampered_dir / "manifest.json"
+    digest_manifest = json.loads(digest_manifest_path.read_text(encoding="utf-8"))
+    digest_manifest["database"]["backup_sha256"] = "0" * 64
+    digest_manifest_path.write_text(
+        json.dumps(digest_manifest, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    with pytest.raises(Exception, match="digest"):
+        manage.main(
+            [
+                "--database-path",
+                str(tamper_target_db),
+                "restore",
+                "--backup-dir",
+                str(digest_tampered_dir),
+                "--service-stopped",
+            ]
+        )
+    assert _file_digest(tamper_target_db) == tamper_target_digest
+
+    path_tampered_dir = tmp_path / "tampered-path"
+    shutil.copytree(backup_dir, path_tampered_dir)
+    path_manifest_path = path_tampered_dir / "manifest.json"
+    path_manifest = json.loads(path_manifest_path.read_text(encoding="utf-8"))
+    outside_db = tmp_path / "outside.db"
+    shutil.copy2(path_tampered_dir / path_manifest["database"]["backup_file"], outside_db)
+    path_manifest["database"]["backup_file"] = "../outside.db"
+    path_manifest_path.write_text(
+        json.dumps(path_manifest, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    with pytest.raises(Exception, match="selected backup directory"):
+        manage.main(
+            [
+                "--database-path",
+                str(tamper_target_db),
+                "restore",
+                "--backup-dir",
+                str(path_tampered_dir),
+                "--service-stopped",
+            ]
+        )
+    assert _file_digest(tamper_target_db) == tamper_target_digest
 
     restored_redrive_rc = manage.main(
         [

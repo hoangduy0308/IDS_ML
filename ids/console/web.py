@@ -204,12 +204,16 @@ def create_operator_console_web_app(
         )
 
     @app.get("/healthz", response_class=JSONResponse)
-    def healthz() -> JSONResponse:
-        return JSONResponse(build_liveness_payload(config))
+    def healthz(request: Request) -> JSONResponse:
+        include_sensitive = current_admin(request) is not None
+        return JSONResponse(
+            build_liveness_payload(config, include_sensitive=include_sensitive)
+        )
 
     @app.get("/readyz", response_class=JSONResponse)
-    def readyz() -> JSONResponse:
-        payload = build_readiness_payload(config)
+    def readyz(request: Request) -> JSONResponse:
+        include_sensitive = current_admin(request) is not None
+        payload = build_readiness_payload(config, include_sensitive=include_sensitive)
         status_code = status.HTTP_200_OK if payload["ready"] else status.HTTP_503_SERVICE_UNAVAILABLE
         return JSONResponse(payload, status_code=status_code)
 
@@ -279,7 +283,7 @@ def create_operator_console_web_app(
             if store is None:
                 runtime_store.close()
         health = _prepare_health_snapshot(summaries)
-        readiness = build_readiness_payload(config)
+        readiness = build_readiness_payload(config, include_sensitive=True)
         return render_template(
             request,
             "overview.html",
@@ -326,7 +330,7 @@ def create_operator_console_web_app(
                 runtime_store.close()
 
         health = _prepare_health_snapshot(summaries)
-        readiness = build_readiness_payload(config)
+        readiness = build_readiness_payload(config, include_sensitive=True)
         return render_template(
             request,
             "alerts.html",
@@ -433,7 +437,7 @@ def create_operator_console_web_app(
             "operations.html",
             anomalies=anomalies,
             health=_prepare_health_snapshot(summaries),
-            readiness=build_readiness_payload(config),
+            readiness=build_readiness_payload(config, include_sensitive=True),
             page_key="operations",
             page_meta={
                 "eyebrow": "Vận hành",

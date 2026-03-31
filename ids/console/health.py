@@ -21,13 +21,23 @@ def _path_health(path: Path) -> dict[str, Any]:
     }
 
 
-def build_liveness_payload(config: OperatorConsoleConfig) -> dict[str, Any]:
-    return {
+def build_liveness_payload(
+    config: OperatorConsoleConfig,
+    *,
+    include_sensitive: bool = True,
+) -> dict[str, Any]:
+    payload = {
         "status": "ok",
         "service": "ids-operator-console",
-        "environment": config.environment,
-        "database_path": str(config.database_path),
     }
+    if include_sensitive:
+        payload.update(
+            {
+                "environment": config.environment,
+                "database_path": str(config.database_path),
+            }
+        )
+    return payload
 
 
 def _decode_payload(raw_payload: Any) -> dict[str, Any]:
@@ -178,7 +188,11 @@ def build_notification_component(
     }
 
 
-def build_readiness_payload(config: OperatorConsoleConfig) -> dict[str, Any]:
+def build_readiness_payload(
+    config: OperatorConsoleConfig,
+    *,
+    include_sensitive: bool = True,
+) -> dict[str, Any]:
     inspection = inspect_operator_store(config.database_path)
     data_paths = {
         "alerts": _path_health(config.alerts_input_path),
@@ -195,41 +209,48 @@ def build_readiness_payload(config: OperatorConsoleConfig) -> dict[str, Any]:
     active_bundle_state = _load_latest_active_bundle_state(config)
     notification = build_notification_component(config)
     ready = config_ok and inspection.runtime_ready and data_path_ok
-    return {
+    payload: dict[str, Any] = {
         "status": "ok" if ready else "degraded",
         "ready": ready,
         "service": "ids-operator-console",
-        "environment": config.environment,
-        "proxy": {
-            "public_base_url": config.public_base_url,
-            "root_path": config.root_path,
-            "forwarded_allow_ips": config.forwarded_allow_ips,
-        },
-        "components": {
-            "config": {
-                "ok": config_ok,
-                "session_cookie_https_only": config.session_cookie_https_only,
-                "session_cookie_same_site": config.session_cookie_same_site,
-                "secret_source": str(config.secret_key_source) if config.secret_key_source else "env",
-            },
-            "schema": {
-                "ok": inspection.schema_state == "current",
-                "state": inspection.schema_state,
-                "version": inspection.schema_version,
-                "detail": inspection.detail,
-            },
-            "admin_bootstrap": {
-                "ok": inspection.admin_count > 0,
-                "admin_count": inspection.admin_count,
-            },
-            "data_paths": {
-                "ok": data_path_ok,
-                "streams": data_paths,
-            },
-            "active_bundle": {
-                "ok": active_bundle_state is not None,
-                "state": active_bundle_state,
-            },
-            "notification": notification,
-        },
     }
+    if not include_sensitive:
+        return payload
+    payload.update(
+        {
+            "environment": config.environment,
+            "proxy": {
+                "public_base_url": config.public_base_url,
+                "root_path": config.root_path,
+                "forwarded_allow_ips": config.forwarded_allow_ips,
+            },
+            "components": {
+                "config": {
+                    "ok": config_ok,
+                    "session_cookie_https_only": config.session_cookie_https_only,
+                    "session_cookie_same_site": config.session_cookie_same_site,
+                    "secret_source": str(config.secret_key_source) if config.secret_key_source else "env",
+                },
+                "schema": {
+                    "ok": inspection.schema_state == "current",
+                    "state": inspection.schema_state,
+                    "version": inspection.schema_version,
+                    "detail": inspection.detail,
+                },
+                "admin_bootstrap": {
+                    "ok": inspection.admin_count > 0,
+                    "admin_count": inspection.admin_count,
+                },
+                "data_paths": {
+                    "ok": data_path_ok,
+                    "streams": data_paths,
+                },
+                "active_bundle": {
+                    "ok": active_bundle_state is not None,
+                    "state": active_bundle_state,
+                },
+                "notification": notification,
+            },
+        }
+    )
+    return payload

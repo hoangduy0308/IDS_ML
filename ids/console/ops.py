@@ -168,7 +168,11 @@ def _load_manifest(backup_dir: Path) -> tuple[Path, dict[str, Any], Path]:
         raise OpsError(f"backup manifest not found: {manifest_path}")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     backup_name = str(manifest.get("database", {}).get("backup_file", "operator_console.db"))
-    database_backup_path = resolved / backup_name
+    database_backup_path = (resolved / backup_name).resolve()
+    try:
+        database_backup_path.relative_to(resolved)
+    except ValueError as exc:
+        raise OpsError("backup database must remain inside the selected backup directory") from exc
     if not database_backup_path.is_file():
         raise OpsError(f"backup database not found: {database_backup_path}")
     return manifest_path, manifest, database_backup_path
@@ -196,11 +200,19 @@ def restore_backup(
 
     manifest_path, manifest, database_backup_path = _load_manifest(backup_dir)
     _validate_restore_secret_references(config, manifest)
+    expected_digest = str(manifest.get("database", {}).get("backup_sha256", "")).strip()
+    if not expected_digest:
+        raise OpsError("backup manifest is missing the recorded database digest")
+    if _database_digest(database_backup_path) != expected_digest:
+        raise OpsError("backup database digest does not match manifest")
 
     destination_path = config.database_path.resolve()
     destination_path.parent.mkdir(parents=True, exist_ok=True)
 
-    with TemporaryDirectory(prefix="ids-operator-console-restore-") as temp_dir:
+    with TemporaryDirectory(
+        prefix="ids-operator-console-restore-",
+        dir=str(destination_path.parent),
+    ) as temp_dir:
         temp_database = Path(temp_dir) / "restored.db"
         source = sqlite3.connect(str(database_backup_path))
         destination = sqlite3.connect(str(temp_database))
@@ -210,16 +222,22 @@ def restore_backup(
             destination.close()
             source.close()
 
+        inspection = inspect_operator_store(temp_database)
+        if inspection.schema_state != "current":
+            raise OpsError("restored database is not on the current schema")
+
         backup_existing = destination_path.with_suffix(destination_path.suffix + ".pre-restore")
         if backup_existing.exists():
             backup_existing.unlink()
-        if destination_path.exists():
-            shutil.move(str(destination_path), str(backup_existing))
-        shutil.move(str(temp_database), str(destination_path))
+        try:
+            if destination_path.exists():
+                destination_path.replace(backup_existing)
+            temp_database.replace(destination_path)
+        except Exception:
+            if backup_existing.exists() and not destination_path.exists():
+                backup_existing.replace(destination_path)
+            raise
 
-    inspection = inspect_operator_store(destination_path)
-    if inspection.schema_state != "current":
-        raise OpsError("restored database is not on the current schema")
     return RestoreResult(
         database_path=destination_path,
         manifest_path=manifest_path,
@@ -260,7 +278,7 @@ def run_smoke_checks(config: OperatorConsoleConfig) -> SmokeResult:
         health_status=health.status_code,
         readiness_status=readiness.status_code,
         redirect_status=root.status_code,
-        readiness_payload=build_readiness_payload(config),
+        readiness_payload=build_readiness_payload(config, include_sensitive=True),
     )
 
 

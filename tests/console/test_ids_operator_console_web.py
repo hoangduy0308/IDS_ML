@@ -151,6 +151,13 @@ def test_overview_renders_operator_surface_and_legacy_routes_redirect(tmp_path: 
     assert payload["components"]["notification"]["ok"] is True
     assert payload["components"]["notification"]["target"] is None
 
+    health = client.get("/healthz")
+    assert health.status_code == 200
+    health_payload = health.json()
+    assert health_payload["service"] == "ids-operator-console"
+    assert health_payload["environment"] == "development"
+    assert "database_path" in health_payload
+
 
 def test_alert_detail_and_sensor_aware_json_endpoints(tmp_path: Path) -> None:
     client, _, alert_id = _build_test_app(tmp_path)
@@ -217,6 +224,7 @@ def test_readyz_keeps_core_ready_when_notification_component_is_degraded(tmp_pat
         telegram_enabled=True,
         failed_notification=True,
     )
+    _login(client)
     ready = client.get("/readyz")
     assert ready.status_code == 200
     payload = ready.json()

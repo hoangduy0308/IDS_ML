@@ -117,12 +117,20 @@ def test_build_operator_console_app_wires_health_and_console_routes(tmp_path: Pa
 
     health_response = client.get("/healthz")
     assert health_response.status_code == 200
-    assert health_response.json()["service"] == "ids-operator-console"
+    health_payload = health_response.json()
+    assert health_payload == {
+        "status": "ok",
+        "service": "ids-operator-console",
+    }
 
     ready_response = client.get("/readyz")
     assert ready_response.status_code == 200
-    assert ready_response.json()["ready"] is True
-    assert ready_response.json()["components"]["schema"]["state"] == "current"
+    ready_payload = ready_response.json()
+    assert ready_payload == {
+        "status": "ok",
+        "ready": True,
+        "service": "ids-operator-console",
+    }
 
     root_response = client.get("/", follow_redirects=False)
     assert root_response.status_code == 303
