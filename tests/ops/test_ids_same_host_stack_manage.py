@@ -1472,7 +1472,9 @@ def test_script_wrapper_same_host_stack_imports_reexported_surface() -> None:
 
 
 def test_stack_runbook_runbook_or_docs_matches_cli_surface() -> None:
-    runbook = (REPO_ROOT / "docs" / "ids_same_host_stack_operations.md").read_text(
+    runbook = (
+        REPO_ROOT / "docs" / "current" / "operations" / "ids_same_host_stack_operations.md"
+    ).read_text(
         encoding="utf-8"
     )
 
