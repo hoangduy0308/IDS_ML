@@ -101,6 +101,22 @@ def _build_config(
     )
 
 
+def test_build_config_from_args_defaults_to_canonical_ids_entrypoints(tmp_path: Path) -> None:
+    repo_root = (tmp_path / "repo-root").resolve()
+    args = manage._build_parser().parse_args(["--repo-root", str(repo_root), "preflight"])
+
+    config = manage.build_config_from_args(args)
+
+    assert config.model_manage_entrypoint == (repo_root / "ids" / "ops" / "model_bundle_manage.py")
+    assert config.operator_manage_entrypoint == (
+        repo_root / "ids" / "ops" / "operator_console_manage.py"
+    )
+    assert config.operator_server_entrypoint == (repo_root / "ids" / "console" / "server.py")
+    assert "scripts" not in str(config.model_manage_entrypoint)
+    assert "scripts" not in str(config.operator_manage_entrypoint)
+    assert "scripts" not in str(config.operator_server_entrypoint)
+
+
 def _write_backup_artifacts(
     backup_dir: Path,
     *,

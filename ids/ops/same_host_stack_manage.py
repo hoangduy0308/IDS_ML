@@ -122,6 +122,11 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def build_config_from_args(args: argparse.Namespace) -> SameHostStackConfig:
     repo_root = Path(args.repo_root).resolve()
+    default_model_manage_entrypoint = (repo_root / "ids" / "ops" / "model_bundle_manage.py").resolve()
+    default_operator_manage_entrypoint = (
+        repo_root / "ids" / "ops" / "operator_console_manage.py"
+    ).resolve()
+    default_operator_server_entrypoint = (repo_root / "ids" / "console" / "server.py").resolve()
     return SameHostStackConfig(
         repo_root=repo_root,
         python_binary=Path(args.python_binary).resolve(),
@@ -129,17 +134,17 @@ def build_config_from_args(args: argparse.Namespace) -> SameHostStackConfig:
         model_manage_entrypoint=(
             Path(args.model_manage_entrypoint).resolve()
             if args.model_manage_entrypoint
-            else (repo_root / "scripts" / "ids_model_bundle_manage.py").resolve()
+            else default_model_manage_entrypoint
         ),
         operator_manage_entrypoint=(
             Path(args.operator_manage_entrypoint).resolve()
             if args.operator_manage_entrypoint
-            else (repo_root / "scripts" / "ids_operator_console_manage.py").resolve()
+            else default_operator_manage_entrypoint
         ),
         operator_server_entrypoint=(
             Path(args.operator_server_entrypoint).resolve()
             if args.operator_server_entrypoint
-            else (repo_root / "scripts" / "ids_operator_console_server.py").resolve()
+            else default_operator_server_entrypoint
         ),
         activation_path=Path(args.activation_path).resolve(),
         live_sensor_interface=str(args.interface).strip(),
