@@ -20,6 +20,7 @@ Component ownership remains:
 - live sensor runtime: `ids.runtime.live_sensor` with `deploy/systemd/ids-live-sensor.service` plus `scripts/ids_live_sensor_preflight.py` as the compatibility entrypoint
 - operator console runtime and restore: `ids.console.web`, `ids.console.ops`, and `ids.ops.operator_console_manage` with `scripts/ids_operator_console_manage.py` as the compatibility entrypoint
 - notification worker runtime: `ids.console.notification_runtime` with `deploy/systemd/ids-operator-console-notify.service` plus `scripts/ids_operator_console_manage.py`
+- same-host stack console asset defaults: `ids/console/templates` and `ids/console/static`; `scripts/ids_operator_console/*` remains an explicit compatibility override, not the canonical default
 
 ## Required Host Paths
 

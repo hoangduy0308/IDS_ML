@@ -187,6 +187,15 @@ def test_validate_stack_preflight_bootstrap_or_preflight_requires_operator_env_f
     assert payload["components"]["operator_config"]["status"] == "degraded"
 
 
+def test_load_stack_operator_config_defaults_to_canonical_console_assets(tmp_path: Path) -> None:
+    config = _build_config(tmp_path)
+
+    loaded = stack.load_stack_operator_config(config)
+
+    assert loaded.templates_dir == (config.repo_root / "ids" / "console" / "templates").resolve()
+    assert loaded.static_dir == (config.repo_root / "ids" / "console" / "static").resolve()
+
+
 def test_run_stack_bootstrap_bootstrap_or_preflight_executes_canonical_order(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
