@@ -102,4 +102,4 @@ kaggle kernels status hdiiii/ids-binary-mlp
 - `RandomForest`, `HistGradientBoosting`, `CatBoost` đã được chuyển sang chiến lược sampled-in-memory để tránh OOM nhưng vẫn giữ cùng split dataset.
 - `MLP` có fallback về CPU khi Kaggle cấp `Tesla P100` không tương thích với build PyTorch hiện tại.
 - `CatBoost` là mô hình có `FPR` thấp nhất trong các mô hình hoàn tất.
-- Kết quả tổng hợp cuối cùng nằm ở [training_benchmark_results.md](F:/Work/IDS_ML_New/docs/training_benchmark_results.md).
+- Kết quả tổng hợp cuối cùng nằm ở [training_benchmark_results.md](F:/Work/IDS_ML_New/docs/current/ml/training_benchmark_results.md).

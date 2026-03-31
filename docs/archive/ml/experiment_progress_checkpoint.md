@@ -1,8 +1,8 @@
 # Checkpoint Thực Nghiệm IDS
 
-> Status: historical checkpoint. Tài liệu này hữu ích để theo dõi tiến trình phát triển theo thời gian, nhưng không phải nguồn kết luận cuối ưu tiên số một. Khi cần trích dẫn kết luận chuẩn cho đồ án, ưu tiên dùng [dataset_preprocessing_protocol.md](F:/Work/IDS_ML_New/docs/dataset_preprocessing_protocol.md), [training_benchmark_results.md](F:/Work/IDS_ML_New/docs/training_benchmark_results.md), [scaling_experiment_results.md](F:/Work/IDS_ML_New/docs/scaling_experiment_results.md), [scaling_threshold_analysis.md](F:/Work/IDS_ML_New/docs/scaling_threshold_analysis.md), và [final_model_decision.md](F:/Work/IDS_ML_New/docs/final_model_decision.md).
+> Status: historical checkpoint. Tài liệu này hữu ích để theo dõi tiến trình phát triển theo thời gian, nhưng không phải nguồn kết luận cuối ưu tiên số một. Khi cần trích dẫn kết luận chuẩn cho đồ án, ưu tiên dùng [dataset_preprocessing_protocol.md](F:/Work/IDS_ML_New/docs/current/ml/dataset_preprocessing_protocol.md), [training_benchmark_results.md](F:/Work/IDS_ML_New/docs/current/ml/training_benchmark_results.md), [scaling_experiment_results.md](F:/Work/IDS_ML_New/docs/current/ml/scaling_experiment_results.md), [scaling_threshold_analysis.md](F:/Work/IDS_ML_New/docs/current/ml/scaling_threshold_analysis.md), và [final_model_decision.md](F:/Work/IDS_ML_New/docs/current/ml/final_model_decision.md).
 
-> Historical checkpoint: file này hữu ích để truy vết quá trình phát triển, nhưng không phải nguồn kết luận cuối. Đối với bộ tài liệu chính của đồ án, ưu tiên [dataset_preprocessing_protocol.md](F:/Work/IDS_ML_New/docs/dataset_preprocessing_protocol.md), [scaling_experiment_results.md](F:/Work/IDS_ML_New/docs/scaling_experiment_results.md), [scaling_threshold_analysis.md](F:/Work/IDS_ML_New/docs/scaling_threshold_analysis.md), và [final_model_decision.md](F:/Work/IDS_ML_New/docs/final_model_decision.md).
+> Historical checkpoint: file này hữu ích để truy vết quá trình phát triển, nhưng không phải nguồn kết luận cuối. Đối với bộ tài liệu chính của đồ án, ưu tiên [dataset_preprocessing_protocol.md](F:/Work/IDS_ML_New/docs/current/ml/dataset_preprocessing_protocol.md), [scaling_experiment_results.md](F:/Work/IDS_ML_New/docs/current/ml/scaling_experiment_results.md), [scaling_threshold_analysis.md](F:/Work/IDS_ML_New/docs/current/ml/scaling_threshold_analysis.md), và [final_model_decision.md](F:/Work/IDS_ML_New/docs/current/ml/final_model_decision.md).
 
 ## Mục đích tài liệu
 
@@ -92,9 +92,9 @@ Kết luận từ benchmark ban đầu:
 
 Tài liệu liên quan:
 
-- [training_benchmark_results.md](F:/Work/IDS_ML_New/docs/training_benchmark_results.md)
-- [learning_curve_analysis.md](F:/Work/IDS_ML_New/docs/learning_curve_analysis.md)
-- [threshold_tuning_analysis.md](F:/Work/IDS_ML_New/docs/threshold_tuning_analysis.md)
+- [training_benchmark_results.md](F:/Work/IDS_ML_New/docs/current/ml/training_benchmark_results.md)
+- [learning_curve_analysis.md](F:/Work/IDS_ML_New/docs/current/ml/learning_curve_analysis.md)
+- [threshold_tuning_analysis.md](F:/Work/IDS_ML_New/docs/current/ml/scaling_threshold_analysis.md)
 
 ## 4. Coarse hyperparameter tuning đã hoàn thành
 
@@ -128,7 +128,7 @@ Kết quả finalist đã chọn:
 
 Tài liệu liên quan:
 
-- [hyperparameter_tuning_setup.md](F:/Work/IDS_ML_New/docs/hyperparameter_tuning_setup.md)
+- [hyperparameter_tuning_setup.md](F:/Work/IDS_ML_New/docs/current/ml/hyperparameter_tuning_setup.md)
 
 ## 5. Promotion run đã hoàn thành
 
@@ -150,7 +150,7 @@ Kết quả tóm tắt hiện tại:
 
 Tài liệu liên quan:
 
-- [promotion_run_results.md](F:/Work/IDS_ML_New/docs/promotion_run_results.md)
+- [promotion_run_results.md](F:/Work/IDS_ML_New/docs/archive/ml/promotion_run_results.md)
 
 ## 6. Diễn giải đúng về promotion run
 
@@ -278,7 +278,7 @@ Sau khi phân tích thêm cùng `machine-learning-engineer`, protocol đang đư
 
 Kết quả chính đã được ghi ở:
 
-- [scaling_experiment_results.md](F:/Work/IDS_ML_New/docs/scaling_experiment_results.md)
+- [scaling_experiment_results.md](F:/Work/IDS_ML_New/docs/current/ml/scaling_experiment_results.md)
 - [scaling_experiment_summary.csv](F:/Work/IDS_ML_New/artifacts/kaggle/reports/scaling_experiment_summary.csv)
 
 Điểm đã xác nhận:
@@ -298,7 +298,7 @@ Ba mô hình được phân tích tiếp:
 
 Artifact:
 
-- [scaling_threshold_analysis.md](F:/Work/IDS_ML_New/docs/scaling_threshold_analysis.md)
+- [scaling_threshold_analysis.md](F:/Work/IDS_ML_New/docs/current/ml/scaling_threshold_analysis.md)
 - [threshold_selection_summary.csv](F:/Work/IDS_ML_New/artifacts/posttrain_analysis/scaling_finalists/reports/threshold_selection_summary.csv)
 - [threshold_evaluation_summary.csv](F:/Work/IDS_ML_New/artifacts/posttrain_analysis/scaling_finalists/reports/threshold_evaluation_summary.csv)
 
@@ -345,14 +345,14 @@ Lý do chốt:
 
 Tài liệu chính để tham chiếu từ đây về sau:
 
-- [final_model_decision.md](F:/Work/IDS_ML_New/docs/final_model_decision.md)
+- [final_model_decision.md](F:/Work/IDS_ML_New/docs/current/ml/final_model_decision.md)
 
 ## 15. Inference layer prototype đã hoàn thành
 
 Đã triển khai lớp inference tối thiểu cho mô hình cuối:
 
 - [ids_inference.py](F:/Work/IDS_ML_New/scripts/ids_inference.py)
-- [ids_inference_architecture.md](F:/Work/IDS_ML_New/docs/ids_inference_architecture.md)
+- [ids_inference_architecture.md](F:/Work/IDS_ML_New/docs/current/runtime/ids_inference_architecture.md)
 
 Phạm vi hiện tại:
 
@@ -371,7 +371,7 @@ Phạm vi hiện tại:
 Kiểm chứng đã làm:
 
 - test logic:
-  - `pytest F:\\Work\\IDS_ML_New\\tests\\test_ids_inference.py -q`
+  - `pytest F:\\Work\\IDS_ML_New\\tests\\runtime\\test_ids_inference.py -q`
   - kết quả: `3 passed`
 - dry-run thực tế trên `test.parquet`:
   - `python F:\\Work\\IDS_ML_New\\scripts\\ids_inference.py --input-path F:\\Work\\IDS_ML_New\\artifacts\\cic_iot_diad_2024_binary\\clean\\test.parquet --output-path F:\\Work\\IDS_ML_New\\artifacts\\demo\\test_predictions_sample.parquet --limit 1000`
@@ -408,7 +408,7 @@ Script liên quan:
 
 - [package_final_model.py](F:/Work/IDS_ML_New/scripts/package_final_model.py)
 - [ids_inference.py](F:/Work/IDS_ML_New/scripts/ids_inference.py)
-- [final_model_bundle.md](F:/Work/IDS_ML_New/docs/final_model_bundle.md)
+- [final_model_bundle.md](F:/Work/IDS_ML_New/docs/current/runtime/final_model_bundle.md)
 
 Bundle hiện có:
 
@@ -421,7 +421,7 @@ Bundle hiện có:
 
 Kiểm chứng đã làm:
 
-- `pytest F:\\Work\\IDS_ML_New\\tests\\test_ids_inference.py -q`
+- `pytest F:\\Work\\IDS_ML_New\\tests\\runtime\\test_ids_inference.py -q`
   - kết quả: `4 passed`
 - build bundle:
   - `python F:\\Work\\IDS_ML_New\\scripts\\package_final_model.py`

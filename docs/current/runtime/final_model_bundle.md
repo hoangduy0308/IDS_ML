@@ -140,7 +140,7 @@ Rollback cũng dùng cùng activation contract và cùng cơ chế atomic replac
 Bundle là nguồn cấu hình chuẩn cho lớp realtime pre-model pipeline:
 
 - [ids_realtime_pipeline.py](F:/Work/IDS_ML_New/scripts/ids_realtime_pipeline.py)
-- [ids_realtime_pipeline_architecture.md](F:/Work/IDS_ML_New/docs/ids_realtime_pipeline_architecture.md)
+- [ids_realtime_pipeline_architecture.md](F:/Work/IDS_ML_New/docs/current/runtime/ids_realtime_pipeline_architecture.md)
 
 Trong pipeline hiện tại:
 

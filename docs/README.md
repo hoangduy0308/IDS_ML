@@ -1,9 +1,11 @@
-﻿# Docs navigation
+# Docs navigation
 
 This directory is split into two lanes:
 
 - [current/](F:/Work/IDS_ML_New/docs/current): canonical material to read first
 - [archive/](F:/Work/IDS_ML_New/docs/archive): historical or superseded material kept for reference
+
+Some legacy top-level `docs/*.md` files are compatibility stubs that redirect into the current or archive lanes.
 
 ## Read order
 

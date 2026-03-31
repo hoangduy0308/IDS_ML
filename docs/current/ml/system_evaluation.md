@@ -125,7 +125,7 @@ Tổng end-to-end:
 Nhóm test tiêu biểu đã chạy:
 
 ```powershell
-python -m pytest tests/test_ids_inference.py tests/test_ids_realtime_pipeline.py tests/test_ids_record_adapter.py -q
+python -m pytest tests/runtime/test_ids_inference.py tests/runtime/test_ids_realtime_pipeline.py tests/runtime/test_ids_record_adapter.py -q
 ```
 
 Kết quả:

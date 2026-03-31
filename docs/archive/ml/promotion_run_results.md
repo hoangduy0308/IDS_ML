@@ -1,8 +1,8 @@
 # Promotion Run Results
 
-> Status: superseded for final model selection. Tài liệu này chỉ còn giá trị lịch sử cho giai đoạn `promotion run` screening. Không dùng nó làm kết luận cuối. Kết quả chuẩn để so sánh và chốt model hiện nằm ở [scaling_experiment_results.md](F:/Work/IDS_ML_New/docs/scaling_experiment_results.md), [scaling_threshold_analysis.md](F:/Work/IDS_ML_New/docs/scaling_threshold_analysis.md), và [final_model_decision.md](F:/Work/IDS_ML_New/docs/final_model_decision.md).
+> Status: superseded for final model selection. Tài liệu này chỉ còn giá trị lịch sử cho giai đoạn `promotion run` screening. Không dùng nó làm kết luận cuối. Kết quả chuẩn để so sánh và chốt model hiện nằm ở [scaling_experiment_results.md](F:/Work/IDS_ML_New/docs/current/ml/scaling_experiment_results.md), [scaling_threshold_analysis.md](F:/Work/IDS_ML_New/docs/current/ml/scaling_threshold_analysis.md), và [final_model_decision.md](F:/Work/IDS_ML_New/docs/current/ml/final_model_decision.md).
 
-> Superseded: file này chỉ phản ánh vòng `promotion run` trung gian, trước khi có scaling công bằng và full-data final training. Không dùng file này làm kết luận cuối. Tài liệu final nên đọc là [scaling_experiment_results.md](F:/Work/IDS_ML_New/docs/scaling_experiment_results.md), [scaling_threshold_analysis.md](F:/Work/IDS_ML_New/docs/scaling_threshold_analysis.md), và [final_model_decision.md](F:/Work/IDS_ML_New/docs/final_model_decision.md).
+> Superseded: file này chỉ phản ánh vòng `promotion run` trung gian, trước khi có scaling công bằng và full-data final training. Không dùng file này làm kết luận cuối. Tài liệu final nên đọc là [scaling_experiment_results.md](F:/Work/IDS_ML_New/docs/current/ml/scaling_experiment_results.md), [scaling_threshold_analysis.md](F:/Work/IDS_ML_New/docs/current/ml/scaling_threshold_analysis.md), và [final_model_decision.md](F:/Work/IDS_ML_New/docs/current/ml/final_model_decision.md).
 
 ## Important Note
 

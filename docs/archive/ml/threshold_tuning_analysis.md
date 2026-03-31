@@ -1,8 +1,8 @@
 # Phân tích threshold tuning cho 3 mô hình mạnh nhất
 
-> Status: superseded by later finalist analysis. Tài liệu này thuộc vòng threshold analysis sớm cho nhóm top model sau benchmark ban đầu. Phân tích threshold chuẩn để dùng cho kết luận cuối hiện là [scaling_threshold_analysis.md](F:/Work/IDS_ML_New/docs/scaling_threshold_analysis.md), vì nó dựa trên nhóm finalist sau scaling công bằng và full-data training.
+> Status: superseded by later finalist analysis. Tài liệu này thuộc vòng threshold analysis sớm cho nhóm top model sau benchmark ban đầu. Phân tích threshold chuẩn để dùng cho kết luận cuối hiện là [scaling_threshold_analysis.md](F:/Work/IDS_ML_New/docs/current/ml/scaling_threshold_analysis.md), vì nó dựa trên nhóm finalist sau scaling công bằng và full-data training.
 
-> Superseded for final decision: tài liệu này thuộc vòng threshold tuning trước khi có scaling experiment công bằng và `CatBoost full-data`. Để lấy kết luận cuối cho đồ án, dùng [scaling_threshold_analysis.md](F:/Work/IDS_ML_New/docs/scaling_threshold_analysis.md) và [final_model_decision.md](F:/Work/IDS_ML_New/docs/final_model_decision.md).
+> Superseded for final decision: tài liệu này thuộc vòng threshold tuning trước khi có scaling experiment công bằng và `CatBoost full-data`. Để lấy kết luận cuối cho đồ án, dùng [scaling_threshold_analysis.md](F:/Work/IDS_ML_New/docs/current/ml/scaling_threshold_analysis.md) và [final_model_decision.md](F:/Work/IDS_ML_New/docs/current/ml/final_model_decision.md).
 
 ## Mục tiêu
 
@@ -31,7 +31,7 @@ Script dùng để sinh lại toàn bộ artifact:
 
 Kiểm thử logic threshold:
 
-- `tests/test_posttrain_threshold_analysis.py`
+- `tests/ml/test_posttrain_threshold_analysis.py`
 
 Nguyên tắc tuning:
 

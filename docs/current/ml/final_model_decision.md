@@ -63,6 +63,6 @@ Cách phát biểu an toàn và đúng:
 
 ## Tài liệu liên quan
 
-- [scaling_experiment_results.md](F:/Work/IDS_ML_New/docs/scaling_experiment_results.md)
-- [scaling_threshold_analysis.md](F:/Work/IDS_ML_New/docs/scaling_threshold_analysis.md)
-- [experiment_progress_checkpoint.md](F:/Work/IDS_ML_New/docs/experiment_progress_checkpoint.md)
+- [scaling_experiment_results.md](F:/Work/IDS_ML_New/docs/current/ml/scaling_experiment_results.md)
+- [scaling_threshold_analysis.md](F:/Work/IDS_ML_New/docs/current/ml/scaling_threshold_analysis.md)
+- [experiment_progress_checkpoint.md](F:/Work/IDS_ML_New/docs/archive/ml/experiment_progress_checkpoint.md)

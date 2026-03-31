@@ -1,8 +1,8 @@
 # Thiết kế thí nghiệm Data-Scaling cho IDS
 
-> Status: superseded by completed experiment results. Đây là tài liệu thiết kế trước khi chạy thật. Kết quả thực nghiệm đã hoàn thành và nên được dùng làm nguồn chính tại [scaling_experiment_results.md](F:/Work/IDS_ML_New/docs/scaling_experiment_results.md).
+> Status: superseded by completed experiment results. Đây là tài liệu thiết kế trước khi chạy thật. Kết quả thực nghiệm đã hoàn thành và nên được dùng làm nguồn chính tại [scaling_experiment_results.md](F:/Work/IDS_ML_New/docs/current/ml/scaling_experiment_results.md).
 
-> Superseded: đây là tài liệu thiết kế trước khi chạy scaling experiment. Kết quả thực tế và kết luận cập nhật đã nằm ở [scaling_experiment_results.md](F:/Work/IDS_ML_New/docs/scaling_experiment_results.md), [scaling_threshold_analysis.md](F:/Work/IDS_ML_New/docs/scaling_threshold_analysis.md), và [final_model_decision.md](F:/Work/IDS_ML_New/docs/final_model_decision.md).
+> Superseded: đây là tài liệu thiết kế trước khi chạy scaling experiment. Kết quả thực tế và kết luận cập nhật đã nằm ở [scaling_experiment_results.md](F:/Work/IDS_ML_New/docs/current/ml/scaling_experiment_results.md), [scaling_threshold_analysis.md](F:/Work/IDS_ML_New/docs/current/ml/scaling_threshold_analysis.md), và [final_model_decision.md](F:/Work/IDS_ML_New/docs/current/ml/final_model_decision.md).
 
 ## Mục tiêu
 
