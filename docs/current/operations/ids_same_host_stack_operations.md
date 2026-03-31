@@ -16,10 +16,10 @@ It coordinates the existing component owners. It does not replace them.
 
 Component ownership remains:
 
-- model activation: `ids.ops.model_bundle_lifecycle` with `scripts/ids_model_bundle_manage.py` as the compatibility entrypoint
-- live sensor runtime: `ids.runtime.live_sensor` with `deploy/systemd/ids-live-sensor.service` plus `scripts/ids_live_sensor_preflight.py` as the compatibility entrypoint
-- operator console runtime and restore: `ids.console.web`, `ids.console.ops`, and `ids.ops.operator_console_manage` with `scripts/ids_operator_console_manage.py` as the compatibility entrypoint
-- notification worker runtime: `ids.console.notification_runtime` with `deploy/systemd/ids-operator-console-notify.service` plus `scripts/ids_operator_console_manage.py`
+- model activation: `ids.ops.model_bundle_lifecycle` with `ids-model-bundle-manage` as the canonical operator command (`scripts/ids_model_bundle_manage.py` remains compatibility-only)
+- live sensor runtime: `ids.runtime.live_sensor` with `deploy/systemd/ids-live-sensor.service` plus `ids-live-sensor-preflight` as the canonical preflight command (`scripts/ids_live_sensor_preflight.py` remains compatibility-only)
+- operator console runtime and restore: `ids.console.web`, `ids.console.ops`, and `ids.ops.operator_console_manage` with `ids-operator-console-manage` as the canonical operator command (`scripts/ids_operator_console_manage.py` remains compatibility-only)
+- notification worker runtime: `ids.console.notification_runtime` with `deploy/systemd/ids-operator-console-notify.service` plus `ids-operator-console-manage`
 - same-host stack console asset defaults: `ids/console/templates` and `ids/console/static`; `scripts/ids_operator_console/*` remains an explicit compatibility override, not the canonical default
 
 ## Required Host Paths
@@ -40,8 +40,8 @@ Deploy references already shipped in-tree:
 
 ## Canonical Stack Commands
 
-The canonical stack implementation lives in `ids.ops.same_host_stack_manage`; `scripts/ids_same_host_stack_manage.py` remains the compatibility entrypoint.
-That wrapper supports direct file execution from the repo checkout and from installed paths because it bootstraps the repository root before importing the canonical module.
+The canonical stack implementation lives in `ids.ops.same_host_stack_manage`, surfaced as the installed command `ids-stack`.
+`scripts/ids_same_host_stack_manage.py` remains a compatibility entrypoint for direct file execution.
 
 Supported commands:
 
@@ -68,7 +68,7 @@ Supported commands:
 Example:
 
 ```bash
-python /opt/ids_ml_new/scripts/ids_same_host_stack_manage.py \
+ids-stack \
   --repo-root /opt/ids_ml_new \
   --python-binary /usr/bin/python3 \
   --operator-env-file /etc/ids-operator-console/ids-operator-console.env \
@@ -96,7 +96,7 @@ The same-host stack contract carries the live-sensor extractor command prefix ex
 Use stack `preflight` as the canonical same-host deploy gate:
 
 ```bash
-python /opt/ids_ml_new/scripts/ids_same_host_stack_manage.py \
+ids-stack \
   --repo-root /opt/ids_ml_new \
   --operator-env-file /etc/ids-operator-console/ids-operator-console.env \
   --activation-path /var/lib/ids-live-sensor/active_bundle.json \
@@ -106,13 +106,13 @@ python /opt/ids_ml_new/scripts/ids_same_host_stack_manage.py \
 Use stack `status` for whole-stack runtime health and `smoke` for the runtime plus console smoke path:
 
 ```bash
-python /opt/ids_ml_new/scripts/ids_same_host_stack_manage.py \
+ids-stack \
   --repo-root /opt/ids_ml_new \
   --operator-env-file /etc/ids-operator-console/ids-operator-console.env \
   --activation-path /var/lib/ids-live-sensor/active_bundle.json \
   --json status
 
-python /opt/ids_ml_new/scripts/ids_same_host_stack_manage.py \
+ids-stack \
   --repo-root /opt/ids_ml_new \
   --operator-env-file /etc/ids-operator-console/ids-operator-console.env \
   --activation-path /var/lib/ids-live-sensor/active_bundle.json \
@@ -135,7 +135,7 @@ Default stack output stays redacted for notification metadata and returns degrad
 Use stack `recover` after reboot or subsystem failure. This is supervisor-first and preserves component ownership.
 
 ```bash
-python /opt/ids_ml_new/scripts/ids_same_host_stack_manage.py \
+ids-stack \
   --repo-root /opt/ids_ml_new \
   --operator-env-file /etc/ids-operator-console/ids-operator-console.env \
   --activation-path /var/lib/ids-live-sensor/active_bundle.json \
@@ -159,7 +159,7 @@ The stack layer stays verification-first. It does not add a new restore mutation
 Use the existing component owners for restore mutations:
 
 ```bash
-python /opt/ids_ml_new/scripts/ids_operator_console_manage.py \
+ids-operator-console-manage \
   --database-path /var/lib/ids-operator-console/operator_console.db \
   --json restore \
   --backup-dir /var/backups/ids-operator-console/backup-YYYYMMDDTHHMMSSffffffZ \
@@ -181,7 +181,7 @@ Live sensor JSONL outputs and logs remain preserve-when-practical operator evide
 After component-owned backup artifacts are present, use stack `restore-inventory`:
 
 ```bash
-python /opt/ids_ml_new/scripts/ids_same_host_stack_manage.py \
+ids-stack \
   --repo-root /opt/ids_ml_new \
   --operator-env-file /etc/ids-operator-console/ids-operator-console.env \
   --activation-path /var/lib/ids-live-sensor/active_bundle.json \
@@ -196,7 +196,7 @@ This verifies inventory only. It does not restore anything.
 After the console restore command succeeds and secrets are rebound on the host, use stack `post-restore-check`:
 
 ```bash
-python /opt/ids_ml_new/scripts/ids_same_host_stack_manage.py \
+ids-stack \
   --repo-root /opt/ids_ml_new \
   --operator-env-file /etc/ids-operator-console/ids-operator-console.env \
   --activation-path /var/lib/ids-live-sensor/active_bundle.json \
@@ -236,15 +236,15 @@ Interpretation:
 Operator follow-up commands remain component-specific:
 
 ```bash
-python /opt/ids_ml_new/scripts/ids_operator_console_manage.py \
+ids-operator-console-manage \
   --database-path /var/lib/ids-operator-console/operator_console.db \
   --json notify-status
 
-python /opt/ids_ml_new/scripts/ids_operator_console_manage.py \
+ids-operator-console-manage \
   --database-path /var/lib/ids-operator-console/operator_console.db \
   --json notify-redrive --limit 100
 
-python /opt/ids_ml_new/scripts/ids_model_bundle_manage.py \
+ids-model-bundle-manage \
   --activation-path /var/lib/ids-live-sensor/active_bundle.json \
   --json verify \
   --bundle-root /opt/ids_ml_new/artifacts/final_model/candidate_bundle

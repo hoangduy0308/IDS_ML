@@ -19,14 +19,14 @@ Environment=IDS_OPERATOR_CONSOLE_DATABASE_PATH=/var/lib/ids-operator-console/ope
 Environment=IDS_OPERATOR_CONSOLE_ALERTS_INPUT_PATH=/var/log/ids-live-sensor/ids_live_alerts.jsonl
 Environment=IDS_OPERATOR_CONSOLE_QUARANTINE_INPUT_PATH=/var/log/ids-live-sensor/ids_live_quarantine.jsonl
 Environment=IDS_OPERATOR_CONSOLE_SUMMARY_INPUT_PATH=/var/log/ids-live-sensor/ids_live_sensor_summary.jsonl
-Environment=IDS_OPERATOR_CONSOLE_TEMPLATES_DIR=/opt/ids_ml_new/scripts/ids_operator_console/templates
-Environment=IDS_OPERATOR_CONSOLE_STATIC_DIR=/opt/ids_ml_new/scripts/ids_operator_console/static
+Environment=IDS_OPERATOR_CONSOLE_TEMPLATES_DIR=/opt/ids_ml_new/ids/console/templates
+Environment=IDS_OPERATOR_CONSOLE_STATIC_DIR=/opt/ids_ml_new/ids/console/static
 Environment=IDS_OPERATOR_CONSOLE_SECRET_KEY_FILE=/etc/ids-operator-console/console.secret
 Environment=IDS_OPERATOR_CONSOLE_TELEGRAM_BOT_TOKEN=
 Environment=IDS_OPERATOR_CONSOLE_TELEGRAM_BOT_TOKEN_FILE=
 Environment=IDS_OPERATOR_CONSOLE_TELEGRAM_CHAT_ID=
-ExecStartPre=/usr/bin/python3 /opt/ids_ml_new/scripts/ids_operator_console_preflight.py --python-binary /usr/bin/python3 --app-entrypoint /opt/ids_ml_new/scripts/ids_operator_console_server.py --manage-entrypoint /opt/ids_ml_new/scripts/ids_operator_console_manage.py --database-path ${IDS_OPERATOR_CONSOLE_DATABASE_PATH} --alerts-input-path ${IDS_OPERATOR_CONSOLE_ALERTS_INPUT_PATH} --quarantine-input-path ${IDS_OPERATOR_CONSOLE_QUARANTINE_INPUT_PATH} --summary-input-path ${IDS_OPERATOR_CONSOLE_SUMMARY_INPUT_PATH} --templates-dir ${IDS_OPERATOR_CONSOLE_TEMPLATES_DIR} --static-dir ${IDS_OPERATOR_CONSOLE_STATIC_DIR} --environment ${IDS_OPERATOR_CONSOLE_ENVIRONMENT} --public-base-url ${IDS_OPERATOR_CONSOLE_PUBLIC_BASE_URL} --root-path ${IDS_OPERATOR_CONSOLE_ROOT_PATH} --forwarded-allow-ips ${IDS_OPERATOR_CONSOLE_FORWARDED_ALLOW_IPS} --secret-key-file ${IDS_OPERATOR_CONSOLE_SECRET_KEY_FILE}
-ExecStart=/usr/bin/bash -lc 'exec /usr/bin/python3 /opt/ids_ml_new/scripts/ids_operator_console_manage.py --database-path "$IDS_OPERATOR_CONSOLE_DATABASE_PATH" notify-worker --poll-interval-seconds 30'
+ExecStartPre=/usr/bin/python3 -m ids.ops.operator_console_preflight --python-binary /usr/bin/python3 --app-entrypoint /opt/ids_ml_new/ids/console/server.py --manage-entrypoint /opt/ids_ml_new/ids/ops/operator_console_manage.py --database-path ${IDS_OPERATOR_CONSOLE_DATABASE_PATH} --alerts-input-path ${IDS_OPERATOR_CONSOLE_ALERTS_INPUT_PATH} --quarantine-input-path ${IDS_OPERATOR_CONSOLE_QUARANTINE_INPUT_PATH} --summary-input-path ${IDS_OPERATOR_CONSOLE_SUMMARY_INPUT_PATH} --templates-dir ${IDS_OPERATOR_CONSOLE_TEMPLATES_DIR} --static-dir ${IDS_OPERATOR_CONSOLE_STATIC_DIR} --environment ${IDS_OPERATOR_CONSOLE_ENVIRONMENT} --public-base-url ${IDS_OPERATOR_CONSOLE_PUBLIC_BASE_URL} --root-path ${IDS_OPERATOR_CONSOLE_ROOT_PATH} --forwarded-allow-ips ${IDS_OPERATOR_CONSOLE_FORWARDED_ALLOW_IPS} --secret-key-file ${IDS_OPERATOR_CONSOLE_SECRET_KEY_FILE}
+ExecStart=/usr/bin/bash -lc 'exec /usr/bin/python3 -m ids.ops.operator_console_manage --database-path "$IDS_OPERATOR_CONSOLE_DATABASE_PATH" notify-worker --poll-interval-seconds 30'
 Restart=on-failure
 RestartSec=30s
 StateDirectory=ids-operator-console

@@ -4,17 +4,13 @@
 
 Model cuối cùng không còn là tập hợp file rời rạc trong `artifacts`, mà là một bundle có contract versioned để runtime, preflight, và operator workflow cùng đọc theo một chuẩn duy nhất.
 
-Script đóng gói:
+Canonical command surfaces:
 
-- [package_final_model.py](F:/Work/IDS_ML_New/scripts/package_final_model.py)
+- `ids-package-final-model` (`ml_pipeline.packaging.package_final_model`)
+- `ids-inference` (`ids.runtime.inference`)
+- `ids-model-bundle-manage` (`ids.ops.model_bundle_manage`)
 
-Script inference và dry-run:
-
-- [ids_inference.py](F:/Work/IDS_ML_New/scripts/ids_inference.py)
-
-Script quản lý promotion lifecycle:
-
-- [ids_model_bundle_manage.py](F:/Work/IDS_ML_New/scripts/ids_model_bundle_manage.py)
+Compatibility wrappers under `scripts/*` remain supported, but operator-facing runbooks use the canonical installed commands above.
 
 ## Bundle nằm ở đâu
 
@@ -84,7 +80,7 @@ Tài liệu mô tả model cuối dưới dạng ngắn gọn, dễ tra cứu.
 ## Cách dựng lại bundle
 
 ```powershell
-python F:\Work\IDS_ML_New\scripts\package_final_model.py
+ids-package-final-model
 ```
 
 Script này sẽ emit `model_bundle.json` theo contract versioned hiện tại.
@@ -94,7 +90,7 @@ Script này sẽ emit `model_bundle.json` theo contract versioned hiện tại.
 ### 1. Verify candidate bundle
 
 ```powershell
-python F:\Work\IDS_ML_New\scripts\ids_model_bundle_manage.py `
+ids-model-bundle-manage `
   --activation-path F:\Work\IDS_ML_New\artifacts\runtime\active_bundle.json `
   --json verify `
   --bundle-root F:\Work\IDS_ML_New\artifacts\final_model\catboost_full_data_v1
@@ -105,7 +101,7 @@ Lệnh này chỉ kiểm tra compatibility contract của candidate bundle. Nó 
 ### 2. Dry-run inference trên cùng host
 
 ```powershell
-python F:\Work\IDS_ML_New\scripts\ids_inference.py `
+ids-inference `
   --bundle-root F:\Work\IDS_ML_New\artifacts\final_model\catboost_full_data_v1 `
   --input-path F:\Work\IDS_ML_New\artifacts\cic_iot_diad_2024_binary\clean\test.parquet `
   --output-path F:\Work\IDS_ML_New\artifacts\demo\test_predictions_from_bundle.parquet `
@@ -117,7 +113,7 @@ python F:\Work\IDS_ML_New\scripts\ids_inference.py `
 ### 3. Promote bundle đã verify
 
 ```powershell
-python F:\Work\IDS_ML_New\scripts\ids_model_bundle_manage.py `
+ids-model-bundle-manage `
   --activation-path /var/lib/ids-live-sensor/active_bundle.json `
   --json promote `
   --bundle-root /opt/ids_ml_new/artifacts/final_model/catboost_full_data_v1
@@ -128,7 +124,7 @@ Promotion sẽ ghi lại bundle active mới bằng atomic replace. Nếu đã c
 ### 4. Rollback về known-good trước đó
 
 ```powershell
-python F:\Work\IDS_ML_New\scripts\ids_model_bundle_manage.py `
+ids-model-bundle-manage `
   --activation-path /var/lib/ids-live-sensor/active_bundle.json `
   --json rollback
 ```
@@ -139,7 +135,7 @@ Rollback cũng dùng cùng activation contract và cùng cơ chế atomic replac
 
 Bundle là nguồn cấu hình chuẩn cho lớp realtime pre-model pipeline:
 
-- [ids_realtime_pipeline.py](F:/Work/IDS_ML_New/scripts/ids_realtime_pipeline.py)
+- `ids-realtime-pipeline` (`ids.runtime.realtime_pipeline`)
 - [ids_realtime_pipeline_architecture.md](F:/Work/IDS_ML_New/docs/current/runtime/ids_realtime_pipeline_architecture.md)
 
 Trong pipeline hiện tại:

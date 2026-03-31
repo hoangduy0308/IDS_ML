@@ -104,13 +104,22 @@ def test_deploy_artifacts_are_wired_to_proxy_and_secret_contract() -> None:
     assert "IDS_OPERATOR_CONSOLE_SECRET_KEY_FILE" in service_text
     assert "--public-base-url ${IDS_OPERATOR_CONSOLE_PUBLIC_BASE_URL}" in service_text
     assert "--secret-key-file ${IDS_OPERATOR_CONSOLE_SECRET_KEY_FILE}" in service_text
-    assert "--manage-entrypoint /opt/ids_ml_new/scripts/ids_operator_console_manage.py" in service_text
+    assert "--manage-entrypoint /opt/ids_ml_new/ids/ops/operator_console_manage.py" in service_text
+    assert "--app-entrypoint /opt/ids_ml_new/ids/console/server.py" in service_text
+    assert "IDS_OPERATOR_CONSOLE_TEMPLATES_DIR=/opt/ids_ml_new/ids/console/templates" in service_text
+    assert "IDS_OPERATOR_CONSOLE_STATIC_DIR=/opt/ids_ml_new/ids/console/static" in service_text
+    assert "python3 -m ids.ops.operator_console_preflight" in service_text
+    assert "python3 -m ids.console.server" in service_text
     assert "IDS_OPERATOR_CONSOLE_TELEGRAM_BOT_TOKEN_FILE" in service_text
 
-    assert "ids_operator_console_manage.py --database-path \"$IDS_OPERATOR_CONSOLE_DATABASE_PATH\" notify-worker" in notify_service_text
+    assert "-m ids.ops.operator_console_manage --database-path \"$IDS_OPERATOR_CONSOLE_DATABASE_PATH\" notify-worker" in notify_service_text
     assert "--iterations 1" not in notify_service_text
     assert "notify-worker --poll-interval-seconds 30" in notify_service_text
-    assert "--manage-entrypoint /opt/ids_ml_new/scripts/ids_operator_console_manage.py" in notify_service_text
+    assert "--manage-entrypoint /opt/ids_ml_new/ids/ops/operator_console_manage.py" in notify_service_text
+    assert "--app-entrypoint /opt/ids_ml_new/ids/console/server.py" in notify_service_text
+    assert "IDS_OPERATOR_CONSOLE_TEMPLATES_DIR=/opt/ids_ml_new/ids/console/templates" in notify_service_text
+    assert "IDS_OPERATOR_CONSOLE_STATIC_DIR=/opt/ids_ml_new/ids/console/static" in notify_service_text
+    assert "python3 -m ids.ops.operator_console_preflight" in notify_service_text
     assert "IDS_OPERATOR_CONSOLE_TELEGRAM_BOT_TOKEN_FILE" in notify_service_text
     assert "IDS_OPERATOR_CONSOLE_TELEGRAM_CHAT_ID" in notify_service_text
 

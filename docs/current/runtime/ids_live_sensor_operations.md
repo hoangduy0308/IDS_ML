@@ -22,7 +22,7 @@ Before the daemon starts, the deployment must verify:
 - the configured NIC name is correct
 - the spool and log directories are writable
 
-The sample service unit uses [ids_live_sensor_preflight.py](F:/Work/IDS_ML_New/scripts/ids_live_sensor_preflight.py) as an explicit preflight command so the service fails fast if any of those requirements are missing.
+The sample service unit uses canonical `ids.ops.live_sensor_preflight` execution (installed command `ids-live-sensor-preflight`) as an explicit preflight command so the service fails fast if any of those requirements are missing. `scripts/ids_live_sensor_preflight.py` remains compatibility-only.
 
 ## Recommended paths
 
@@ -99,7 +99,7 @@ The preflight check should fail if any of the following are missing:
 - a writable spool directory
 - a writable log directory
 
-If you need more elaborate setup logic, keep it in an explicit helper script such as [ids_live_sensor_preflight.py](F:/Work/IDS_ML_New/scripts/ids_live_sensor_preflight.py). Do not bury setup assumptions inside the main daemon code.
+If you need more elaborate setup logic, keep it in an explicit helper command such as `ids-live-sensor-preflight`. Do not bury setup assumptions inside the main daemon code.
 
 ## Promotion and rollback runbook
 
@@ -110,7 +110,7 @@ Recommended same-host flow:
 1. Verify the candidate bundle contract:
 
 ```bash
-python /opt/ids_ml_new/scripts/ids_model_bundle_manage.py \
+ids-model-bundle-manage \
   --activation-path /var/lib/ids-live-sensor/active_bundle.json \
   --json verify \
   --bundle-root /opt/ids_ml_new/artifacts/final_model/candidate_bundle
@@ -119,7 +119,7 @@ python /opt/ids_ml_new/scripts/ids_model_bundle_manage.py \
 2. Run a same-host dry-run on representative data before cutover:
 
 ```bash
-python /opt/ids_ml_new/scripts/ids_inference.py \
+ids-inference \
   --bundle-root /opt/ids_ml_new/artifacts/final_model/candidate_bundle \
   --input-path /opt/ids_ml_new/artifacts/cic_iot_diad_2024_binary/clean/test.parquet \
   --output-path /tmp/candidate_bundle_predictions.parquet \
@@ -129,7 +129,7 @@ python /opt/ids_ml_new/scripts/ids_inference.py \
 3. Promote the verified bundle:
 
 ```bash
-python /opt/ids_ml_new/scripts/ids_model_bundle_manage.py \
+ids-model-bundle-manage \
   --activation-path /var/lib/ids-live-sensor/active_bundle.json \
   --json promote \
   --bundle-root /opt/ids_ml_new/artifacts/final_model/candidate_bundle
@@ -152,7 +152,7 @@ If `verify` fails or `promote` raises a contract error, the previous activation 
 Rollback is explicit:
 
 ```bash
-python /opt/ids_ml_new/scripts/ids_model_bundle_manage.py \
+ids-model-bundle-manage \
   --activation-path /var/lib/ids-live-sensor/active_bundle.json \
   --json rollback
 ```
@@ -166,7 +166,7 @@ Backup and restore procedures must preserve `/var/lib/ids-live-sensor/active_bun
 After a restore drill:
 
 - do not assume the restored activation record is valid just because the file exists
-- rerun [ids_live_sensor_preflight.py](F:/Work/IDS_ML_New/scripts/ids_live_sensor_preflight.py) or restart the systemd unit so preflight resolves and re-validates the active bundle contract
+- rerun `ids-live-sensor-preflight` (or the compatibility wrapper `scripts/ids_live_sensor_preflight.py`) or restart the systemd unit so preflight resolves and re-validates the active bundle contract
 - only treat the sensor as ready after preflight/runtime can resolve the restored active bundle successfully
 
 ## Deferred features
