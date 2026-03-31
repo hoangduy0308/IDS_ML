@@ -1410,6 +1410,38 @@ def test_script_wrapper_manage_help_runs_through_module_entrypoint(command: str)
     assert "options:" in help_run.stdout
 
 
+@pytest.mark.parametrize(
+    "command",
+    [
+        "preflight",
+        "status",
+        "smoke",
+        "recover",
+        "restore-inventory",
+        "post-restore-check",
+        "bootstrap",
+    ],
+)
+def test_script_wrapper_manage_help_runs_through_direct_file_entrypoint(command: str) -> None:
+    help_run = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts" / "ids_same_host_stack_manage.py"),
+            command,
+            "--help",
+        ],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert help_run.returncode == 0, help_run.stderr
+    assert command in help_run.stdout
+    assert "usage:" in help_run.stdout
+    assert "options:" in help_run.stdout
+
+
 def test_script_wrapper_same_host_stack_imports_reexported_surface() -> None:
     import_run = subprocess.run(
         [

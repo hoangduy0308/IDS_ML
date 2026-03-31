@@ -40,6 +40,7 @@ Deploy references already shipped in-tree:
 ## Canonical Stack Commands
 
 The canonical stack implementation lives in `ids.ops.same_host_stack_manage`; `scripts/ids_same_host_stack_manage.py` remains the compatibility entrypoint.
+That wrapper supports direct file execution from the repo checkout and from installed paths because it bootstraps the repository root before importing the canonical module.
 
 Supported commands:
 
