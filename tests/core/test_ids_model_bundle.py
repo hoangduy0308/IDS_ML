@@ -14,9 +14,10 @@ from ids.core.model_bundle import (  # noqa: E402
     build_inference_contract_metadata,
     load_model_bundle_manifest,
 )
-from ids.ops.model_bundle_lifecycle import (  # noqa: E402
+from ids.core.model_bundle_activation import (  # noqa: E402
     DEFAULT_ACTIVATION_RECORD_NAME,
     build_activation_record_payload,
+    build_bundle_status_payload,
     load_activation_record,
     resolve_active_model_bundle,
     write_activation_record,
@@ -139,6 +140,28 @@ def test_resolve_active_model_bundle_uses_activation_record(tmp_path: Path) -> N
     manifest = resolve_active_model_bundle(activation_path)
 
     assert manifest.bundle_root == bundle_root.resolve()
+
+
+def test_build_bundle_status_payload_reads_activation_record(tmp_path: Path) -> None:
+    bundle_root = tmp_path / "bundle"
+    bundle_root.mkdir()
+    write_bundle_manifest(bundle_root)
+    activation_path = tmp_path / DEFAULT_ACTIVATION_RECORD_NAME
+    write_activation_record(
+        activation_path,
+        build_activation_record_payload(
+            active_bundle_root=bundle_root,
+            active_bundle_name="bundle-under-test",
+            activated_at="2026-03-29T00:00:00+07:00",
+        ),
+    )
+
+    payload = build_bundle_status_payload(activation_path)
+
+    assert payload["runtime_ready"] is True
+    assert payload["active_bundle_root"] == str(bundle_root.resolve())
+    assert payload["active_bundle_name"] == "bundle-under-test"
+    assert payload["feature_columns_path"] == str((bundle_root / "feature_columns.json").resolve())
 
 
 def test_load_activation_record_preserves_previous_known_good_bundle(tmp_path: Path) -> None:

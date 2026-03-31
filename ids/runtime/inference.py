@@ -14,7 +14,7 @@ from ids.core.model_bundle import (
     ModelBundleContractError,
     load_model_bundle_manifest,
 )
-from ids.ops.model_bundle_lifecycle import ActiveBundleResolutionError, resolve_active_model_bundle
+from ids.core.model_bundle_activation import ActiveBundleResolutionError, resolve_active_model_bundle
 
 
 DEFAULT_MODEL_PATH = Path(
