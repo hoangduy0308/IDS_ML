@@ -214,6 +214,31 @@ def test_build_model_config_supports_activation_path(tmp_path: Path) -> None:
     assert config.threshold == 0.4
 
 
+def test_build_model_config_prefers_default_activation_path_when_present(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bundle_root = tmp_path / "bundle"
+    bundle_root.mkdir()
+    (bundle_root / "model.cbm").write_text("placeholder", encoding="utf-8")
+    write_bundle_manifest(bundle_root, threshold=0.65)
+    activation_path = tmp_path / DEFAULT_ACTIVATION_RECORD_NAME
+    write_activation_record(
+        activation_path,
+        build_activation_record_payload(
+            active_bundle_root=bundle_root,
+            active_bundle_name="bundle-under-test",
+            activated_at="2026-03-29T00:00:00+07:00",
+        ),
+    )
+    monkeypatch.setattr("ids.runtime.inference.DEFAULT_ACTIVATION_PATH", activation_path)
+
+    config = build_model_config()
+
+    assert config.bundle_root == bundle_root.resolve()
+    assert config.threshold == 0.65
+
+
 def test_build_model_config_rejects_external_overrides_when_bundle_used(tmp_path: Path) -> None:
     bundle_root = tmp_path / "bundle"
     bundle_root.mkdir()

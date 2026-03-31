@@ -15,8 +15,6 @@ import pandas as pd
 from ids.core.feature_contract import FlowFeatureContract, QuarantinedFlowRecord
 from ids.runtime.inference import (
     DEFAULT_FEATURE_COLUMNS_PATH,
-    DEFAULT_MODEL_PATH,
-    DEFAULT_THRESHOLD,
     IDSInferencer,
     build_inferencer,
 )
@@ -344,13 +342,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--quarantine-output-path", type=Path, default=None)
     parser.add_argument("--bundle-root", type=Path, default=None)
     parser.add_argument("--config-path", type=Path, default=None)
-    parser.add_argument("--model-path", type=Path, default=DEFAULT_MODEL_PATH)
+    parser.add_argument("--activation-path", type=Path, default=None)
+    parser.add_argument("--model-path", type=Path, default=None)
     parser.add_argument(
         "--feature-columns-path",
         type=Path,
-        default=DEFAULT_FEATURE_COLUMNS_PATH,
+        default=None,
     )
-    parser.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD)
+    parser.add_argument("--threshold", type=float, default=None)
     parser.add_argument("--max-batch-size", type=int, default=DEFAULT_MAX_BATCH_SIZE)
     parser.add_argument(
         "--flush-interval-seconds",
@@ -368,14 +367,27 @@ def main() -> None:
         alerts_output_path=args.alerts_output_path,
         quarantine_output_path=args.quarantine_output_path,
     )
-    contract = FlowFeatureContract.from_feature_file(args.feature_columns_path)
     inferencer = build_inferencer(
         bundle_root=args.bundle_root,
         config_path=args.config_path,
+        activation_path=args.activation_path,
         model_path=args.model_path,
         feature_columns_path=args.feature_columns_path,
         threshold=args.threshold,
     )
+    resolved_feature_columns_path = args.feature_columns_path
+    if resolved_feature_columns_path is None:
+        inferencer_config = getattr(inferencer, "config", None)
+        inferencer_feature_columns_path = getattr(
+            inferencer_config,
+            "feature_columns_path",
+            None,
+        )
+        if inferencer_feature_columns_path is not None:
+            resolved_feature_columns_path = Path(inferencer_feature_columns_path)
+        else:
+            resolved_feature_columns_path = DEFAULT_FEATURE_COLUMNS_PATH
+    contract = FlowFeatureContract.from_feature_file(resolved_feature_columns_path)
     runner = RealtimePipelineRunner(
         contract=contract,
         inferencer=inferencer,

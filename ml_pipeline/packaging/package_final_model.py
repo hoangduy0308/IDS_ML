@@ -13,28 +13,22 @@ from ids.core.model_bundle import (
     build_feature_schema_metadata,
     build_inference_contract_metadata,
 )
+from ids.core.path_defaults import (
+    DEFAULT_PACKAGING_BUNDLE_ROOT,
+    DEFAULT_PACKAGING_FEATURE_COLUMNS_PATH,
+    DEFAULT_PACKAGING_MODEL_PATH,
+    DEFAULT_PACKAGING_SUMMARY_PATH,
+    DEFAULT_PACKAGING_THRESHOLD_SELECTION_PATH,
+    DEFAULT_PACKAGING_TRAINING_SUMMARY_PATH,
+)
 
 
-DEFAULT_MODEL_PATH = Path(
-    r"F:\Work\IDS_ML_New\artifacts\kaggle\outputs\catboost_full_data_attempt"
-    r"\catboost_full_data_attempt_results\catboost_full_data_attempt.cbm"
-)
-DEFAULT_FEATURE_COLUMNS_PATH = Path(
-    r"F:\Work\IDS_ML_New\artifacts\cic_iot_diad_2024_binary\manifests\feature_columns.json"
-)
-DEFAULT_SUMMARY_PATH = Path(
-    r"F:\Work\IDS_ML_New\artifacts\kaggle\outputs\catboost_full_data_attempt"
-    r"\catboost_full_data_attempt_results\reports\summary.csv"
-)
-DEFAULT_TRAINING_SUMMARY_PATH = Path(
-    r"F:\Work\IDS_ML_New\artifacts\kaggle\outputs\catboost_full_data_attempt"
-    r"\catboost_full_data_attempt_results\reports\training_summary.json"
-)
-DEFAULT_THRESHOLD_SELECTION_PATH = Path(
-    r"F:\Work\IDS_ML_New\artifacts\posttrain_analysis\scaling_finalists\reports"
-    r"\catboost_full_threshold_selection.json"
-)
-DEFAULT_BUNDLE_ROOT = Path(r"F:\Work\IDS_ML_New\artifacts\final_model\catboost_full_data_v1")
+DEFAULT_MODEL_PATH = DEFAULT_PACKAGING_MODEL_PATH
+DEFAULT_FEATURE_COLUMNS_PATH = DEFAULT_PACKAGING_FEATURE_COLUMNS_PATH
+DEFAULT_SUMMARY_PATH = DEFAULT_PACKAGING_SUMMARY_PATH
+DEFAULT_TRAINING_SUMMARY_PATH = DEFAULT_PACKAGING_TRAINING_SUMMARY_PATH
+DEFAULT_THRESHOLD_SELECTION_PATH = DEFAULT_PACKAGING_THRESHOLD_SELECTION_PATH
+DEFAULT_BUNDLE_ROOT = DEFAULT_PACKAGING_BUNDLE_ROOT
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -89,9 +83,9 @@ def build_model_card(bundle_root: Path, metadata: dict[str, Any]) -> str:
 
 ## Source references
 
-- final decision: [final_model_decision.md](F:/Work/IDS_ML_New/docs/final_model_decision.md)
-- scaling experiment: [scaling_experiment_results.md](F:/Work/IDS_ML_New/docs/scaling_experiment_results.md)
-- threshold analysis: [scaling_threshold_analysis.md](F:/Work/IDS_ML_New/docs/scaling_threshold_analysis.md)
+- final decision: `docs/final_model_decision.md`
+- scaling experiment: `docs/scaling_experiment_results.md`
+- threshold analysis: `docs/scaling_threshold_analysis.md`
 """
 
 

@@ -15,15 +15,16 @@ from ids.core.model_bundle import (
     load_model_bundle_manifest,
 )
 from ids.core.model_bundle_activation import ActiveBundleResolutionError, resolve_active_model_bundle
+from ids.core.path_defaults import (
+    DEFAULT_RUNTIME_ACTIVATION_PATH,
+    DEFAULT_RUNTIME_COMPAT_FEATURE_COLUMNS_PATH,
+    DEFAULT_RUNTIME_COMPAT_MODEL_PATH,
+)
 
 
-DEFAULT_MODEL_PATH = Path(
-    r"F:\Work\IDS_ML_New\artifacts\kaggle\outputs\catboost_full_data_attempt"
-    r"\catboost_full_data_attempt_results\catboost_full_data_attempt.cbm"
-)
-DEFAULT_FEATURE_COLUMNS_PATH = Path(
-    r"F:\Work\IDS_ML_New\artifacts\cic_iot_diad_2024_binary\manifests\feature_columns.json"
-)
+DEFAULT_MODEL_PATH = DEFAULT_RUNTIME_COMPAT_MODEL_PATH
+DEFAULT_FEATURE_COLUMNS_PATH = DEFAULT_RUNTIME_COMPAT_FEATURE_COLUMNS_PATH
+DEFAULT_ACTIVATION_PATH = DEFAULT_RUNTIME_ACTIVATION_PATH
 DEFAULT_THRESHOLD = 0.5
 
 
@@ -169,6 +170,10 @@ def build_model_config(
         return IDSModelConfig.from_bundle(bundle_root)
     if config_path is not None:
         return IDSModelConfig.from_config_path(config_path)
+    if all(value is None for value in (model_path, feature_columns_path, threshold)):
+        default_activation_path = DEFAULT_ACTIVATION_PATH.resolve()
+        if default_activation_path.is_file():
+            return IDSModelConfig.from_activation_path(default_activation_path)
     return IDSModelConfig(
         model_path=(model_path or DEFAULT_MODEL_PATH).resolve(),
         feature_columns_path=(feature_columns_path or DEFAULT_FEATURE_COLUMNS_PATH).resolve(),
@@ -206,10 +211,33 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-path", type=Path)
     parser.add_argument("--bundle-root", type=Path, default=None)
     parser.add_argument("--config-path", type=Path, default=None)
-    parser.add_argument("--activation-path", type=Path, default=None)
-    parser.add_argument("--model-path", type=Path, default=None)
-    parser.add_argument("--feature-columns-path", type=Path, default=None)
-    parser.add_argument("--threshold", type=float, default=None)
+    parser.add_argument(
+        "--activation-path",
+        type=Path,
+        default=None,
+        help=(
+            "Canonical production contract input. "
+            "Resolved from active_bundle.json and cannot be mixed with raw model/schema/threshold overrides."
+        ),
+    )
+    parser.add_argument(
+        "--model-path",
+        type=Path,
+        default=None,
+        help="Compatibility/dev-only raw model override (non-production).",
+    )
+    parser.add_argument(
+        "--feature-columns-path",
+        type=Path,
+        default=None,
+        help="Compatibility/dev-only raw feature schema override (non-production).",
+    )
+    parser.add_argument(
+        "--threshold",
+        type=float,
+        default=None,
+        help="Compatibility/dev-only raw threshold override (non-production).",
+    )
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument(
         "--drop-input-columns",

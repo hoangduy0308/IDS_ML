@@ -10,12 +10,11 @@ from pathlib import Path
 from typing import Any, Iterable, Iterator, Mapping, Sequence, TextIO
 
 from ids.core import feature_contract as feature_contract_module
+from ids.core.path_defaults import DEFAULT_RUNTIME_COMPAT_FEATURE_COLUMNS_PATH
 
 PRIMARY_PROFILE_ID = "cicflowmeter_primary_v1"
 SECONDARY_PROFILE_ID = "cicflowmeter_secondary_v1"
-DEFAULT_FEATURE_COLUMNS_PATH = Path(
-    r"F:\Work\IDS_ML_New\artifacts\final_model\catboost_full_data_v1\feature_columns.json"
-)
+DEFAULT_FEATURE_COLUMNS_PATH = DEFAULT_RUNTIME_COMPAT_FEATURE_COLUMNS_PATH
 MAX_JSONL_LINE_LENGTH = 1_048_576
 
 ADAPTER_FIXED_METADATA_KEYS = (

@@ -360,6 +360,72 @@ def test_main_supports_file_input_path(
     assert len(quarantines) == 2
 
 
+def test_main_forwards_activation_path_to_inferencer_when_provided(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    alerts_path = tmp_path / "alerts.jsonl"
+    quarantine_path = tmp_path / "quarantine.jsonl"
+    activation_path = tmp_path / "active_bundle.json"
+    activation_path.write_text("{}", encoding="utf-8")
+    captured_kwargs: dict[str, object] = {}
+
+    class DummyInferencerWithConfig(DummyInferencer):
+        def __init__(self) -> None:
+            super().__init__()
+            self.config = type(
+                "Config",
+                (),
+                {"feature_columns_path": demo_fixture_path()},
+            )()
+
+    def _build_inferencer(**kwargs: object) -> DummyInferencerWithConfig:
+        captured_kwargs.update(kwargs)
+        return DummyInferencerWithConfig()
+
+    monkeypatch.setattr("ids.runtime.realtime_pipeline.build_inferencer", _build_inferencer)
+    monkeypatch.setattr(
+        "ids.runtime.realtime_pipeline.FlowFeatureContract.from_feature_file",
+        classmethod(lambda cls, path, alias_map=None: make_contract()),
+    )
+    monkeypatch.setattr(
+        sys,
+        "stdin",
+        io.StringIO(
+            json.dumps(
+                {
+                    "SrcPort": 1000,
+                    "DstPort": 2000,
+                    "Protocol": 6,
+                    "FlowDuration": 95,
+                    "trace_id": "stdin-1",
+                }
+            )
+            + "\n"
+        ),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "ids_realtime_pipeline.py",
+            "--activation-path",
+            str(activation_path),
+            "--alerts-output-path",
+            str(alerts_path),
+            "--quarantine-output-path",
+            str(quarantine_path),
+        ],
+    )
+
+    main()
+
+    summary = json.loads(capsys.readouterr().out)
+    assert summary["input_mode"] == "stdin"
+    assert captured_kwargs["activation_path"] == activation_path
+
+
 def test_main_supports_stdin_fallback(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
