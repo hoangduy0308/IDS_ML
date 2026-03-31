@@ -60,3 +60,26 @@ def test_documented_mirrored_pytest_commands_are_live() -> None:
 
     completed = run_command(PYTEST_COMMAND)
     assert_command_smoke(completed, "documented mirrored pytest command")
+
+
+def test_packaged_operator_docs_keep_canonical_command_surface() -> None:
+    stack_doc = (REPO_ROOT / "docs" / "current" / "operations" / "ids_same_host_stack_operations.md").read_text(
+        encoding="utf-8"
+    )
+    live_sensor_doc = (REPO_ROOT / "docs" / "current" / "runtime" / "ids_live_sensor_operations.md").read_text(
+        encoding="utf-8"
+    )
+    bundle_doc = (REPO_ROOT / "docs" / "current" / "runtime" / "final_model_bundle.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "ids-stack" in stack_doc
+    assert "compatibility entrypoint" in stack_doc
+    assert "scripts/ids_same_host_stack_manage.py" in stack_doc
+
+    assert "ids-live-sensor-preflight" in live_sensor_doc
+    assert "ids-model-bundle-manage" in live_sensor_doc
+    assert "ids-inference" in live_sensor_doc
+
+    assert "ids-package-final-model" in bundle_doc
+    assert "ids-model-bundle-manage" in bundle_doc

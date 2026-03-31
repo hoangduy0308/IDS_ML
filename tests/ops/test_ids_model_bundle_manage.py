@@ -2,10 +2,16 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import sys
 
 import pytest
 
-from wrapper_smoke_support import assert_help_smoke, run_python_module_help, run_python_script_help
+from wrapper_smoke_support import (
+    assert_help_smoke,
+    run_command,
+    run_python_module_help,
+    run_python_script_help,
+)
 
 import ids.ops.model_bundle_manage as manage  # noqa: E402
 from ids.core.model_bundle import (  # noqa: E402
@@ -209,4 +215,10 @@ def test_script_wrapper_help_runs_through_module_entrypoint() -> None:
 def test_script_wrapper_help_runs_through_direct_file_entrypoint() -> None:
     help_run = run_python_script_help("scripts/ids_model_bundle_manage.py")
     assert_help_smoke(help_run, "scripts/ids_model_bundle_manage.py")
+    assert "usage:" in help_run.stdout.lower()
+
+
+def test_canonical_module_help_surface_is_available() -> None:
+    help_run = run_command([sys.executable, "-m", "ids.ops.model_bundle_manage", "--help"])
+    assert_help_smoke(help_run, "ids.ops.model_bundle_manage")
     assert "usage:" in help_run.stdout.lower()
