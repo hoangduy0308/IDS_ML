@@ -14,9 +14,8 @@ import pandas as pd
 
 from ids.core.feature_contract import FlowFeatureContract, QuarantinedFlowRecord
 from ids.runtime.inference import (
-    DEFAULT_FEATURE_COLUMNS_PATH,
     IDSInferencer,
-    build_inferencer,
+    build_model_config,
 )
 
 
@@ -367,7 +366,7 @@ def main() -> None:
         alerts_output_path=args.alerts_output_path,
         quarantine_output_path=args.quarantine_output_path,
     )
-    inferencer = build_inferencer(
+    config = build_model_config(
         bundle_root=args.bundle_root,
         config_path=args.config_path,
         activation_path=args.activation_path,
@@ -375,18 +374,8 @@ def main() -> None:
         feature_columns_path=args.feature_columns_path,
         threshold=args.threshold,
     )
-    resolved_feature_columns_path = args.feature_columns_path
-    if resolved_feature_columns_path is None:
-        inferencer_config = getattr(inferencer, "config", None)
-        inferencer_feature_columns_path = getattr(
-            inferencer_config,
-            "feature_columns_path",
-            None,
-        )
-        if inferencer_feature_columns_path is not None:
-            resolved_feature_columns_path = Path(inferencer_feature_columns_path)
-        else:
-            resolved_feature_columns_path = DEFAULT_FEATURE_COLUMNS_PATH
+    inferencer = IDSInferencer(config)
+    resolved_feature_columns_path = args.feature_columns_path or config.feature_columns_path
     contract = FlowFeatureContract.from_feature_file(resolved_feature_columns_path)
     runner = RealtimePipelineRunner(
         contract=contract,

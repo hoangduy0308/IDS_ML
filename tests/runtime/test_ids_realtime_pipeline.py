@@ -335,11 +335,23 @@ def test_main_supports_file_input_path(
 ) -> None:
     alerts_path = tmp_path / "alerts.jsonl"
     quarantine_path = tmp_path / "quarantine.jsonl"
+    config_feature_columns_path = tmp_path / "config_feature_columns.json"
+    config_feature_columns_path.write_text("[]\n", encoding="utf-8")
+    captured_paths: dict[str, Path] = {}
 
-    monkeypatch.setattr("ids.runtime.realtime_pipeline.build_inferencer", lambda **_: DummyInferencer())
+    def _from_feature_file(cls, path: Path, alias_map: dict[str, str] | None = None):
+        _ = cls, alias_map
+        captured_paths["feature_columns_path"] = Path(path)
+        return make_contract()
+
+    monkeypatch.setattr(
+        "ids.runtime.realtime_pipeline.build_model_config",
+        lambda **_: type("Config", (), {"feature_columns_path": config_feature_columns_path})(),
+    )
+    monkeypatch.setattr("ids.runtime.realtime_pipeline.IDSInferencer", lambda config: DummyInferencer())
     monkeypatch.setattr(
         "ids.runtime.realtime_pipeline.FlowFeatureContract.from_feature_file",
-        classmethod(lambda cls, path, alias_map=None: make_contract()),
+        classmethod(_from_feature_file),
     )
     monkeypatch.setattr(
         sys,
@@ -369,11 +381,13 @@ def test_main_supports_file_input_path(
     assert summary["valid_records"] == 2
     assert len(alerts) == 2
     assert len(quarantines) == 2
+    assert captured_paths["feature_columns_path"] == config_feature_columns_path
 
 
-def test_main_fails_closed_without_inferencer_feature_columns_path(
+def test_main_supports_configless_inferencer_without_hidden_schema_seam(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     input_path = tmp_path / "flows.jsonl"
     input_path.write_text(
@@ -382,14 +396,26 @@ def test_main_fails_closed_without_inferencer_feature_columns_path(
     )
     alerts_path = tmp_path / "alerts.jsonl"
     quarantine_path = tmp_path / "quarantine.jsonl"
+    config_feature_columns_path = tmp_path / "config_feature_columns.json"
+    config_feature_columns_path.write_text("[]\n", encoding="utf-8")
+    captured_paths: dict[str, Path] = {}
 
     monkeypatch.setattr(
-        "ids.runtime.realtime_pipeline.build_inferencer",
-        lambda **_: ConfiglessInferencer(),
+        "ids.runtime.realtime_pipeline.build_model_config",
+        lambda **_: type("Config", (), {"feature_columns_path": config_feature_columns_path})(),
+    )
+    monkeypatch.setattr(
+        "ids.runtime.realtime_pipeline.IDSInferencer",
+        lambda config: ConfiglessInferencer(),
     )
     monkeypatch.setattr(
         "ids.runtime.realtime_pipeline.FlowFeatureContract.from_feature_file",
-        classmethod(lambda cls, path, alias_map=None: make_contract()),
+        classmethod(
+            lambda cls, path, alias_map=None: (
+                captured_paths.setdefault("feature_columns_path", Path(path)),
+                make_contract(),
+            )[1]
+        ),
     )
     monkeypatch.setattr(
         sys,
@@ -405,11 +431,12 @@ def test_main_fails_closed_without_inferencer_feature_columns_path(
         ],
     )
 
-    with pytest.raises(
-        ValueError,
-        match="inferencer did not expose feature_columns_path; supply --feature-columns-path explicitly",
-    ):
-        main()
+    main()
+
+    summary = json.loads(capsys.readouterr().out)
+    assert summary["input_mode"] == "file"
+    assert summary["valid_records"] == 1
+    assert captured_paths["feature_columns_path"] == config_feature_columns_path
 
 
 def test_main_uses_explicit_feature_columns_path_when_inferencer_config_missing(
@@ -426,6 +453,8 @@ def test_main_uses_explicit_feature_columns_path_when_inferencer_config_missing(
     explicit_feature_columns_path.write_text("[]\n", encoding="utf-8")
     alerts_path = tmp_path / "alerts.jsonl"
     quarantine_path = tmp_path / "quarantine.jsonl"
+    config_feature_columns_path = tmp_path / "config_feature_columns.json"
+    config_feature_columns_path.write_text("[]\n", encoding="utf-8")
     captured_paths: dict[str, Path] = {}
 
     def _from_feature_file(cls, path: Path, alias_map: dict[str, str] | None = None):
@@ -434,8 +463,12 @@ def test_main_uses_explicit_feature_columns_path_when_inferencer_config_missing(
         return make_contract()
 
     monkeypatch.setattr(
-        "ids.runtime.realtime_pipeline.build_inferencer",
-        lambda **_: ConfiglessInferencer(),
+        "ids.runtime.realtime_pipeline.build_model_config",
+        lambda **_: type("Config", (), {"feature_columns_path": config_feature_columns_path})(),
+    )
+    monkeypatch.setattr(
+        "ids.runtime.realtime_pipeline.IDSInferencer",
+        lambda config: ConfiglessInferencer(),
     )
     monkeypatch.setattr(
         "ids.runtime.realtime_pipeline.FlowFeatureContract.from_feature_file",
@@ -479,17 +512,14 @@ def test_main_forwards_activation_path_to_inferencer_when_provided(
     class DummyInferencerWithConfig(DummyInferencer):
         def __init__(self) -> None:
             super().__init__()
-            self.config = type(
-                "Config",
-                (),
-                {"feature_columns_path": demo_fixture_path()},
-            )()
+            self.config = type("Config", (), {"feature_columns_path": demo_fixture_path()})()
 
-    def _build_inferencer(**kwargs: object) -> DummyInferencerWithConfig:
+    def _build_model_config(**kwargs: object) -> object:
         captured_kwargs.update(kwargs)
-        return DummyInferencerWithConfig()
+        return type("Config", (), {"feature_columns_path": demo_fixture_path()})()
 
-    monkeypatch.setattr("ids.runtime.realtime_pipeline.build_inferencer", _build_inferencer)
+    monkeypatch.setattr("ids.runtime.realtime_pipeline.build_model_config", _build_model_config)
+    monkeypatch.setattr("ids.runtime.realtime_pipeline.IDSInferencer", lambda config: DummyInferencerWithConfig())
     monkeypatch.setattr(
         "ids.runtime.realtime_pipeline.FlowFeatureContract.from_feature_file",
         classmethod(lambda cls, path, alias_map=None: make_contract()),
@@ -551,7 +581,11 @@ def test_main_supports_stdin_fallback(
         + "\n"
     )
 
-    monkeypatch.setattr("ids.runtime.realtime_pipeline.build_inferencer", lambda **_: DummyInferencer())
+    monkeypatch.setattr(
+        "ids.runtime.realtime_pipeline.build_model_config",
+        lambda **_: type("Config", (), {"feature_columns_path": demo_fixture_path()})(),
+    )
+    monkeypatch.setattr("ids.runtime.realtime_pipeline.IDSInferencer", lambda config: DummyInferencer())
     monkeypatch.setattr(
         "ids.runtime.realtime_pipeline.FlowFeatureContract.from_feature_file",
         classmethod(lambda cls, path, alias_map=None: make_contract()),
