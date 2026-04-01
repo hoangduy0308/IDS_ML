@@ -1,53 +1,16 @@
 from __future__ import annotations
 
 import json
-import subprocess
-import sys
 import tomllib
 from pathlib import Path
 
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
-
-
-def _run(argv: list[str], *, cwd: Path = REPO_ROOT) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        argv,
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
-
-def _venv_python(tmp_path: Path) -> Path:
-    venv_dir = tmp_path / "venv"
-    create = _run([sys.executable, "-m", "venv", str(venv_dir)], cwd=tmp_path)
-    assert create.returncode == 0, create.stderr
-    pyvenv_cfg = (venv_dir / "pyvenv.cfg").read_text(encoding="utf-8")
-    assert "include-system-site-packages = false" in pyvenv_cfg
-
-    windows_python = venv_dir / "Scripts" / "python.exe"
-    posix_python = venv_dir / "bin" / "python"
-    python_path = windows_python if windows_python.exists() else posix_python
-    assert python_path.exists(), f"venv python not found under: {venv_dir}"
-    return python_path
-
-
-def _scripts_dir(venv_python: Path) -> Path:
-    result = _run(
-        [str(venv_python), "-c", "import sysconfig; print(sysconfig.get_path('scripts'))"],
-    )
-    assert result.returncode == 0, result.stderr
-    return Path(result.stdout.strip()).resolve()
-
-
-def _resolve_console_script(scripts_dir: Path, command_name: str) -> Path:
-    for suffix in ("", ".exe", ".cmd", ".bat"):
-        candidate = scripts_dir / f"{command_name}{suffix}"
-        if candidate.exists():
-            return candidate
-    raise AssertionError(f"console script not found for {command_name} under {scripts_dir}")
+from repo_installable_proof_support import (
+    REPO_ROOT,
+    resolve_console_script,
+    run_command,
+    scripts_dir,
+    venv_python,
+)
 
 
 def test_pyproject_console_scripts_map_to_canonical_modules() -> None:
@@ -63,30 +26,30 @@ def test_pyproject_console_scripts_map_to_canonical_modules() -> None:
 
 
 def test_editable_install_surface_exposes_entrypoints_and_console_assets(tmp_path: Path) -> None:
-    venv_python = _venv_python(tmp_path)
-    install = _run(
-        [str(venv_python), "-m", "pip", "install", "-e", str(REPO_ROOT)],
+    venv_python_path = venv_python(tmp_path)
+    install = run_command(
+        [str(venv_python_path), "-m", "pip", "install", "-e", str(REPO_ROOT)],
         cwd=tmp_path,
     )
     assert install.returncode == 0, install.stderr
 
-    scripts_dir = _scripts_dir(venv_python)
+    scripts_dir_path = scripts_dir(venv_python_path)
     pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     expected_scripts: dict[str, str] = pyproject["project"]["scripts"]
     resolved_scripts = {
-        command_name: _resolve_console_script(scripts_dir, command_name)
+        command_name: resolve_console_script(scripts_dir_path, command_name)
         for command_name in expected_scripts
     }
     assert all(path.exists() for path in resolved_scripts.values())
 
     for command_name, script_path in resolved_scripts.items():
-        help_run = _run([str(script_path), "--help"], cwd=tmp_path)
+        help_run = run_command([str(script_path), "--help"], cwd=tmp_path)
         assert help_run.returncode == 0, f"{command_name}: {help_run.stderr}"
         assert "usage:" in help_run.stdout.lower(), command_name
 
-    inspect = _run(
+    inspect = run_command(
         [
-            str(venv_python),
+            str(venv_python_path),
             "-c",
             (
                 "import json, importlib.metadata as md; "

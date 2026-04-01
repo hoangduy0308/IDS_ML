@@ -4,8 +4,6 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
-import subprocess
-import sys
 import tomllib
 
 import ids.ops.same_host_stack as stack  # noqa: E402
@@ -13,50 +11,13 @@ from ids.core.model_bundle import (  # noqa: E402
     build_feature_schema_metadata,
     build_inference_contract_metadata,
 )
-
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
-
-
-def _run(argv: list[str], *, cwd: Path, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        argv,
-        cwd=cwd,
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
-
-def _venv_python(tmp_path: Path) -> Path:
-    venv_dir = tmp_path / "venv"
-    completed = _run([sys.executable, "-m", "venv", str(venv_dir)], cwd=tmp_path)
-    assert completed.returncode == 0, completed.stderr
-    pyvenv_cfg = (venv_dir / "pyvenv.cfg").read_text(encoding="utf-8")
-    assert "include-system-site-packages = false" in pyvenv_cfg
-    windows_python = venv_dir / "Scripts" / "python.exe"
-    posix_python = venv_dir / "bin" / "python"
-    python_path = windows_python if windows_python.exists() else posix_python
-    assert python_path.exists(), f"venv python not found under {venv_dir}"
-    return python_path.resolve()
-
-
-def _scripts_dir(venv_python: Path) -> Path:
-    completed = _run(
-        [str(venv_python), "-c", "import sysconfig; print(sysconfig.get_path('scripts'))"],
-        cwd=REPO_ROOT,
-    )
-    assert completed.returncode == 0, completed.stderr
-    return Path(completed.stdout.strip()).resolve()
-
-
-def _resolve_console_script(scripts_dir: Path, command_name: str) -> Path:
-    for suffix in ("", ".exe", ".cmd", ".bat"):
-        candidate = scripts_dir / f"{command_name}{suffix}"
-        if candidate.exists():
-            return candidate.resolve()
-    raise AssertionError(f"console script not found for {command_name} under {scripts_dir}")
+from repo_installable_proof_support import (
+    REPO_ROOT,
+    resolve_console_script,
+    run_command,
+    scripts_dir,
+    venv_python,
+)
 
 
 def _write_bundle_contract(bundle_root: Path) -> Path:
@@ -265,16 +226,16 @@ def _stack_base_argv(
 
 
 def test_repo_installable_bootstrap_proof_runs_installed_ids_stack_lifecycle(tmp_path: Path) -> None:
-    venv_python = _venv_python(tmp_path)
-    install = _run(
-        [str(venv_python), "-m", "pip", "install", "-e", str(REPO_ROOT)],
+    venv_python_path = venv_python(tmp_path)
+    install = run_command(
+        [str(venv_python_path), "-m", "pip", "install", "-e", str(REPO_ROOT)],
         cwd=tmp_path,
     )
     assert install.returncode == 0, install.stderr
 
-    scripts_dir = _scripts_dir(venv_python)
-    ids_stack = _resolve_console_script(scripts_dir, "ids-stack")
-    ids_bundle_manage = _resolve_console_script(scripts_dir, "ids-model-bundle-manage")
+    scripts_dir_path = scripts_dir(venv_python_path)
+    ids_stack = resolve_console_script(scripts_dir_path, "ids-stack")
+    ids_bundle_manage = resolve_console_script(scripts_dir_path, "ids-model-bundle-manage")
 
     runtime_dir = tmp_path / "runtime"
     logs_dir = tmp_path / "logs"
@@ -306,7 +267,7 @@ def test_repo_installable_bootstrap_proof_runs_installed_ids_stack_lifecycle(tmp
     site_dir = tmp_path / "sitecustomize"
     _write_sitecustomize(site_dir)
     fake_bin = tmp_path / "fake-bin"
-    _write_fake_systemctl(fake_bin, venv_python=venv_python)
+    _write_fake_systemctl(fake_bin, venv_python=venv_python_path)
     systemctl_log = tmp_path / "fake-systemctl.log"
 
     env = dict(os.environ)
@@ -325,7 +286,7 @@ def test_repo_installable_bootstrap_proof_runs_installed_ids_stack_lifecycle(tmp
     stack_base_argv = _stack_base_argv(
         ids_stack=ids_stack,
         repo_root=REPO_ROOT,
-        venv_python=venv_python,
+        venv_python=venv_python_path,
         operator_env_file=operator_env_file,
         activation_path=activation_path,
         spool_dir=spool_dir,
@@ -334,7 +295,7 @@ def test_repo_installable_bootstrap_proof_runs_installed_ids_stack_lifecycle(tmp
         summary_output_path=summary_output_path,
     )
 
-    bootstrap = _run(
+    bootstrap = run_command(
         [
             *stack_base_argv,
             "--json",
@@ -365,10 +326,10 @@ def test_repo_installable_bootstrap_proof_runs_installed_ids_stack_lifecycle(tmp
         "stack_smoke",
     ]
 
-    preflight = _run([*stack_base_argv, "--json", "preflight"], cwd=tmp_path, env=env)
-    status = _run([*stack_base_argv, "--json", "status"], cwd=tmp_path, env=env)
-    smoke = _run([*stack_base_argv, "--json", "smoke"], cwd=tmp_path, env=env)
-    bundle_status = _run(
+    preflight = run_command([*stack_base_argv, "--json", "preflight"], cwd=tmp_path, env=env)
+    status = run_command([*stack_base_argv, "--json", "status"], cwd=tmp_path, env=env)
+    smoke = run_command([*stack_base_argv, "--json", "smoke"], cwd=tmp_path, env=env)
+    bundle_status = run_command(
         [
             str(ids_bundle_manage),
             "--activation-path",
@@ -403,7 +364,7 @@ def test_repo_installable_bootstrap_proof_runs_installed_ids_stack_lifecycle(tmp
     shadow_env["IDS_TEST_SHADOW_IMPORT_MODULE"] = "ids.ops.model_bundle_manage"
     shadow_env["IDS_TEST_SHADOW_IMPORT_ERROR"] = "shadowed import crash"
 
-    degraded_preflight = _run(
+    degraded_preflight = run_command(
         [
             *stack_base_argv,
             "--json",
