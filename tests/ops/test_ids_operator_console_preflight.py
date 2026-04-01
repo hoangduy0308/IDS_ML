@@ -332,6 +332,56 @@ def test_preflight_main_fails_closed_on_partial_env_notification_config(
         )
 
 
+def test_preflight_ignores_inherited_pythonpath_contamination(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: inherited PYTHONPATH must not influence module validation.
+
+    If _build_import_env() stops scrubbing PYTHONPATH, the shadow module on the
+    hostile path would be resolved instead of the trusted-root module, and the
+    trusted-root containment check would fail.
+    """
+    config = _make_preflight_config(tmp_path)
+    shadow_root = tmp_path / "hostile-pythonpath"
+    console_root = shadow_root / "ids" / "console"
+    console_root.mkdir(parents=True, exist_ok=True)
+    (shadow_root / "ids" / "__init__.py").write_text(
+        "raise RuntimeError('hostile parent import should not run')\n",
+        encoding="utf-8",
+    )
+    (console_root / "__init__.py").write_text(
+        "raise RuntimeError('hostile console init should not run')\n",
+        encoding="utf-8",
+    )
+    (console_root / "server.py").write_text("SHADOWED = True\n", encoding="utf-8")
+    monkeypatch.setenv("PYTHONPATH", str(shadow_root.resolve()))
+    monkeypatch.setattr(preflight, "_is_executable_file", lambda path: True)
+
+    # Must succeed: _build_import_env scrubs PYTHONPATH so the shadow is invisible
+    validate_preflight(config)
+
+
+def test_preflight_ignores_inherited_pythonhome_contamination(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: inherited PYTHONHOME must not influence module validation.
+
+    A bogus PYTHONHOME would crash the subprocess interpreter if it leaked
+    through _build_import_env().
+    """
+    config = _make_preflight_config(tmp_path)
+    bogus_home = tmp_path / "bogus-python-home"
+    bogus_home.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("PYTHONHOME", str(bogus_home.resolve()))
+    monkeypatch.setattr(preflight, "_is_executable_file", lambda path: True)
+
+    # Must succeed: _build_import_env scrubs PYTHONHOME so the subprocess
+    # interpreter ignores the bogus path
+    validate_preflight(config)
+
+
 def test_script_wrapper_help_runs_through_module_entrypoint() -> None:
     help_run = run_python_module_help("scripts.ids_operator_console_preflight")
     assert_help_smoke(help_run, "scripts.ids_operator_console_preflight")

@@ -299,6 +299,99 @@ def test_validate_stack_preflight_bootstrap_or_preflight_rejects_modules_from_ou
     assert "resolved outside repo_root" in payload["host_layout_checks"][expected_field]["detail"]
 
 
+def test_validate_stack_preflight_ignores_inherited_pythonpath_contamination(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: inherited PYTHONPATH must not influence module validation.
+
+    If _build_import_env() stops scrubbing PYTHONPATH, the shadow module on the
+    hostile path would be resolved instead of the trusted-root module, and the
+    trusted-root containment check would fail.
+    """
+    config = _build_config(tmp_path)
+    shadow_root = tmp_path / "hostile-pythonpath"
+    for pkg in ("ids/console", "ids/ops"):
+        pkg_dir = shadow_root / pkg
+        pkg_dir.mkdir(parents=True, exist_ok=True)
+        for init in (shadow_root / "ids" / "__init__.py", pkg_dir / "__init__.py"):
+            if not init.exists():
+                init.write_text(
+                    "raise RuntimeError('hostile init should not run')\n",
+                    encoding="utf-8",
+                )
+    (shadow_root / "ids" / "console" / "server.py").write_text("SHADOWED = True\n", encoding="utf-8")
+    (shadow_root / "ids" / "ops" / "model_bundle_manage.py").write_text("SHADOWED = True\n", encoding="utf-8")
+    (shadow_root / "ids" / "ops" / "operator_console_manage.py").write_text("SHADOWED = True\n", encoding="utf-8")
+    monkeypatch.setenv("PYTHONPATH", str(shadow_root.resolve()))
+
+    monkeypatch.setattr(
+        stack,
+        "build_bundle_status_payload",
+        lambda path: {
+            "runtime_ready": True,
+            "activation_path": str(path),
+            "active_bundle_name": "bundle-under-test",
+        },
+    )
+    monkeypatch.setattr(
+        stack,
+        "validate_live_sensor_preflight",
+        lambda _preflight_config: None,
+    )
+    monkeypatch.setattr(
+        stack,
+        "validate_operator_console_preflight",
+        lambda _preflight_config: None,
+    )
+
+    payload = stack.validate_stack_preflight(config)
+
+    # Must succeed: _build_import_env scrubs PYTHONPATH so shadow modules are invisible
+    assert payload["ready"] is True
+
+
+def test_validate_stack_preflight_ignores_inherited_pythonhome_contamination(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: inherited PYTHONHOME must not influence module validation.
+
+    A bogus PYTHONHOME would crash the subprocess interpreter if it leaked
+    through _build_import_env().
+    """
+    config = _build_config(tmp_path)
+    bogus_home = tmp_path / "bogus-python-home"
+    bogus_home.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("PYTHONHOME", str(bogus_home.resolve()))
+
+    monkeypatch.setattr(
+        stack,
+        "build_bundle_status_payload",
+        lambda path: {
+            "runtime_ready": True,
+            "activation_path": str(path),
+            "active_bundle_name": "bundle-under-test",
+        },
+    )
+    monkeypatch.setattr(
+        stack,
+        "validate_live_sensor_preflight",
+        lambda _preflight_config: None,
+    )
+    monkeypatch.setattr(
+        stack,
+        "validate_operator_console_preflight",
+        lambda _preflight_config: None,
+    )
+
+    payload = stack.validate_stack_preflight(config)
+
+    # Must succeed: _build_import_env scrubs PYTHONHOME so the subprocess
+    # interpreter ignores the bogus path
+    assert payload["ready"] is True
+
+
 def test_load_stack_operator_config_defaults_to_canonical_console_assets(tmp_path: Path) -> None:
     config = _build_config(tmp_path)
 
