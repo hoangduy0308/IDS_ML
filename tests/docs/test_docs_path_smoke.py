@@ -85,3 +85,18 @@ def test_packaged_operator_docs_keep_canonical_command_surface() -> None:
     assert "ids-package-final-model" in bundle_doc
     assert "ids-model-bundle-manage" in bundle_doc
     assert "F:\\Work\\IDS_ML_New" not in bundle_doc
+
+
+def test_console_docs_index_links_are_portable() -> None:
+    console_readme = (REPO_ROOT / "docs" / "current" / "console" / "README.md").read_text(encoding="utf-8")
+
+    for target in [
+        "ids_operator_console_architecture.md",
+        "ids_operator_console_ui_prd.md",
+        "ids_operator_console_ui_surface_spec.md",
+        "ids_operator_console_operations.md",
+    ]:
+        assert f"[{target}]({target})" in console_readme
+
+    assert "F:/Work/IDS_ML_New" not in console_readme
+    assert "F:\\Work\\IDS_ML_New" not in console_readme
