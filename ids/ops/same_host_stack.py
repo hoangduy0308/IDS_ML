@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 from typing import Any, Callable, Sequence
@@ -37,6 +38,10 @@ from ids.ops.operator_console_preflight import (
     validate_preflight as validate_operator_console_preflight,
 )
 from ids.ops.model_bundle_lifecycle import build_bundle_status_payload
+from ids.ops.module_validation import (
+    clean_module_name as _clean_module_name,
+    require_importable_module as _require_importable_module,
+)
 
 
 CommandRunner = Callable[[Sequence[str]], str]
@@ -48,9 +53,9 @@ class SameHostStackConfig:
     repo_root: Path
     python_binary: Path
     operator_env_file: Path
-    model_manage_entrypoint: Path
-    operator_manage_entrypoint: Path
-    operator_server_entrypoint: Path
+    model_manage_module: str
+    operator_manage_module: str
+    operator_server_module: str
     activation_path: Path
     live_sensor_interface: str
     dumpcap_binary: Path
@@ -125,6 +130,15 @@ def _require_existing_directory(path: Path, *, name: str) -> Path:
     if not resolved.is_dir():
         raise FileNotFoundError(f"{name} not found: {resolved}")
     return resolved
+
+
+def _build_module_command(python_binary: Path, module_name: str, *args: str) -> list[str]:
+    return [
+        str(Path(python_binary).resolve()),
+        "-m",
+        _clean_module_name(module_name, name="module_name", allow_blank=False),
+        *args,
+    ]
 
 
 def _load_json_object(path: Path, *, label: str) -> dict[str, Any]:
@@ -228,8 +242,8 @@ def build_operator_preflight_config(config: SameHostStackConfig) -> OperatorCons
     telegram_token = operator_config.telegram_bot_token if operator_config.telegram_bot_token_source is None else None
     return OperatorConsolePreflightConfig(
         python_binary=Path(config.python_binary).resolve(),
-        app_entrypoint=Path(config.operator_server_entrypoint).resolve(),
-        manage_entrypoint=Path(config.operator_manage_entrypoint).resolve(),
+        app_module=config.operator_server_module,
+        manage_module=config.operator_manage_module,
         database_path=operator_config.database_path,
         alerts_input_path=operator_config.alerts_input_path,
         quarantine_input_path=operator_config.quarantine_input_path,
@@ -328,7 +342,7 @@ def _build_operator_smoke_component(config: SameHostStackConfig) -> dict[str, An
             state="degraded",
             payload={"operator_env_file": str(Path(config.operator_env_file).resolve())},
         )
-    redirect_ok = smoke.redirect_status in {200, 302, 307, 308}
+    redirect_ok = smoke.redirect_status in {200, 302, 303, 307, 308}
     ok = smoke.health_status == 200 and smoke.readiness_status == 200 and redirect_ok
     return {
         "ok": ok,
@@ -1054,17 +1068,41 @@ def validate_stack_preflight(config: SameHostStackConfig) -> dict[str, Any]:
 
     repo_root = check_directory(config.repo_root, name="repo_root")
     python_binary = check_file(config.python_binary, name="python_binary", executable=True)
-    model_manage_entrypoint = check_file(
-        config.model_manage_entrypoint,
-        name="model_manage_entrypoint",
+    def check_module(module_name: str, *, name: str, python_binary_path: Path | None) -> str | None:
+        try:
+            if python_binary_path is None:
+                raise ValueError("python_binary must be valid before module import checks")
+            checked = _require_importable_module(python_binary_path, module_name, name=name)
+        except Exception as exc:
+            host_layout_checks[name] = {
+                "ok": False,
+                "state": _path_state_from_exception(exc),
+                "detail": str(exc),
+                "module": str(module_name).strip(),
+            }
+            return None
+        host_layout_checks[name] = {
+            "ok": True,
+            "state": "ready",
+            "detail": None,
+            "module": checked,
+        }
+        return checked
+
+    model_manage_module = check_module(
+        config.model_manage_module,
+        name="model_manage_module",
+        python_binary_path=python_binary,
     )
-    operator_manage_entrypoint = check_file(
-        config.operator_manage_entrypoint,
-        name="operator_manage_entrypoint",
+    operator_manage_module = check_module(
+        config.operator_manage_module,
+        name="operator_manage_module",
+        python_binary_path=python_binary,
     )
-    operator_server_entrypoint = check_file(
-        config.operator_server_entrypoint,
-        name="operator_server_entrypoint",
+    operator_server_module = check_module(
+        config.operator_server_module,
+        name="operator_server_module",
+        python_binary_path=python_binary,
     )
     operator_env_file = check_file(config.operator_env_file, name="operator_env_file")
 
@@ -1144,9 +1182,9 @@ def validate_stack_preflight(config: SameHostStackConfig) -> dict[str, Any]:
             "repo_root": str(repo_root) if repo_root is not None else str(Path(config.repo_root).resolve()),
             "python_binary": str(python_binary) if python_binary is not None else str(Path(config.python_binary).resolve()),
             "operator_env_file": str(operator_env_file) if operator_env_file is not None else str(Path(config.operator_env_file).resolve()),
-            "model_manage_entrypoint": str(model_manage_entrypoint) if model_manage_entrypoint is not None else str(Path(config.model_manage_entrypoint).resolve()),
-            "operator_manage_entrypoint": str(operator_manage_entrypoint) if operator_manage_entrypoint is not None else str(Path(config.operator_manage_entrypoint).resolve()),
-            "operator_server_entrypoint": str(operator_server_entrypoint) if operator_server_entrypoint is not None else str(Path(config.operator_server_entrypoint).resolve()),
+            "model_manage_module": model_manage_module or str(config.model_manage_module).strip(),
+            "operator_manage_module": operator_manage_module or str(config.operator_manage_module).strip(),
+            "operator_server_module": operator_server_module or str(config.operator_server_module).strip(),
             "sensor_spool_dir": str(Path(config.spool_dir).resolve()),
             "sensor_log_root": str(Path(config.summary_output_path).resolve().parent),
             "operator_database_path": str(operator_config.database_path) if operator_config is not None else None,
@@ -1205,8 +1243,14 @@ def run_command(argv: Sequence[str]) -> str:
         redacted_argv.append(string_part)
         if string_part == "--password":
             redact_next = True
+    resolved_argv = [str(part) for part in argv]
+    executable = resolved_argv[0]
+    if not Path(executable).is_absolute():
+        resolved_executable = shutil.which(executable)
+        if resolved_executable is not None:
+            resolved_argv[0] = resolved_executable
     completed = subprocess.run(
-        [str(part) for part in argv],
+        resolved_argv,
         capture_output=True,
         check=False,
         text=True,
@@ -1262,16 +1306,16 @@ def run_stack_bootstrap(
         }
     )
 
-    verify_command = [
-        str(Path(config.python_binary).resolve()),
-        str(Path(config.model_manage_entrypoint).resolve()),
+    verify_command = _build_module_command(
+        config.python_binary,
+        config.model_manage_module,
         "--activation-path",
         str(Path(config.activation_path).resolve()),
         "--json",
         "verify",
         "--bundle-root",
         str(candidate_bundle_root),
-    ]
+    )
     steps.append(
         {
             "step": "verify_candidate_bundle",
@@ -1280,16 +1324,16 @@ def run_stack_bootstrap(
         }
     )
 
-    promote_command = [
-        str(Path(config.python_binary).resolve()),
-        str(Path(config.model_manage_entrypoint).resolve()),
+    promote_command = _build_module_command(
+        config.python_binary,
+        config.model_manage_module,
         "--activation-path",
         str(Path(config.activation_path).resolve()),
         "--json",
         "promote",
         "--bundle-root",
         str(candidate_bundle_root),
-    ]
+    )
     steps.append(
         {
             "step": "promote_candidate_bundle",
@@ -1298,15 +1342,15 @@ def run_stack_bootstrap(
         }
     )
 
-    migrate_command = [
-        str(Path(config.python_binary).resolve()),
-        str(Path(config.operator_manage_entrypoint).resolve()),
+    migrate_command = _build_module_command(
+        config.python_binary,
+        config.operator_manage_module,
         "--database-path",
         str(operator_config.database_path),
         "--json",
         "migrate",
         "--allow-bootstrap",
-    ]
+    )
     steps.append(
         {
             "step": "migrate_operator_console",
@@ -1315,9 +1359,9 @@ def run_stack_bootstrap(
         }
     )
 
-    bootstrap_admin_command = [
-        str(Path(config.python_binary).resolve()),
-        str(Path(config.operator_manage_entrypoint).resolve()),
+    bootstrap_admin_command = _build_module_command(
+        config.python_binary,
+        config.operator_manage_module,
         "--database-path",
         str(operator_config.database_path),
         "--json",
@@ -1325,7 +1369,7 @@ def run_stack_bootstrap(
         "--username",
         admin_username,
         *_build_password_args(config),
-    ]
+    )
     steps.append(
         {
             "step": "bootstrap_operator_admin",
