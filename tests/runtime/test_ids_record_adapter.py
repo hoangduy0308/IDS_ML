@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import importlib
+import importlib.util
 import inspect
 import io
 import json
@@ -12,6 +14,8 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
+from ids.core import path_defaults as path_defaults_module  # noqa: E402
+import ids.runtime.inference as inference_module  # noqa: E402
 from ids.runtime.adapter import record_adapter as adapter_module  # noqa: E402
 from ids.core.feature_contract import FlowFeatureContract, load_feature_columns  # noqa: E402
 from ids.runtime.inference import DEFAULT_FEATURE_COLUMNS_PATH  # noqa: E402
@@ -118,6 +122,29 @@ def adapter_script_path() -> Path:
     return REPO_ROOT / "scripts" / "ids_record_adapter.py"
 
 
+def _reload_adapter_modules(monkeypatch: pytest.MonkeyPatch, repo_root: Path | None) -> None:
+    env_var = path_defaults_module.DEFAULT_REPO_ROOT_ENV_VAR
+    if repo_root is None:
+        monkeypatch.delenv(env_var, raising=False)
+    else:
+        monkeypatch.setenv(env_var, str(repo_root))
+
+    importlib.reload(path_defaults_module)
+    importlib.reload(inference_module)
+
+
+def _load_temp_adapter_module() -> object:
+    spec = importlib.util.spec_from_file_location(
+        "_temp_ids_runtime_record_adapter",
+        adapter_module.__file__,
+    )
+    assert spec is not None and spec.loader is not None
+    temp_module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = temp_module
+    spec.loader.exec_module(temp_module)
+    return temp_module
+
+
 PRIMARY_FIXTURE_PATH = REPO_ROOT / "artifacts" / "demo" / "ids_record_adapter_primary_sample.jsonl"
 SECONDARY_FIXTURE_PATH = REPO_ROOT / "artifacts" / "demo" / "ids_record_adapter_secondary_sample.jsonl"
 
@@ -187,6 +214,42 @@ def test_default_registry_exposes_two_explicit_profiles() -> None:
         | set(secondary_profile.controlled_extra_keys)
     )
     assert set(secondary_profile.feature_alias_map.values()) == set(FEATURE_COLUMNS)
+
+
+def test_runtime_record_adapter_defaults_follow_repo_root_override(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    repo_root = (tmp_path / "override-root").resolve()
+    default_feature_columns_path = (
+        repo_root / "artifacts" / "final_model" / "catboost_full_data_v1" / "feature_columns.json"
+    )
+    default_feature_columns_path.parent.mkdir(parents=True, exist_ok=True)
+    default_feature_columns_path.write_text(
+        json.dumps({"feature_columns": ["f1", "f2"]}),
+        encoding="utf-8",
+    )
+
+    _reload_adapter_modules(monkeypatch, repo_root)
+    temp_module = _load_temp_adapter_module()
+
+    assert temp_module.DEFAULT_FEATURE_COLUMNS_PATH == default_feature_columns_path
+    assert temp_module.load_default_feature_columns() == ["f1", "f2"]
+
+
+def test_runtime_record_adapter_defaults_fall_back_to_checkout_when_env_is_unset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _reload_adapter_modules(monkeypatch, None)
+    temp_module = _load_temp_adapter_module()
+
+    checkout_root = REPO_ROOT
+    expected_feature_columns_path = (
+        checkout_root / "artifacts" / "final_model" / "catboost_full_data_v1" / "feature_columns.json"
+    )
+
+    assert temp_module.DEFAULT_FEATURE_COLUMNS_PATH == expected_feature_columns_path
+    assert temp_module.load_default_feature_columns() == FEATURE_COLUMNS
 
 
 def test_adapter_rejects_registry_contract_mismatches_eagerly() -> None:

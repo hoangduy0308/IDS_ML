@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import importlib
+import importlib.util
 from pathlib import Path
 import sys
 import json
@@ -10,7 +12,10 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
+from ids.core import path_defaults as path_defaults_module  # noqa: E402
+import ids.runtime.inference as inference_module  # noqa: E402
 from ids.runtime.inference import (  # noqa: E402
+    ActiveBundleResolutionError,
     IDSInferencer,
     IDSModelConfig,
     build_inferencer,
@@ -70,6 +75,29 @@ def write_bundle_manifest(
         json.dumps(payload),
         encoding="utf-8",
     )
+
+
+def _reload_inference_modules(monkeypatch: pytest.MonkeyPatch, repo_root: Path | None) -> None:
+    env_var = path_defaults_module.DEFAULT_REPO_ROOT_ENV_VAR
+    if repo_root is None:
+        monkeypatch.delenv(env_var, raising=False)
+    else:
+        monkeypatch.setenv(env_var, str(repo_root))
+
+    importlib.reload(path_defaults_module)
+    importlib.reload(inference_module)
+
+
+def _load_temp_inference_module() -> object:
+    spec = importlib.util.spec_from_file_location(
+        "_temp_ids_runtime_inference",
+        inference_module.__file__,
+    )
+    assert spec is not None and spec.loader is not None
+    temp_module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = temp_module
+    spec.loader.exec_module(temp_module)
+    return temp_module
 
 
 class DummyInferencer:
@@ -239,6 +267,17 @@ def test_build_model_config_prefers_default_activation_path_when_present(
     assert config.threshold == 0.65
 
 
+def test_build_model_config_fails_closed_when_default_activation_path_is_missing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    missing_activation_path = tmp_path / DEFAULT_ACTIVATION_RECORD_NAME
+    monkeypatch.setattr("ids.runtime.inference.DEFAULT_ACTIVATION_PATH", missing_activation_path)
+
+    with pytest.raises(ActiveBundleResolutionError, match="Activation record not found"):
+        build_model_config()
+
+
 def test_build_model_config_rejects_external_overrides_when_bundle_used(tmp_path: Path) -> None:
     bundle_root = tmp_path / "bundle"
     bundle_root.mkdir()
@@ -253,6 +292,56 @@ def test_build_model_config_rejects_external_overrides_when_bundle_used(tmp_path
             bundle_root=bundle_root,
             model_path=tmp_path / "other_model.cbm",
         )
+
+
+def test_runtime_inference_defaults_follow_repo_root_override(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    repo_root = (tmp_path / "override-root").resolve()
+
+    _reload_inference_modules(monkeypatch, repo_root)
+    temp_module = _load_temp_inference_module()
+
+    expected_bundle_root = repo_root / "artifacts" / "final_model" / "catboost_full_data_v1"
+    assert temp_module.DEFAULT_MODEL_PATH == expected_bundle_root / "model.cbm"
+    assert (
+        temp_module.DEFAULT_FEATURE_COLUMNS_PATH
+        == expected_bundle_root / "feature_columns.json"
+    )
+
+    config = temp_module.build_model_config(
+        model_path=None,
+        feature_columns_path=None,
+        threshold=0.42,
+    )
+
+    assert config.model_path == expected_bundle_root / "model.cbm"
+    assert config.feature_columns_path == expected_bundle_root / "feature_columns.json"
+
+
+def test_runtime_inference_defaults_fall_back_to_checkout_when_env_is_unset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _reload_inference_modules(monkeypatch, None)
+    temp_module = _load_temp_inference_module()
+
+    checkout_root = REPO_ROOT
+    expected_bundle_root = checkout_root / "artifacts" / "final_model" / "catboost_full_data_v1"
+    assert temp_module.DEFAULT_MODEL_PATH == expected_bundle_root / "model.cbm"
+    assert (
+        temp_module.DEFAULT_FEATURE_COLUMNS_PATH
+        == expected_bundle_root / "feature_columns.json"
+    )
+
+    config = temp_module.build_model_config(
+        model_path=None,
+        feature_columns_path=None,
+        threshold=0.42,
+    )
+
+    assert config.model_path == expected_bundle_root / "model.cbm"
+    assert config.feature_columns_path == expected_bundle_root / "feature_columns.json"
 
 
 def test_ids_inference_main_preserves_cli_output_shape(
