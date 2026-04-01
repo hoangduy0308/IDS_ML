@@ -52,7 +52,7 @@ def _build_config(
     *,
     telegram_enabled: bool = False,
 ) -> stack.SameHostStackConfig:
-    repo_root = tmp_path / "repo"
+    repo_root = REPO_ROOT
     (repo_root / "ids" / "console" / "templates").mkdir(parents=True, exist_ok=True)
     (repo_root / "ids" / "console" / "static").mkdir(parents=True, exist_ok=True)
 
@@ -236,6 +236,31 @@ def test_validate_stack_preflight_bootstrap_or_preflight_rejects_non_importable_
     assert payload["host_layout_checks"]["operator_server_module"]["detail"] == (
         "operator_server_module is not importable by python_binary: ids.console.does_not_exist"
     )
+
+
+def test_validate_stack_preflight_bootstrap_or_preflight_rejects_modules_from_outside_repo_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    shadow_root = tmp_path / "shadow"
+    (shadow_root / "ids" / "ops").mkdir(parents=True, exist_ok=True)
+    (shadow_root / "ids" / "__init__.py").write_text("", encoding="utf-8")
+    (shadow_root / "ids" / "ops" / "__init__.py").write_text("", encoding="utf-8")
+    (shadow_root / "ids" / "ops" / "model_bundle_manage.py").write_text(
+        "VALUE = 1\n",
+        encoding="utf-8",
+    )
+
+    config = _build_config(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYTHONPATH", str(shadow_root))
+
+    payload = stack.validate_stack_preflight(config)
+
+    assert payload["ready"] is False
+    assert payload["status"] == "degraded"
+    assert payload["host_layout_checks"]["model_manage_module"]["state"] == "invalid"
+    assert "resolved outside repo_root" in payload["host_layout_checks"]["model_manage_module"]["detail"]
 
 
 def test_load_stack_operator_config_defaults_to_canonical_console_assets(tmp_path: Path) -> None:

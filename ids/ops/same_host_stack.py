@@ -40,7 +40,7 @@ from ids.ops.operator_console_preflight import (
 from ids.ops.model_bundle_lifecycle import build_bundle_status_payload
 from ids.ops.module_validation import (
     clean_module_name as _clean_module_name,
-    require_importable_module as _require_importable_module,
+    resolve_importable_module as _resolve_importable_module,
 )
 
 
@@ -1072,7 +1072,14 @@ def validate_stack_preflight(config: SameHostStackConfig) -> dict[str, Any]:
         try:
             if python_binary_path is None:
                 raise ValueError("python_binary must be valid before module import checks")
-            checked = _require_importable_module(python_binary_path, module_name, name=name)
+            checked, origin = _resolve_importable_module(python_binary_path, module_name, name=name)
+            if repo_root is not None:
+                try:
+                    Path(origin).resolve().relative_to(Path(repo_root).resolve())
+                except ValueError as exc:
+                    raise ValueError(
+                        f"{name} resolved outside repo_root: {Path(origin).resolve()}"
+                    ) from exc
         except Exception as exc:
             host_layout_checks[name] = {
                 "ok": False,

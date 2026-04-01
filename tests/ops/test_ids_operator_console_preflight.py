@@ -192,6 +192,31 @@ def test_preflight_rejects_non_importable_manage_module(
         validate_preflight(config)
 
 
+def test_preflight_rejects_module_that_crashes_during_import(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    shadow_root = tmp_path / "shadow"
+    (shadow_root / "ids" / "console").mkdir(parents=True, exist_ok=True)
+    (shadow_root / "ids" / "__init__.py").write_text("", encoding="utf-8")
+    (shadow_root / "ids" / "console" / "__init__.py").write_text("", encoding="utf-8")
+    (shadow_root / "ids" / "console" / "server.py").write_text(
+        "raise RuntimeError('shadowed import crash')\n",
+        encoding="utf-8",
+    )
+
+    config = _make_preflight_config(tmp_path)
+    monkeypatch.setattr(preflight, "_is_executable_file", lambda path: True)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYTHONPATH", str(shadow_root))
+
+    with pytest.raises(
+        ValueError,
+        match="app_module is not importable by python_binary: ids.console.server",
+    ):
+        validate_preflight(config)
+
+
 def test_preflight_main_fails_closed_on_partial_env_notification_config(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

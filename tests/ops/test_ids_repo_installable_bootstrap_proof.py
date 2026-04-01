@@ -133,10 +133,27 @@ def _write_sitecustomize(site_dir: Path) -> Path:
     path.write_text(
         "\n".join(
             [
+                "import importlib.abc",
+                "import importlib.machinery",
                 "import os",
+                "import sys",
                 "if os.environ.get('IDS_TEST_BYPASS_INTERFACE') == '1':",
                 "    import ids.ops.live_sensor_preflight as live_sensor_preflight",
                 "    live_sensor_preflight._require_interface = lambda interface: interface",
+                "shadow_module = os.environ.get('IDS_TEST_SHADOW_IMPORT_MODULE')",
+                "if shadow_module:",
+                "    shadow_error = os.environ.get('IDS_TEST_SHADOW_IMPORT_ERROR', 'shadowed import crash')",
+                "    class _ShadowLoader(importlib.abc.Loader):",
+                "        def create_module(self, spec):",
+                "            return None",
+                "        def exec_module(self, module):",
+                "            raise RuntimeError(shadow_error)",
+                "    class _ShadowFinder(importlib.abc.MetaPathFinder):",
+                "        def find_spec(self, fullname, path, target=None):",
+                "            if fullname == shadow_module:",
+                "                return importlib.machinery.ModuleSpec(fullname, _ShadowLoader())",
+                "            return None",
+                "    sys.meta_path.insert(0, _ShadowFinder())",
             ]
         )
         + "\n",
@@ -381,6 +398,28 @@ def test_repo_installable_bootstrap_proof_runs_installed_ids_stack_lifecycle(tmp
         "fake_systemctl.py start ids-operator-console.service",
         "fake_systemctl.py start ids-live-sensor.service",
     ]
+
+    shadow_env = dict(env)
+    shadow_env["IDS_TEST_SHADOW_IMPORT_MODULE"] = "ids.ops.model_bundle_manage"
+    shadow_env["IDS_TEST_SHADOW_IMPORT_ERROR"] = "shadowed import crash"
+
+    degraded_preflight = _run(
+        [
+            *stack_base_argv,
+            "--json",
+            "preflight",
+        ],
+        cwd=tmp_path,
+        env=shadow_env,
+    )
+
+    assert degraded_preflight.returncode == 2
+    degraded_payload = json.loads(degraded_preflight.stdout)
+    assert degraded_payload["ready"] is False
+    assert degraded_payload["host_layout_checks"]["model_manage_module"]["state"] == "invalid"
+    assert "model_manage_module is not importable by python_binary" in degraded_payload[
+        "host_layout_checks"
+    ]["model_manage_module"]["detail"]
 
 
 def test_repo_installable_bootstrap_proof_canonical_command_surface() -> None:
