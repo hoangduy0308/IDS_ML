@@ -6,11 +6,15 @@ import os
 from pathlib import Path
 import tomllib
 
+import pytest
+
 import ids.ops.same_host_stack as stack  # noqa: E402
 from ids.core.model_bundle import (  # noqa: E402
     build_feature_schema_metadata,
     build_inference_contract_metadata,
 )
+from ids.core.model_bundle_activation import SUPPORTED_ACTIVATION_RECORD_VERSION  # noqa: E402
+from ids.ops.module_validation import resolve_importable_module  # noqa: E402
 from repo_installable_proof_support import (
     REPO_ROOT,
     resolve_console_script,
@@ -94,26 +98,24 @@ def _write_sitecustomize(site_dir: Path) -> Path:
     path.write_text(
         "\n".join(
             [
-                "import importlib.abc",
-                "import importlib.machinery",
+                "import importlib.util",
                 "import os",
                 "import sys",
+                "from pathlib import Path",
                 "if os.environ.get('IDS_TEST_BYPASS_INTERFACE') == '1':",
                 "    import ids.ops.live_sensor_preflight as live_sensor_preflight",
                 "    live_sensor_preflight._require_interface = lambda interface: interface",
                 "shadow_module = os.environ.get('IDS_TEST_SHADOW_IMPORT_MODULE')",
-                "if shadow_module:",
-                "    shadow_error = os.environ.get('IDS_TEST_SHADOW_IMPORT_ERROR', 'shadowed import crash')",
-                "    class _ShadowLoader(importlib.abc.Loader):",
-                "        def create_module(self, spec):",
-                "            return None",
-                "        def exec_module(self, module):",
-                "            raise RuntimeError(shadow_error)",
-                "    class _ShadowFinder(importlib.abc.MetaPathFinder):",
-                "        def find_spec(self, fullname, path, target=None):",
-                "            if fullname == shadow_module:",
-                "                return importlib.machinery.ModuleSpec(fullname, _ShadowLoader())",
-                "            return None",
+                "shadow_root = os.environ.get('IDS_TEST_SHADOW_IMPORT_ROOT')",
+                "if shadow_module and shadow_root:",
+                "    class _ShadowFinder:",
+                "        def find_spec(self, fullname, path=None, target=None):",
+                "            if fullname != shadow_module:",
+                "                return None",
+                "            shadow_path = Path(shadow_root).joinpath(*fullname.split('.')).with_suffix('.py')",
+                "            if not shadow_path.is_file():",
+                "                return None",
+                "            return importlib.util.spec_from_file_location(fullname, shadow_path)",
                 "    sys.meta_path.insert(0, _ShadowFinder())",
             ]
         )
@@ -121,6 +123,14 @@ def _write_sitecustomize(site_dir: Path) -> Path:
         encoding="utf-8",
     )
     return path
+
+
+def _site_packages_dir(python_binary: Path) -> Path:
+    completed = run_command(
+        [str(python_binary), "-c", "import sysconfig; print(sysconfig.get_path('purelib'))"],
+    )
+    assert completed.returncode == 0, completed.stderr
+    return Path(completed.stdout.strip()).resolve()
 
 
 def _write_fake_systemctl(fake_bin: Path, *, venv_python: Path) -> Path:
@@ -264,19 +274,13 @@ def test_repo_installable_bootstrap_proof_runs_installed_ids_stack_lifecycle(tmp
         secret_key_file=secret_key_file,
     )
 
-    site_dir = tmp_path / "sitecustomize"
-    _write_sitecustomize(site_dir)
+    site_packages_dir = _site_packages_dir(venv_python_path)
+    _write_sitecustomize(site_packages_dir)
     fake_bin = tmp_path / "fake-bin"
     _write_fake_systemctl(fake_bin, venv_python=venv_python_path)
     systemctl_log = tmp_path / "fake-systemctl.log"
 
     env = dict(os.environ)
-    existing_pythonpath = env.get("PYTHONPATH")
-    env["PYTHONPATH"] = (
-        str(site_dir)
-        if not existing_pythonpath
-        else os.pathsep.join([str(site_dir), existing_pythonpath])
-    )
     env["PATH"] = os.pathsep.join([str(fake_bin), env.get("PATH", "")])
     env["IDS_TEST_BYPASS_INTERFACE"] = "1"
     env["IDS_TEST_FAKE_SYSTEMCTL_ACTIVATION_PATH"] = str(activation_path)
@@ -351,8 +355,17 @@ def test_repo_installable_bootstrap_proof_runs_installed_ids_stack_lifecycle(tmp
     assert json.loads(bundle_status.stdout)["runtime_ready"] is True
 
     activation_payload = stack.build_bundle_status_payload(activation_path)
+    activation_record = json.loads(activation_path.read_text(encoding="utf-8"))
     assert activation_payload["runtime_ready"] is True
+    assert activation_payload["active_bundle_root"] == str(bundle_root.resolve())
     assert activation_payload["active_bundle_name"] == "bundle-proof"
+    assert activation_payload["verification_status"] == "verified"
+    assert activation_record["record_version"] == SUPPORTED_ACTIVATION_RECORD_VERSION
+    assert activation_record["active_bundle_root"] == str(bundle_root.resolve())
+    assert activation_record["active_bundle_name"] == "bundle-proof"
+    assert activation_record["verification_status"] == "verified"
+    assert "previous_bundle_root" not in activation_record
+    assert "previous_bundle_name" not in activation_record
 
     systemctl_calls = systemctl_log.read_text(encoding="utf-8").splitlines()
     assert systemctl_calls == [
@@ -360,9 +373,14 @@ def test_repo_installable_bootstrap_proof_runs_installed_ids_stack_lifecycle(tmp
         "fake_systemctl.py start ids-live-sensor.service",
     ]
 
+    shadow_root = tmp_path / "shadow"
+    shadow_path = shadow_root.joinpath("ids", "ops", "model_bundle_manage.py")
+    shadow_path.parent.mkdir(parents=True, exist_ok=True)
+    shadow_path.write_text("raise RuntimeError('shadowed import crash')\n", encoding="utf-8")
+
     shadow_env = dict(env)
     shadow_env["IDS_TEST_SHADOW_IMPORT_MODULE"] = "ids.ops.model_bundle_manage"
-    shadow_env["IDS_TEST_SHADOW_IMPORT_ERROR"] = "shadowed import crash"
+    shadow_env["IDS_TEST_SHADOW_IMPORT_ROOT"] = str(shadow_root)
 
     degraded_preflight = run_command(
         [
@@ -378,9 +396,19 @@ def test_repo_installable_bootstrap_proof_runs_installed_ids_stack_lifecycle(tmp
     degraded_payload = json.loads(degraded_preflight.stdout)
     assert degraded_payload["ready"] is False
     assert degraded_payload["host_layout_checks"]["model_manage_module"]["state"] == "invalid"
-    assert "model_manage_module is not importable by python_binary" in degraded_payload[
+    assert "model_manage_module resolved outside repo_root" in degraded_payload[
         "host_layout_checks"
     ]["model_manage_module"]["detail"]
+
+
+def test_repo_installable_bootstrap_proof_rejects_clean_venv_without_install(tmp_path: Path) -> None:
+    clean_python = venv_python(tmp_path)
+
+    with pytest.raises(
+        ValueError,
+        match="app_module is not importable by python_binary: ids.console.server",
+    ):
+        resolve_importable_module(clean_python, "ids.console.server", name="app_module")
 
 
 def test_repo_installable_bootstrap_proof_canonical_command_surface() -> None:

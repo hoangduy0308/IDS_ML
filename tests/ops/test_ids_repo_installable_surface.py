@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 import tomllib
 from pathlib import Path
+import subprocess
 
+import repo_installable_proof_support as proof_support
 from repo_installable_proof_support import (
     REPO_ROOT,
     resolve_console_script,
@@ -11,6 +13,60 @@ from repo_installable_proof_support import (
     scripts_dir,
     venv_python,
 )
+
+
+def _cache_root_from_python(python_path: Path) -> Path:
+    return python_path.parent.parent
+
+
+def _patch_shared_editable_install(
+    monkeypatch,
+    tmp_path: Path,
+    *,
+    repo_root: Path,
+    executable: Path,
+    version_info: tuple[int, int, int],
+) -> list[tuple[list[str], Path]]:
+    repo_root.mkdir(parents=True, exist_ok=True)
+    (repo_root / "pyproject.toml").write_text(
+        "[project]\nname = 'ids-ml-new'\nversion = '0.1.0'\n",
+        encoding="utf-8",
+    )
+
+    install_calls: list[tuple[list[str], Path]] = []
+
+    monkeypatch.setattr(proof_support, "REPO_ROOT", repo_root)
+    monkeypatch.setattr(proof_support.tempfile, "gettempdir", lambda: str(tmp_path))
+    monkeypatch.setattr(proof_support.sys, "executable", str(executable))
+    monkeypatch.setattr(proof_support.sys, "version_info", version_info)
+
+    def fake_venv_python(cache_root: Path) -> Path:
+        python_path = cache_root / "venv" / "bin" / "python"
+        python_path.parent.mkdir(parents=True, exist_ok=True)
+        python_path.write_text("#!/bin/sh\n", encoding="utf-8", newline="\n")
+        return python_path.resolve()
+
+    def fake_run_command(
+        argv: list[str],
+        *,
+        cwd: Path = proof_support.REPO_ROOT,
+        env: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        del env
+        if "-m" in argv and "pip" in argv and "install" in argv and "-e" in argv:
+            install_calls.append((argv, cwd))
+        return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+
+    def fake_site_packages_dir(python_binary: Path) -> Path:
+        site_dir = python_binary.parent.parent / "site-packages"
+        site_dir.mkdir(parents=True, exist_ok=True)
+        return site_dir
+
+    monkeypatch.setattr(proof_support, "venv_python", fake_venv_python)
+    monkeypatch.setattr(proof_support, "run_command", fake_run_command)
+    monkeypatch.setattr(proof_support, "site_packages_dir", fake_site_packages_dir)
+
+    return install_calls
 
 
 def test_pyproject_console_scripts_map_to_canonical_modules() -> None:
@@ -71,3 +127,72 @@ def test_editable_install_surface_exposes_entrypoints_and_console_assets(tmp_pat
     assert payload["entry_points"] == expected_scripts
     assert payload["templates_dir"] is True
     assert payload["static_dir"] is True
+
+
+def test_shared_editable_repo_python_rekeys_cache_for_checkout_root(monkeypatch, tmp_path: Path) -> None:
+    install_calls = _patch_shared_editable_install(
+        monkeypatch,
+        tmp_path,
+        repo_root=tmp_path / "checkout-a",
+        executable=tmp_path / "python-a",
+        version_info=(3, 11, 9),
+    )
+
+    first_python = proof_support.shared_editable_repo_python("surface-proof")
+
+    second_repo_root = tmp_path / "checkout-b"
+    second_repo_root.mkdir(parents=True, exist_ok=True)
+    (second_repo_root / "pyproject.toml").write_text(
+        "[project]\nname = 'ids-ml-new'\nversion = '0.1.0'\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(proof_support, "REPO_ROOT", second_repo_root)
+
+    second_python = proof_support.shared_editable_repo_python("surface-proof")
+
+    assert _cache_root_from_python(first_python) != _cache_root_from_python(second_python)
+    assert len(install_calls) == 2
+
+
+def test_shared_editable_repo_python_rekeys_cache_for_interpreter_identity(
+    monkeypatch, tmp_path: Path
+) -> None:
+    install_calls = _patch_shared_editable_install(
+        monkeypatch,
+        tmp_path,
+        repo_root=tmp_path / "checkout",
+        executable=tmp_path / "python-a",
+        version_info=(3, 11, 9),
+    )
+
+    first_python = proof_support.shared_editable_repo_python("surface-proof")
+
+    monkeypatch.setattr(proof_support.sys, "executable", str(tmp_path / "python-b"))
+    monkeypatch.setattr(proof_support.sys, "version_info", (3, 12, 1))
+
+    second_python = proof_support.shared_editable_repo_python("surface-proof")
+
+    assert _cache_root_from_python(first_python) != _cache_root_from_python(second_python)
+    assert len(install_calls) == 2
+
+
+def test_shared_editable_repo_python_cleans_stale_shadow_path_without_reinstall(
+    monkeypatch, tmp_path: Path
+) -> None:
+    install_calls = _patch_shared_editable_install(
+        monkeypatch,
+        tmp_path,
+        repo_root=tmp_path / "checkout",
+        executable=tmp_path / "python-a",
+        version_info=(3, 11, 9),
+    )
+
+    python_path = proof_support.shared_editable_repo_python("surface-proof")
+    stale_shadow_path = proof_support.site_packages_dir(python_path) / "zz_shadow_import.pth"
+    stale_shadow_path.write_text("shadow\n", encoding="utf-8")
+
+    reused_python = proof_support.shared_editable_repo_python("surface-proof")
+
+    assert reused_python == python_path
+    assert len(install_calls) == 1
+    assert not stale_shadow_path.exists()
