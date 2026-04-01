@@ -27,6 +27,11 @@ from ids.runtime.realtime_pipeline import (  # noqa: E402
 class DummyInferencer:
     def __init__(self, threshold: float = 0.5) -> None:
         self.threshold = threshold
+        self.config = type(
+            "Config",
+            (),
+            {"feature_columns_path": Path("dummy_features.json")},
+        )()
 
     def predict(self, frame: pd.DataFrame, include_input: bool = True) -> pd.DataFrame:
         scores = frame["Flow Duration"].astype(float) / 100.0
@@ -40,6 +45,12 @@ class DummyInferencer:
                 "threshold": self.threshold,
             }
         )
+
+
+class ConfiglessInferencer(DummyInferencer):
+    def __init__(self, threshold: float = 0.5) -> None:
+        super().__init__(threshold=threshold)
+        self.config = type("Config", (), {})()
 
 
 class BlockingLineStream:
@@ -358,6 +369,100 @@ def test_main_supports_file_input_path(
     assert summary["valid_records"] == 2
     assert len(alerts) == 2
     assert len(quarantines) == 2
+
+
+def test_main_fails_closed_without_inferencer_feature_columns_path(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    input_path = tmp_path / "flows.jsonl"
+    input_path.write_text(
+        json.dumps({"SrcPort": 10, "DstPort": 20, "Protocol": 6, "FlowDuration": 20}) + "\n",
+        encoding="utf-8",
+    )
+    alerts_path = tmp_path / "alerts.jsonl"
+    quarantine_path = tmp_path / "quarantine.jsonl"
+
+    monkeypatch.setattr(
+        "ids.runtime.realtime_pipeline.build_inferencer",
+        lambda **_: ConfiglessInferencer(),
+    )
+    monkeypatch.setattr(
+        "ids.runtime.realtime_pipeline.FlowFeatureContract.from_feature_file",
+        classmethod(lambda cls, path, alias_map=None: make_contract()),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "ids_realtime_pipeline.py",
+            "--input-path",
+            str(input_path),
+            "--alerts-output-path",
+            str(alerts_path),
+            "--quarantine-output-path",
+            str(quarantine_path),
+        ],
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="inferencer did not expose feature_columns_path; supply --feature-columns-path explicitly",
+    ):
+        main()
+
+
+def test_main_uses_explicit_feature_columns_path_when_inferencer_config_missing(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    input_path = tmp_path / "flows.jsonl"
+    input_path.write_text(
+        json.dumps({"SrcPort": 10, "DstPort": 20, "Protocol": 6, "FlowDuration": 20}) + "\n",
+        encoding="utf-8",
+    )
+    explicit_feature_columns_path = tmp_path / "explicit_feature_columns.json"
+    explicit_feature_columns_path.write_text("[]\n", encoding="utf-8")
+    alerts_path = tmp_path / "alerts.jsonl"
+    quarantine_path = tmp_path / "quarantine.jsonl"
+    captured_paths: dict[str, Path] = {}
+
+    def _from_feature_file(cls, path: Path, alias_map: dict[str, str] | None = None):
+        _ = cls, alias_map
+        captured_paths["feature_columns_path"] = Path(path)
+        return make_contract()
+
+    monkeypatch.setattr(
+        "ids.runtime.realtime_pipeline.build_inferencer",
+        lambda **_: ConfiglessInferencer(),
+    )
+    monkeypatch.setattr(
+        "ids.runtime.realtime_pipeline.FlowFeatureContract.from_feature_file",
+        classmethod(_from_feature_file),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "ids_realtime_pipeline.py",
+            "--input-path",
+            str(input_path),
+            "--alerts-output-path",
+            str(alerts_path),
+            "--quarantine-output-path",
+            str(quarantine_path),
+            "--feature-columns-path",
+            str(explicit_feature_columns_path),
+        ],
+    )
+
+    main()
+
+    summary = json.loads(capsys.readouterr().out)
+    assert summary["input_mode"] == "file"
+    assert summary["valid_records"] == 1
+    assert captured_paths["feature_columns_path"] == explicit_feature_columns_path
 
 
 def test_main_forwards_activation_path_to_inferencer_when_provided(
