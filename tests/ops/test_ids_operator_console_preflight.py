@@ -106,8 +106,9 @@ def test_deploy_artifacts_are_wired_to_proxy_and_secret_contract() -> None:
     assert "--app-module ids.console.server" in service_text
     assert "IDS_OPERATOR_CONSOLE_TEMPLATES_DIR=/opt/ids_ml_new/ids/console/templates" in service_text
     assert "IDS_OPERATOR_CONSOLE_STATIC_DIR=/opt/ids_ml_new/ids/console/static" in service_text
-    assert "python3 -m ids.ops.operator_console_preflight" in service_text
-    assert "python3 -m ids.console.server" in service_text
+    assert "/opt/ids_ml_new/.venv/bin/python -m ids.ops.operator_console_preflight" in service_text
+    assert "/opt/ids_ml_new/.venv/bin/python -m ids.console.server" in service_text
+    assert "/usr/bin/python3" not in service_text
     assert "IDS_OPERATOR_CONSOLE_TELEGRAM_BOT_TOKEN_FILE" in service_text
 
     assert "-m ids.ops.operator_console_manage --database-path \"$IDS_OPERATOR_CONSOLE_DATABASE_PATH\" notify-worker" in notify_service_text
@@ -117,7 +118,9 @@ def test_deploy_artifacts_are_wired_to_proxy_and_secret_contract() -> None:
     assert "--app-module ids.console.server" in notify_service_text
     assert "IDS_OPERATOR_CONSOLE_TEMPLATES_DIR=/opt/ids_ml_new/ids/console/templates" in notify_service_text
     assert "IDS_OPERATOR_CONSOLE_STATIC_DIR=/opt/ids_ml_new/ids/console/static" in notify_service_text
-    assert "python3 -m ids.ops.operator_console_preflight" in notify_service_text
+    assert "/opt/ids_ml_new/.venv/bin/python -m ids.ops.operator_console_preflight" in notify_service_text
+    assert "/opt/ids_ml_new/.venv/bin/python -m ids.ops.operator_console_manage" in notify_service_text
+    assert "/usr/bin/python3" not in notify_service_text
     assert "IDS_OPERATOR_CONSOLE_TELEGRAM_BOT_TOKEN_FILE" in notify_service_text
     assert "IDS_OPERATOR_CONSOLE_TELEGRAM_CHAT_ID" in notify_service_text
 

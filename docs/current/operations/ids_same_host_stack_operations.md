@@ -70,7 +70,7 @@ Example:
 ```bash
 ids-stack \
   --repo-root /opt/ids_ml_new \
-  --python-binary /usr/bin/python3 \
+  --python-binary /opt/ids_ml_new/.venv/bin/python \
   --operator-env-file /etc/ids-operator-console/ids-operator-console.env \
   --activation-path /var/lib/ids-live-sensor/active_bundle.json \
   --dumpcap-binary /usr/bin/dumpcap \
@@ -84,6 +84,8 @@ ids-stack \
   --admin-username admin \
   --admin-password-file /secure/admin.password
 ```
+
+The canonical same-host interpreter contract is the Python binary inside the bootstrap-created installed environment at `/opt/ids_ml_new/.venv/bin/python`. Do not point the shipped services at host-global `/usr/bin/python3`; that would split the documented contract from the deployed one.
 
 Pass `--extractor-command-prefix` as separate argv tokens. Do not quote the prefix into a single shell word, or the live sensor service will collapse the extractor command structure.
 

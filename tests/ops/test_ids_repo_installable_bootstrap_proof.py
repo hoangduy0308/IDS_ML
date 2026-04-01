@@ -398,5 +398,6 @@ def test_repo_installable_bootstrap_proof_canonical_command_surface() -> None:
     live_sensor_service = (REPO_ROOT / "deploy" / "systemd" / "ids-live-sensor.service").read_text(
         encoding="utf-8"
     )
-    assert "python3 -m ids.ops.live_sensor_preflight" in live_sensor_service
-    assert "python3 -m ids.runtime.live_sensor" in live_sensor_service
+    assert "/opt/ids_ml_new/.venv/bin/python -m ids.ops.live_sensor_preflight" in live_sensor_service
+    assert "/opt/ids_ml_new/.venv/bin/python -m ids.runtime.live_sensor" in live_sensor_service
+    assert "/usr/bin/python3" not in live_sensor_service

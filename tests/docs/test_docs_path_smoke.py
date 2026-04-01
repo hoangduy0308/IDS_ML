@@ -76,6 +76,7 @@ def test_packaged_operator_docs_keep_canonical_command_surface() -> None:
     assert "ids-stack" in stack_doc
     assert "compatibility entrypoint" in stack_doc
     assert "scripts/ids_same_host_stack_manage.py" in stack_doc
+    assert "/opt/ids_ml_new/.venv/bin/python" in stack_doc
 
     assert "ids-live-sensor-preflight" in live_sensor_doc
     assert "ids-model-bundle-manage" in live_sensor_doc
@@ -83,3 +84,4 @@ def test_packaged_operator_docs_keep_canonical_command_surface() -> None:
 
     assert "ids-package-final-model" in bundle_doc
     assert "ids-model-bundle-manage" in bundle_doc
+    assert "F:\\Work\\IDS_ML_New" not in bundle_doc
