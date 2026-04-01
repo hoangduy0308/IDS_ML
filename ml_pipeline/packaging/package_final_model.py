@@ -13,7 +13,7 @@ from ids.core.model_bundle import (
     build_feature_schema_metadata,
     build_inference_contract_metadata,
 )
-from ids.core.path_defaults import (
+from ml_pipeline.packaging.path_defaults import (
     DEFAULT_PACKAGING_BUNDLE_ROOT,
     DEFAULT_PACKAGING_FEATURE_COLUMNS_PATH,
     DEFAULT_PACKAGING_MODEL_PATH,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import csv
 import json
 from argparse import Namespace
@@ -12,6 +13,7 @@ from sklearn.linear_model import LogisticRegression
 
 from ml_pipeline.data_prep.preprocess_iot_diad import run_pipeline
 from ml_pipeline.packaging import package_final_model
+from ml_pipeline.packaging import path_defaults as packaging_path_defaults
 from ml_pipeline.training.posttrain_threshold_analysis import run_analysis
 from ml_pipeline.training.train_iot_diad_binary import run_training
 
@@ -122,6 +124,17 @@ def _build_training_dataset_root(dataset_root: Path) -> Path:
         encoding="utf-8",
     )
     return dataset_root
+
+
+def _reload_packaging_defaults(monkeypatch: pytest.MonkeyPatch, repo_root: Path | None) -> None:
+    env_var = packaging_path_defaults.DEFAULT_REPO_ROOT_ENV_VAR
+    if repo_root is None:
+        monkeypatch.delenv(env_var, raising=False)
+    else:
+        monkeypatch.setenv(env_var, str(repo_root))
+
+    importlib.reload(packaging_path_defaults)
+    importlib.reload(package_final_model)
 
 
 def _train_tiny_logistic_model(path: Path) -> Path:
@@ -287,6 +300,39 @@ def test_package_final_model_main_writes_bundle_artifacts(
     manifest = json.loads((bundle_root / "model_bundle.json").read_text(encoding="utf-8"))
     assert manifest["feature_count"] == len(FEATURE_COLUMNS)
     assert manifest["recommended_threshold_from_validation_fpr_cap_0_02"] == 0.42
+
+
+def test_package_final_model_defaults_follow_repo_root_override(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    repo_root = (tmp_path / "override-root").resolve()
+    _reload_packaging_defaults(monkeypatch, repo_root)
+
+    expected_source_root = repo_root / "artifacts" / "kaggle" / "outputs" / "catboost_full_data_attempt" / "catboost_full_data_attempt_results"
+    assert packaging_path_defaults.resolve_repo_root() == repo_root
+    assert package_final_model.DEFAULT_MODEL_PATH == expected_source_root / "catboost_full_data_attempt.cbm"
+    assert package_final_model.DEFAULT_FEATURE_COLUMNS_PATH == repo_root / "artifacts" / "cic_iot_diad_2024_binary" / "manifests" / "feature_columns.json"
+    assert package_final_model.DEFAULT_SUMMARY_PATH == expected_source_root / "reports" / "summary.csv"
+    assert package_final_model.DEFAULT_TRAINING_SUMMARY_PATH == expected_source_root / "reports" / "training_summary.json"
+    assert package_final_model.DEFAULT_THRESHOLD_SELECTION_PATH == repo_root / "artifacts" / "posttrain_analysis" / "scaling_finalists" / "reports" / "catboost_full_threshold_selection.json"
+    assert package_final_model.DEFAULT_BUNDLE_ROOT == repo_root / "artifacts" / "final_model" / "catboost_full_data_v1"
+
+
+def test_package_final_model_defaults_fall_back_to_checkout_when_env_is_unset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _reload_packaging_defaults(monkeypatch, None)
+
+    checkout_root = Path(package_final_model.__file__).resolve().parents[2]
+    expected_source_root = checkout_root / "artifacts" / "kaggle" / "outputs" / "catboost_full_data_attempt" / "catboost_full_data_attempt_results"
+    assert packaging_path_defaults.resolve_repo_root() == checkout_root
+    assert package_final_model.DEFAULT_MODEL_PATH == expected_source_root / "catboost_full_data_attempt.cbm"
+    assert package_final_model.DEFAULT_FEATURE_COLUMNS_PATH == checkout_root / "artifacts" / "cic_iot_diad_2024_binary" / "manifests" / "feature_columns.json"
+    assert package_final_model.DEFAULT_SUMMARY_PATH == expected_source_root / "reports" / "summary.csv"
+    assert package_final_model.DEFAULT_TRAINING_SUMMARY_PATH == expected_source_root / "reports" / "training_summary.json"
+    assert package_final_model.DEFAULT_THRESHOLD_SELECTION_PATH == checkout_root / "artifacts" / "posttrain_analysis" / "scaling_finalists" / "reports" / "catboost_full_threshold_selection.json"
+    assert package_final_model.DEFAULT_BUNDLE_ROOT == checkout_root / "artifacts" / "final_model" / "catboost_full_data_v1"
 
 
 def test_package_final_model_main_fails_when_source_model_is_missing(
