@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sys
 
 import pytest
 
@@ -49,9 +50,9 @@ def _make_preflight_config(tmp_path: Path, **overrides: object) -> OperatorConso
     secret_path = tmp_path / "console.secret"
     secret_path.write_text("production-secret\n", encoding="utf-8")
     kwargs: dict[str, object] = {
-        "python_binary": _make_executable(tmp_path / "bin" / "python3"),
-        "app_entrypoint": tmp_path / "scripts" / "ids_operator_console_server.py",
-        "manage_entrypoint": tmp_path / "scripts" / "ids_operator_console_manage.py",
+        "python_binary": Path(sys.executable).resolve(),
+        "app_module": "ids.console.server",
+        "manage_module": "ids.ops.operator_console_manage",
         "database_path": db_path,
         "alerts_input_path": logs_dir / "ids_live_alerts.jsonl",
         "quarantine_input_path": logs_dir / "ids_live_quarantine.jsonl",
@@ -68,9 +69,6 @@ def _make_preflight_config(tmp_path: Path, **overrides: object) -> OperatorConso
         "telegram_bot_token_file": None,
         "telegram_chat_id": None,
     }
-    Path(kwargs["app_entrypoint"]).parent.mkdir(parents=True, exist_ok=True)
-    Path(kwargs["app_entrypoint"]).write_text("print('ok')\n", encoding="utf-8")
-    Path(kwargs["manage_entrypoint"]).write_text("print('ok')\n", encoding="utf-8")
     kwargs.update(overrides)
     return OperatorConsolePreflightConfig(**kwargs)
 
@@ -104,8 +102,8 @@ def test_deploy_artifacts_are_wired_to_proxy_and_secret_contract() -> None:
     assert "IDS_OPERATOR_CONSOLE_SECRET_KEY_FILE" in service_text
     assert "--public-base-url ${IDS_OPERATOR_CONSOLE_PUBLIC_BASE_URL}" in service_text
     assert "--secret-key-file ${IDS_OPERATOR_CONSOLE_SECRET_KEY_FILE}" in service_text
-    assert "--manage-entrypoint /opt/ids_ml_new/ids/ops/operator_console_manage.py" in service_text
-    assert "--app-entrypoint /opt/ids_ml_new/ids/console/server.py" in service_text
+    assert "--manage-module ids.ops.operator_console_manage" in service_text
+    assert "--app-module ids.console.server" in service_text
     assert "IDS_OPERATOR_CONSOLE_TEMPLATES_DIR=/opt/ids_ml_new/ids/console/templates" in service_text
     assert "IDS_OPERATOR_CONSOLE_STATIC_DIR=/opt/ids_ml_new/ids/console/static" in service_text
     assert "python3 -m ids.ops.operator_console_preflight" in service_text
@@ -115,8 +113,8 @@ def test_deploy_artifacts_are_wired_to_proxy_and_secret_contract() -> None:
     assert "-m ids.ops.operator_console_manage --database-path \"$IDS_OPERATOR_CONSOLE_DATABASE_PATH\" notify-worker" in notify_service_text
     assert "--iterations 1" not in notify_service_text
     assert "notify-worker --poll-interval-seconds 30" in notify_service_text
-    assert "--manage-entrypoint /opt/ids_ml_new/ids/ops/operator_console_manage.py" in notify_service_text
-    assert "--app-entrypoint /opt/ids_ml_new/ids/console/server.py" in notify_service_text
+    assert "--manage-module ids.ops.operator_console_manage" in notify_service_text
+    assert "--app-module ids.console.server" in notify_service_text
     assert "IDS_OPERATOR_CONSOLE_TEMPLATES_DIR=/opt/ids_ml_new/ids/console/templates" in notify_service_text
     assert "IDS_OPERATOR_CONSOLE_STATIC_DIR=/opt/ids_ml_new/ids/console/static" in notify_service_text
     assert "python3 -m ids.ops.operator_console_preflight" in notify_service_text
@@ -128,19 +126,19 @@ def test_deploy_artifacts_are_wired_to_proxy_and_secret_contract() -> None:
     assert "proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;" in nginx_text
 
 
-def test_preflight_rejects_notification_enabled_missing_manage_entrypoint(
+def test_preflight_rejects_notification_enabled_missing_manage_module(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config = _make_preflight_config(
         tmp_path,
-        manage_entrypoint=None,
+        manage_module=None,
         telegram_bot_token="token",
         telegram_chat_id="-100preflight",
     )
     monkeypatch.setattr(preflight, "_is_executable_file", lambda path: True)
 
-    with pytest.raises(ValueError, match="manage_entrypoint"):
+    with pytest.raises(ValueError, match="manage_module"):
         validate_preflight(config)
 
 
@@ -149,6 +147,45 @@ def test_preflight_rejects_chat_only_pairing(tmp_path: Path, monkeypatch: pytest
     monkeypatch.setattr(preflight, "_is_executable_file", lambda path: True)
 
     with pytest.raises(ValueError, match="must be set together"):
+        validate_preflight(config)
+
+
+@pytest.mark.parametrize(
+    ("app_module", "error_match"),
+    [
+        ("   ", "app_module must not be blank"),
+        ("ids..console.server", "app_module must be a dotted Python module path"),
+    ],
+)
+def test_preflight_rejects_blank_or_malformed_app_module(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    app_module: str,
+    error_match: str,
+) -> None:
+    config = _make_preflight_config(tmp_path, app_module=app_module)
+    monkeypatch.setattr(preflight, "_is_executable_file", lambda path: True)
+
+    with pytest.raises(ValueError, match=error_match):
+        validate_preflight(config)
+
+
+def test_preflight_rejects_non_importable_manage_module(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _make_preflight_config(
+        tmp_path,
+        manage_module="ids.ops.does_not_exist",
+        telegram_bot_token="token",
+        telegram_chat_id="-100preflight",
+    )
+    monkeypatch.setattr(preflight, "_is_executable_file", lambda path: True)
+
+    with pytest.raises(
+        ValueError,
+        match="manage_module is not importable by python_binary: ids.ops.does_not_exist",
+    ):
         validate_preflight(config)
 
 
@@ -166,10 +203,10 @@ def test_preflight_main_fails_closed_on_partial_env_notification_config(
             [
                 "--python-binary",
                 str(config.python_binary),
-                "--app-entrypoint",
-                str(config.app_entrypoint),
-                "--manage-entrypoint",
-                str(config.manage_entrypoint),
+                "--app-module",
+                str(config.app_module),
+                "--manage-module",
+                str(config.manage_module),
                 "--database-path",
                 str(config.database_path),
                 "--alerts-input-path",

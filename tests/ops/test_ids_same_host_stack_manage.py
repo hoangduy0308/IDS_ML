@@ -53,16 +53,10 @@ def _build_config(
     telegram_enabled: bool = False,
 ) -> stack.SameHostStackConfig:
     repo_root = tmp_path / "repo"
-    (repo_root / "scripts" / "ids_operator_console" / "templates").mkdir(parents=True, exist_ok=True)
-    (repo_root / "scripts" / "ids_operator_console" / "static").mkdir(parents=True, exist_ok=True)
-    model_manage = repo_root / "scripts" / "ids_model_bundle_manage.py"
-    operator_manage = repo_root / "scripts" / "ids_operator_console_manage.py"
-    operator_server = repo_root / "scripts" / "ids_operator_console_server.py"
-    model_manage.write_text("print('model-manage')\n", encoding="utf-8")
-    operator_manage.write_text("print('operator-manage')\n", encoding="utf-8")
-    operator_server.write_text("print('operator-server')\n", encoding="utf-8")
+    (repo_root / "ids" / "console" / "templates").mkdir(parents=True, exist_ok=True)
+    (repo_root / "ids" / "console" / "static").mkdir(parents=True, exist_ok=True)
 
-    python_binary = _make_executable(tmp_path / "bin" / "python3")
+    python_binary = Path(sys.executable).resolve()
     _make_executable(tmp_path / "bin" / "dumpcap")
     extractor_binary = _make_executable(tmp_path / "bin" / "extractor")
 
@@ -84,9 +78,9 @@ def _build_config(
         repo_root=repo_root,
         python_binary=python_binary,
         operator_env_file=operator_env_file,
-        model_manage_entrypoint=model_manage,
-        operator_manage_entrypoint=operator_manage,
-        operator_server_entrypoint=operator_server,
+        model_manage_module="ids.ops.model_bundle_manage",
+        operator_manage_module="ids.ops.operator_console_manage",
+        operator_server_module="ids.console.server",
         activation_path=tmp_path / "runtime" / "active_bundle.json",
         live_sensor_interface="eth0",
         dumpcap_binary=tmp_path / "bin" / "dumpcap",
@@ -101,20 +95,18 @@ def _build_config(
     )
 
 
-def test_build_config_from_args_defaults_to_canonical_ids_entrypoints(tmp_path: Path) -> None:
+def test_build_config_from_args_defaults_to_canonical_ids_modules(tmp_path: Path) -> None:
     repo_root = (tmp_path / "repo-root").resolve()
     args = manage._build_parser().parse_args(["--repo-root", str(repo_root), "preflight"])
 
     config = manage.build_config_from_args(args)
 
-    assert config.model_manage_entrypoint == (repo_root / "ids" / "ops" / "model_bundle_manage.py")
-    assert config.operator_manage_entrypoint == (
-        repo_root / "ids" / "ops" / "operator_console_manage.py"
-    )
-    assert config.operator_server_entrypoint == (repo_root / "ids" / "console" / "server.py")
-    assert "scripts" not in str(config.model_manage_entrypoint)
-    assert "scripts" not in str(config.operator_manage_entrypoint)
-    assert "scripts" not in str(config.operator_server_entrypoint)
+    assert config.model_manage_module == "ids.ops.model_bundle_manage"
+    assert config.operator_manage_module == "ids.ops.operator_console_manage"
+    assert config.operator_server_module == "ids.console.server"
+    assert "scripts" not in config.model_manage_module
+    assert "scripts" not in config.operator_manage_module
+    assert "scripts" not in config.operator_server_module
 
 
 def _write_backup_artifacts(
@@ -202,6 +194,48 @@ def test_validate_stack_preflight_bootstrap_or_preflight_requires_operator_env_f
     assert payload["status"] == "degraded"
     assert payload["host_layout_checks"]["operator_env_file"]["state"] == "missing"
     assert payload["components"]["operator_config"]["status"] == "degraded"
+
+
+@pytest.mark.parametrize(
+    ("field_name", "module_name", "error_match"),
+    [
+        ("operator_server_module", "   ", "operator_server_module must not be blank"),
+        (
+            "operator_server_module",
+            "ids..console.server",
+            "operator_server_module must be a dotted Python module path",
+        ),
+    ],
+)
+def test_validate_stack_preflight_bootstrap_or_preflight_rejects_blank_or_malformed_modules(
+    tmp_path: Path,
+    field_name: str,
+    module_name: str,
+    error_match: str,
+) -> None:
+    config = replace(_build_config(tmp_path), **{field_name: module_name})
+
+    payload = stack.validate_stack_preflight(config)
+
+    assert payload["ready"] is False
+    assert payload["status"] == "degraded"
+    assert payload["host_layout_checks"][field_name]["state"] == "invalid"
+    assert payload["host_layout_checks"][field_name]["detail"] == error_match
+
+
+def test_validate_stack_preflight_bootstrap_or_preflight_rejects_non_importable_module(
+    tmp_path: Path,
+) -> None:
+    config = replace(_build_config(tmp_path), operator_server_module="ids.console.does_not_exist")
+
+    payload = stack.validate_stack_preflight(config)
+
+    assert payload["ready"] is False
+    assert payload["status"] == "degraded"
+    assert payload["host_layout_checks"]["operator_server_module"]["state"] == "invalid"
+    assert payload["host_layout_checks"]["operator_server_module"]["detail"] == (
+        "operator_server_module is not importable by python_binary: ids.console.does_not_exist"
+    )
 
 
 def test_load_stack_operator_config_defaults_to_canonical_console_assets(tmp_path: Path) -> None:
@@ -305,7 +339,8 @@ def test_run_stack_bootstrap_bootstrap_or_preflight_executes_canonical_order(
     assert executed == [
         [
             str(config.python_binary.resolve()),
-            str(config.model_manage_entrypoint.resolve()),
+            "-m",
+            config.model_manage_module,
             "--activation-path",
             str(config.activation_path.resolve()),
             "--json",
@@ -315,7 +350,8 @@ def test_run_stack_bootstrap_bootstrap_or_preflight_executes_canonical_order(
         ],
         [
             str(config.python_binary.resolve()),
-            str(config.model_manage_entrypoint.resolve()),
+            "-m",
+            config.model_manage_module,
             "--activation-path",
             str(config.activation_path.resolve()),
             "--json",
@@ -325,7 +361,8 @@ def test_run_stack_bootstrap_bootstrap_or_preflight_executes_canonical_order(
         ],
         [
             str(config.python_binary.resolve()),
-            str(config.operator_manage_entrypoint.resolve()),
+            "-m",
+            config.operator_manage_module,
             "--database-path",
             str((tmp_path / "runtime" / "operator_console.db").resolve()),
             "--json",
@@ -334,7 +371,8 @@ def test_run_stack_bootstrap_bootstrap_or_preflight_executes_canonical_order(
         ],
         [
             str(config.python_binary.resolve()),
-            str(config.operator_manage_entrypoint.resolve()),
+            "-m",
+            config.operator_manage_module,
             "--database-path",
             str((tmp_path / "runtime" / "operator_console.db").resolve()),
             "--json",
