@@ -1,55 +1,38 @@
-STATUS: validated-approved
+STATUS: swarming-complete
 FEATURE: ids-repo-installable-full-stack-packaging
 SKILL: swarming
-PHASE: swarm-initializing
-VALIDATED_AT: 2026-04-01T13:35:00+07:00
+PHASE: reviewing-ready
 
 EPIC:
-- ID: ids_ml_new-axd0
-- Topic: epic-ids_ml_new-axd0
-- Coordinator: CrimsonBadger
-- Status: approved-for-execution
+- Replan epic: `ids_ml_new-urzq`
+- Source review root: `ids_ml_new-axd0`
 
-REVIEW_RESULTS:
-- Prior blocking review bead resolved: ids_ml_new-8asd.7
-- Prior non-blocking review beads resolved: ids_ml_new-37yb, ids_ml_new-c5sj, ids_ml_new-k66t, ids_ml_new-gahx
-- Second-pass fresh-eyes review found no new P1 issues and no security findings.
-- Follow-up review beads opened:
-  - `ids_ml_new-gqqv` Harden repo-installable proof against ambient site-packages leaks
-  - `ids_ml_new-c7jb` Cover fail-closed realtime pipeline feature-columns resolution
-  - `ids_ml_new-c8i7` Add negative module-validation coverage for operator and stack preflight
-  - `ids_ml_new-wtj1` Deduplicate module import validation helpers across ops preflight paths
-  - `ids_ml_new-axic` Make shared repo-root path resolution fully explicit
-  - `ids_ml_new-lkh3` Add stack smoke coverage for 303 redirect acceptance
+ARTIFACTS_WRITTEN:
+- `history/ids-repo-installable-full-stack-packaging/discovery.md`
+  - appended `Planning Addendum: Review-Followup Replan`
+- `history/ids-repo-installable-full-stack-packaging/approach.md`
+  - appended `Replan Addendum After Blocked Validation`
 
-VERIFICATION:
-- Focused review suite:
-  - `python -m pytest tests/ops/test_ids_repo_installable_bootstrap_proof.py tests/ops/test_ids_repo_installable_surface.py tests/ops/test_ids_same_host_stack_manage.py tests/ops/test_ids_operator_console_preflight.py tests/ops/test_ids_operator_console_ops.py tests/runtime/test_ids_inference.py tests/runtime/test_ids_realtime_pipeline.py tests/core/test_ids_path_defaults.py tests/docs/test_docs_path_smoke.py -q`
-  - Result: `96 passed`
-- Widened feature suite:
-  - `python -m pytest tests/ops/test_ids_repo_installable_bootstrap_proof.py tests/ops/test_ids_repo_installable_surface.py tests/docs/test_docs_path_smoke.py tests/runtime/test_ids_runtime_wrapper_smoke.py tests/ml/test_ml_workflow_wrapper_smoke.py tests/runtime/test_ids_inference.py tests/runtime/test_ids_realtime_pipeline.py tests/runtime/test_ids_record_adapter.py tests/ops/test_ids_same_host_stack_manage.py tests/ops/test_ids_operator_console_preflight.py tests/ops/test_ids_operator_console_ops.py tests/ops/test_ids_live_sensor_preflight.py tests/ops/test_ids_model_bundle_manage.py tests/core/test_ids_path_defaults.py -q`
-  - Result: `206 passed`
-- Known non-blocking environment note:
-  - `pytest_asyncio` emits a deprecation warning about `asyncio_default_fixture_loop_scope`, but all invoked suites returned exit code `0`.
+REPLANNED_BEAD_SET:
+- `ids_ml_new-x1p9` install metadata + canonical entrypoint surface
+- `ids_ml_new-d5ae` ML packaging topology + package defaults
+- `ids_ml_new-qq0f` deploy/docs interpreter contract convergence
+- `ids_ml_new-z0pb` runtime-scoped path-default boundary + runtime adopters
+- `ids_ml_new-bt3x` explicit realtime inferencer/schema seam
+- `ids_ml_new-m8h0` trust-boundary hardening + final installed bootstrap proof
+- `ids_ml_new-zpih` proof-helper dedupe
 
-KEY_FIXES:
-- Same-host stack subordinate execution now uses canonical `ids.*` module surfaces rather than repo `.py` source paths.
-- Operator-console preflight validates module importability through the selected interpreter instead of source-file entrypoints.
-- Canonical runtime entrypoints fail closed through the activation-record contract unless explicit dev overrides are supplied.
-- Shared repo-root path defaults now have explicit Linux-root vs checkout-root behavior with direct tests.
-- Bundle runbook now uses Linux same-host canonical examples only.
-- Final bootstrap proof now installs the repo into an isolated venv and executes real installed `ids-stack` / `ids-model-bundle-manage` commands.
+REPLANNED_DEPENDENCY_SPINE:
+- `ids_ml_new-x1p9 -> ids_ml_new-d5ae -> ids_ml_new-qq0f -> ids_ml_new-z0pb -> ids_ml_new-bt3x -> ids_ml_new-m8h0 -> ids_ml_new-zpih`
 
-ACTIVE_WORKERS:
-- BlueHarbor — subagent `Planck` — startup hint `ids_ml_new-wtj1`
-- SapphireElk — subagent `Kant` — startup hint `ids_ml_new-c7jb`
-- AmberGrove — subagent `Pauli` — startup hint `ids_ml_new-gqqv`
-- IndigoReef — subagent `Einstein` — startup hint `ids_ml_new-axic`
+NOTES:
+- The original validation blocker was structural, not architectural discovery.
+- Replan added one explicit install-surface owner bead and moved final proof ownership explicitly onto `ids_ml_new-m8h0`.
+- The replanned wave validated cleanly as a linear spine rooted at `ids_ml_new-x1p9`.
+- During validation, `beads.db` was found malformed and rebuilt cleanly from a repaired `.beads/issues.jsonl`; `br sync --status` then returned `dirty_count=0`, `jsonl_newer=false`, `db_newer=false`.
+- `br show ids_ml_new-x1p9` and `br show ids_ml_new-urzq` now resolve to the intended task/epic after the repair.
+- Swarm completed after a final rescue pass on `ids_ml_new-zpih` in the main session because the rescue worker hit a usage cap before it could claim the last P3 bead.
+- Final triage for `ids_ml_new-urzq` reports `open_count=0`, `actionable_count=0`, `in_progress_count=0`.
 
-BLOCKERS:
-- `SapphireElk` reported reservation conflict on `ids_ml_new-wtj1` against ops files held by other workers; overseer requested release/narrowing and explicit claim messages on thread `ids_ml_new-axd0`.
-
-HANDOFF:
-- Validation approved by user.
-- Swarm root: `ids_ml_new-axd0`
-- Actionable wave at swarm start: `ids_ml_new-wtj1`, `ids_ml_new-c7jb`, `ids_ml_new-gqqv`, `ids_ml_new-axic`
+NEXT:
+- Invoke `khuym:reviewing`.
