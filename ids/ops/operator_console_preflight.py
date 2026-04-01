@@ -10,7 +10,7 @@ from ids.console.config import PLACEHOLDER_SECRET_VALUES
 from ids.console.migrations import inspect_operator_store
 from ids.ops.module_validation import (
     clean_module_name as _clean_module_name,
-    require_importable_module as _require_importable_module,
+    resolve_importable_module as _resolve_importable_module,
 )
 
 
@@ -83,6 +83,26 @@ def _clean_optional(value: str | None) -> str | None:
     return normalized or None
 
 
+def _trusted_repo_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def _require_importable_module_from_trusted_root(
+    python_binary: Path,
+    module_name: str,
+    *,
+    name: str,
+) -> str:
+    checked, _origin = _resolve_importable_module(
+        python_binary,
+        module_name,
+        name=name,
+        trusted_root=_trusted_repo_root(),
+        trusted_root_label="trusted repo root",
+    )
+    return checked
+
+
 def _load_secret_value(config: OperatorConsolePreflightConfig) -> str:
     if config.secret_key and config.secret_key_file:
         raise ValueError("secret_key and secret_key_file may not both be set")
@@ -109,7 +129,11 @@ def _load_optional_secret(*, value: str | None, file_path: Path | None, name: st
 
 def validate_preflight(config: OperatorConsolePreflightConfig) -> None:
     python_binary = _require_existing_file(config.python_binary, name="python_binary", executable=True)
-    _require_importable_module(python_binary, config.app_module, name="app_module")
+    _require_importable_module_from_trusted_root(
+        python_binary,
+        config.app_module,
+        name="app_module",
+    )
     _require_existing_file(config.database_path, name="database_path")
     _require_existing_parent(config.alerts_input_path, name="alerts_input_path")
     _require_existing_parent(config.quarantine_input_path, name="quarantine_input_path")
@@ -141,7 +165,11 @@ def validate_preflight(config: OperatorConsolePreflightConfig) -> None:
     if token is not None:
         if config.manage_module is None:
             raise ValueError("notification-enabled deployments require manage_module")
-        _require_importable_module(python_binary, config.manage_module, name="manage_module")
+        _require_importable_module_from_trusted_root(
+            python_binary,
+            config.manage_module,
+            name="manage_module",
+        )
 
     inspection = inspect_operator_store(config.database_path)
     if inspection.schema_state != "current":

@@ -4,7 +4,52 @@ import json
 import os
 from pathlib import Path
 import subprocess
+
+_MODULE_ORIGIN_SCRIPT = """
+from __future__ import annotations
+
+import json
+from pathlib import Path
 import sys
+
+def _find_spec_without_import(fullname: str, search_path: list[str] | None):
+    for finder in sys.meta_path:
+        method = getattr(finder, "find_spec", None)
+        if method is None:
+            continue
+        try:
+            spec = method(fullname, search_path)
+        except TypeError:
+            spec = method(fullname, search_path, None)
+        if spec is not None:
+            return spec
+    return None
+
+name = sys.argv[1]
+parts = name.split(".")
+qualified_name = ""
+search_path = None
+spec = None
+for index, part in enumerate(parts):
+    qualified_name = part if not qualified_name else f"{qualified_name}.{part}"
+    spec = _find_spec_without_import(qualified_name, search_path)
+    assert spec is not None, f"{name} is not importable"
+    if index < len(parts) - 1:
+        search_path = list(spec.submodule_search_locations or [])
+        assert search_path, f"{name} parent package is not importable"
+origin = getattr(spec, "origin", None)
+assert origin and origin not in {"built-in", "frozen"}, f"{name} has no module origin"
+print(json.dumps({"origin": str(Path(origin).resolve())}))
+"""
+
+_MODULE_IMPORT_PROOF_SCRIPT = """
+from __future__ import annotations
+
+import importlib
+import sys
+
+importlib.import_module(sys.argv[1])
+"""
 
 
 def clean_module_name(value: str | None, *, name: str, allow_blank: bool = True) -> str | None:
@@ -19,33 +64,33 @@ def clean_module_name(value: str | None, *, name: str, allow_blank: bool = True)
 
 
 def _build_import_env() -> dict[str, str]:
-    pythonpath_entries: list[str] = []
-    seen: set[str] = set()
-
-    existing_pythonpath = os.environ.get("PYTHONPATH")
-    if existing_pythonpath:
-        for entry in existing_pythonpath.split(os.pathsep):
-            candidate = entry.strip()
-            if candidate and candidate not in seen:
-                seen.add(candidate)
-                pythonpath_entries.append(candidate)
-
-    repo_root = str(Path(__file__).resolve().parents[2])
-    if repo_root not in seen:
-        seen.add(repo_root)
-        pythonpath_entries.append(repo_root)
-
-    for entry in sys.path:
-        candidate = str(Path(entry).resolve()) if entry else ""
-        if not candidate or candidate in seen or not Path(candidate).exists():
-            continue
-        seen.add(candidate)
-        pythonpath_entries.append(candidate)
-
     env = dict(os.environ)
-    if pythonpath_entries:
-        env["PYTHONPATH"] = os.pathsep.join(pythonpath_entries)
+    env.pop("PYTHONPATH", None)
+    env.pop("PYTHONHOME", None)
+    env.pop("PYTHONSAFEPATH", None)
     return env
+
+
+def _run_module_check(
+    python_binary: Path,
+    script: str,
+    module_name: str,
+) -> subprocess.CompletedProcess[str]:
+    resolved_python = Path(python_binary).resolve()
+    return subprocess.run(
+        [
+            str(resolved_python),
+            "-I",
+            "-c",
+            script,
+            module_name,
+        ],
+        cwd=resolved_python.parent,
+        env=_build_import_env(),
+        capture_output=True,
+        check=False,
+        text=True,
+    )
 
 
 def resolve_importable_module(
@@ -53,30 +98,13 @@ def resolve_importable_module(
     module_name: str,
     *,
     name: str,
+    trusted_root: Path | None = None,
+    trusted_root_label: str = "trusted_root",
 ) -> tuple[str, Path]:
     normalized = clean_module_name(module_name, name=name, allow_blank=True)
     if normalized is None:
         raise ValueError(f"{name} must not be blank")
-    import_cwd = None if os.environ.get("PYTHONPATH") else Path(__file__).resolve().parents[2]
-    completed = subprocess.run(
-        [
-            str(Path(python_binary).resolve()),
-            "-c",
-            (
-                "import importlib, json, pathlib; "
-                f"name={normalized!r}; "
-                "module = importlib.import_module(name); "
-                "origin = getattr(module, '__file__', None); "
-                "assert origin is not None, f'{name} has no module file'; "
-                "print(json.dumps({'origin': str(pathlib.Path(origin).resolve())}))"
-            ),
-        ],
-        cwd=import_cwd,
-        env=_build_import_env(),
-        capture_output=True,
-        check=False,
-        text=True,
-    )
+    completed = _run_module_check(python_binary, _MODULE_ORIGIN_SCRIPT, normalized)
     if completed.returncode != 0:
         raise ValueError(f"{name} is not importable by python_binary: {normalized}")
     try:
@@ -86,7 +114,19 @@ def resolve_importable_module(
     origin = payload.get("origin")
     if not origin:
         raise ValueError(f"{name} import did not expose a module file: {normalized}")
-    return normalized, Path(origin).resolve()
+    origin_path = Path(origin).resolve()
+    if not origin_path.exists():
+        raise ValueError(f"{name} import resolved to a missing module file: {normalized}")
+    if trusted_root is not None:
+        trusted_root_path = Path(trusted_root).resolve()
+        try:
+            origin_path.relative_to(trusted_root_path)
+        except ValueError as exc:
+            raise ValueError(f"{name} resolved outside {trusted_root_label}: {origin_path}") from exc
+    proof = _run_module_check(python_binary, _MODULE_IMPORT_PROOF_SCRIPT, normalized)
+    if proof.returncode != 0:
+        raise ValueError(f"{name} failed to import in python_binary: {normalized}")
+    return normalized, origin_path
 
 
 def require_importable_module(
@@ -94,6 +134,14 @@ def require_importable_module(
     module_name: str,
     *,
     name: str,
+    trusted_root: Path | None = None,
+    trusted_root_label: str = "trusted_root",
 ) -> str:
-    normalized, _origin = resolve_importable_module(python_binary, module_name, name=name)
+    normalized, _origin = resolve_importable_module(
+        python_binary,
+        module_name,
+        name=name,
+        trusted_root=trusted_root,
+        trusted_root_label=trusted_root_label,
+    )
     return normalized

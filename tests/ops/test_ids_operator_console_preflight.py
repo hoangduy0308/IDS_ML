@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
-import sys
 
 import pytest
 
+from repo_installable_proof_support import (
+    run_command,
+    shared_editable_repo_python,
+    site_packages_dir,
+    write_shadow_sitecustomize,
+)
 from wrapper_smoke_support import assert_help_smoke, run_python_module_help, run_python_script_help
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -21,6 +27,10 @@ def _make_executable(path: Path) -> Path:
     path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8", newline="\n")
     path.chmod(path.stat().st_mode | 0o111)
     return path
+
+
+def _install_repo_python() -> Path:
+    return shared_editable_repo_python(f"preflight-proof-{os.getpid()}")
 
 
 def _make_preflight_config(tmp_path: Path, **overrides: object) -> OperatorConsolePreflightConfig:
@@ -49,8 +59,10 @@ def _make_preflight_config(tmp_path: Path, **overrides: object) -> OperatorConso
 
     secret_path = tmp_path / "console.secret"
     secret_path.write_text("production-secret\n", encoding="utf-8")
+    python_binary = _install_repo_python()
+    write_shadow_sitecustomize(site_packages_dir(python_binary))
     kwargs: dict[str, object] = {
-        "python_binary": Path(sys.executable).resolve(),
+        "python_binary": python_binary,
         "app_module": "ids.console.server",
         "manage_module": "ids.ops.operator_console_manage",
         "database_path": db_path,
@@ -192,29 +204,88 @@ def test_preflight_rejects_non_importable_manage_module(
         validate_preflight(config)
 
 
-def test_preflight_rejects_module_that_crashes_during_import(
+@pytest.mark.parametrize(
+    ("config_overrides", "shadow_module", "error_match"),
+    [
+        ({}, "ids.console.server", "app_module resolved outside trusted repo root"),
+        (
+            {
+                "manage_module": "ids.ops.operator_console_manage",
+                "telegram_bot_token": "token",
+                "telegram_chat_id": "-100preflight",
+            },
+            "ids.ops.operator_console_manage",
+            "manage_module resolved outside trusted repo root",
+        ),
+    ],
+)
+def test_preflight_rejects_shadowed_module(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    config_overrides: dict[str, object],
+    shadow_module: str,
+    error_match: str,
+) -> None:
+    config = _make_preflight_config(tmp_path, **config_overrides)
+    shadow_root = tmp_path / "shadow"
+    package_root = shadow_root / "ids"
+    if shadow_module.startswith("ids.console."):
+        console_root = package_root / "console"
+        console_root.mkdir(parents=True, exist_ok=True)
+        (package_root / "__init__.py").write_text(
+            "raise RuntimeError('hostile parent import should not run')\n",
+            encoding="utf-8",
+        )
+        (console_root / "__init__.py").write_text(
+            "raise RuntimeError('hostile package import should not run')\n",
+            encoding="utf-8",
+        )
+    elif shadow_module.startswith("ids.ops."):
+        ops_root = package_root / "ops"
+        ops_root.mkdir(parents=True, exist_ok=True)
+        (ops_root / "__init__.py").write_text(
+            "raise RuntimeError('hostile ops package import should not run')\n",
+            encoding="utf-8",
+        )
+    shadow_path = shadow_root.joinpath(*shadow_module.split(".")).with_suffix(".py")
+    shadow_path.parent.mkdir(parents=True, exist_ok=True)
+    shadow_path.write_text("SHADOWED = True\n", encoding="utf-8")
+    shadow_pth = site_packages_dir(config.python_binary) / "zz_shadow_import.pth"
+    shadow_pth.write_text(str(shadow_root.resolve()) + "\n", encoding="utf-8")
+    monkeypatch.setattr(preflight, "_is_executable_file", lambda path: True)
+    try:
+        with pytest.raises(ValueError, match=error_match):
+            validate_preflight(config)
+    finally:
+        shadow_pth.unlink(missing_ok=True)
+
+
+def test_preflight_rejects_trusted_root_module_that_crashes_during_import(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    shadow_root = tmp_path / "shadow"
-    (shadow_root / "ids" / "console").mkdir(parents=True, exist_ok=True)
-    (shadow_root / "ids" / "__init__.py").write_text("", encoding="utf-8")
-    (shadow_root / "ids" / "console" / "__init__.py").write_text("", encoding="utf-8")
-    (shadow_root / "ids" / "console" / "server.py").write_text(
-        "raise RuntimeError('shadowed import crash')\n",
+    config = _make_preflight_config(tmp_path, app_module="trustedpkg.console_app")
+    trusted_root = tmp_path / "trusted-root"
+    module_root = trusted_root / "trustedpkg"
+    module_root.mkdir(parents=True, exist_ok=True)
+    (module_root / "__init__.py").write_text("", encoding="utf-8")
+    (module_root / "console_app.py").write_text(
+        "raise RuntimeError('trusted import crash')\n",
         encoding="utf-8",
     )
-
-    config = _make_preflight_config(tmp_path)
+    shadow_pth = site_packages_dir(config.python_binary) / "zz_shadow_import.pth"
+    shadow_pth.write_text(str(trusted_root.resolve()) + "\n", encoding="utf-8")
+    monkeypatch.setattr(preflight, "_trusted_repo_root", lambda: trusted_root)
     monkeypatch.setattr(preflight, "_is_executable_file", lambda path: True)
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("PYTHONPATH", str(shadow_root))
 
-    with pytest.raises(
-        ValueError,
-        match="app_module is not importable by python_binary: ids.console.server",
-    ):
-        validate_preflight(config)
+    try:
+        with pytest.raises(
+            ValueError,
+            match="app_module failed to import in python_binary: trustedpkg.console_app",
+        ):
+            validate_preflight(config)
+    finally:
+        shadow_pth.unlink(missing_ok=True)
 
 
 def test_preflight_main_fails_closed_on_partial_env_notification_config(

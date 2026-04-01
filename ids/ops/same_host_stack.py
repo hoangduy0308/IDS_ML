@@ -1072,14 +1072,13 @@ def validate_stack_preflight(config: SameHostStackConfig) -> dict[str, Any]:
         try:
             if python_binary_path is None:
                 raise ValueError("python_binary must be valid before module import checks")
-            checked, origin = _resolve_importable_module(python_binary_path, module_name, name=name)
-            if repo_root is not None:
-                try:
-                    Path(origin).resolve().relative_to(Path(repo_root).resolve())
-                except ValueError as exc:
-                    raise ValueError(
-                        f"{name} resolved outside repo_root: {Path(origin).resolve()}"
-                    ) from exc
+            checked, _origin = _resolve_importable_module(
+                python_binary_path,
+                module_name,
+                name=name,
+                trusted_root=Path(repo_root).resolve() if repo_root is not None else None,
+                trusted_root_label="repo_root",
+            )
         except Exception as exc:
             host_layout_checks[name] = {
                 "ok": False,

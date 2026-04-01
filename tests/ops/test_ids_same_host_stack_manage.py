@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 import json
+import os
 import subprocess
 from pathlib import Path
 import sys
@@ -12,6 +13,12 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 import ids.ops.same_host_stack as stack  # noqa: E402
 import ids.ops.same_host_stack_manage as manage  # noqa: E402
+from ids.core.model_bundle_activation import SUPPORTED_ACTIVATION_RECORD_VERSION  # noqa: E402
+from repo_installable_proof_support import (
+    shared_editable_repo_python,
+    site_packages_dir,
+    write_shadow_sitecustomize,
+)
 from wrapper_smoke_support import run_command
 
 
@@ -20,6 +27,10 @@ def _make_executable(path: Path) -> Path:
     path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8", newline="\n")
     path.chmod(path.stat().st_mode | 0o111)
     return path
+
+
+def _install_repo_python() -> Path:
+    return shared_editable_repo_python(f"same-host-stack-proof-{os.getpid()}")
 
 
 def _write_operator_env(
@@ -56,7 +67,8 @@ def _build_config(
     (repo_root / "ids" / "console" / "templates").mkdir(parents=True, exist_ok=True)
     (repo_root / "ids" / "console" / "static").mkdir(parents=True, exist_ok=True)
 
-    python_binary = Path(sys.executable).resolve()
+    python_binary = _install_repo_python()
+    write_shadow_sitecustomize(site_packages_dir(python_binary))
     _make_executable(tmp_path / "bin" / "dumpcap")
     extractor_binary = _make_executable(tmp_path / "bin" / "extractor")
 
@@ -238,29 +250,53 @@ def test_validate_stack_preflight_bootstrap_or_preflight_rejects_non_importable_
     )
 
 
+@pytest.mark.parametrize(
+    ("config_kwargs", "shadow_module", "expected_field"),
+    [
+        ({"telegram_enabled": False}, "ids.ops.model_bundle_manage", "model_manage_module"),
+        ({"telegram_enabled": True}, "ids.ops.operator_console_manage", "operator_manage_module"),
+        ({"telegram_enabled": False}, "ids.console.server", "operator_server_module"),
+    ],
+)
 def test_validate_stack_preflight_bootstrap_or_preflight_rejects_modules_from_outside_repo_root(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    config_kwargs: dict[str, object],
+    shadow_module: str,
+    expected_field: str,
 ) -> None:
+    config = _build_config(tmp_path, **config_kwargs)
     shadow_root = tmp_path / "shadow"
-    (shadow_root / "ids" / "ops").mkdir(parents=True, exist_ok=True)
-    (shadow_root / "ids" / "__init__.py").write_text("", encoding="utf-8")
-    (shadow_root / "ids" / "ops" / "__init__.py").write_text("", encoding="utf-8")
-    (shadow_root / "ids" / "ops" / "model_bundle_manage.py").write_text(
-        "VALUE = 1\n",
+    package_root = shadow_root / "ids"
+    console_root = package_root / "console"
+    ops_root = package_root / "ops"
+    console_root.mkdir(parents=True, exist_ok=True)
+    ops_root.mkdir(parents=True, exist_ok=True)
+    (package_root / "__init__.py").write_text(
+        "raise RuntimeError('hostile parent import should not run')\n",
         encoding="utf-8",
     )
-
-    config = _build_config(tmp_path)
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("PYTHONPATH", str(shadow_root))
-
-    payload = stack.validate_stack_preflight(config)
+    (console_root / "__init__.py").write_text(
+        "raise RuntimeError('hostile package import should not run')\n",
+        encoding="utf-8",
+    )
+    (ops_root / "__init__.py").write_text(
+        "raise RuntimeError('hostile ops package import should not run')\n",
+        encoding="utf-8",
+    )
+    shadow_path = shadow_root.joinpath(*shadow_module.split(".")).with_suffix(".py")
+    shadow_path.write_text("SHADOWED = True\n", encoding="utf-8")
+    shadow_pth = site_packages_dir(config.python_binary) / "zz_shadow_import.pth"
+    shadow_pth.write_text(str(shadow_root.resolve()) + "\n", encoding="utf-8")
+    try:
+        payload = stack.validate_stack_preflight(config)
+    finally:
+        shadow_pth.unlink(missing_ok=True)
 
     assert payload["ready"] is False
     assert payload["status"] == "degraded"
-    assert payload["host_layout_checks"]["model_manage_module"]["state"] == "invalid"
-    assert "resolved outside repo_root" in payload["host_layout_checks"]["model_manage_module"]["detail"]
+    assert payload["host_layout_checks"][expected_field]["state"] == "invalid"
+    assert "resolved outside repo_root" in payload["host_layout_checks"][expected_field]["detail"]
 
 
 def test_load_stack_operator_config_defaults_to_canonical_console_assets(tmp_path: Path) -> None:
@@ -1058,7 +1094,11 @@ def test_build_stack_restore_inventory_restore_or_post_restore_checks_minimum_in
             "runtime_ready": True,
             "activation_path": str(path),
             "active_bundle_root": str(active_bundle_root),
+            "active_bundle_name": "bundle-active",
+            "record_version": SUPPORTED_ACTIVATION_RECORD_VERSION,
+            "verification_status": "verified",
             "previous_bundle_root": str(previous_bundle_root),
+            "previous_bundle_name": "bundle-previous",
         },
     )
 
@@ -1069,6 +1109,13 @@ def test_build_stack_restore_inventory_restore_or_post_restore_checks_minimum_in
         payload["components"]["activation_restore_state"]["payload"]["referenced_bundle_roots"][0]["path"]
         == str(active_bundle_root.resolve())
     )
+    activation_contract = payload["components"]["activation_restore_state"]["payload"]["activation_contract"]
+    assert activation_contract["record_version"] == SUPPORTED_ACTIVATION_RECORD_VERSION
+    assert activation_contract["active_bundle_root"] == str(active_bundle_root.resolve())
+    assert activation_contract["active_bundle_name"] == "bundle-active"
+    assert activation_contract["verification_status"] == "verified"
+    assert activation_contract["previous_bundle_root"] == str(previous_bundle_root.resolve())
+    assert activation_contract["previous_bundle_name"] == "bundle-previous"
     assert (
         payload["components"]["operator_console_restore_state"]["payload"]["secret_references"]["secret_key"]["state"]
         == "bound"
