@@ -583,9 +583,11 @@ def test_build_stack_status_payload_status_or_smoke_keeps_failure_domains_explic
     )
 
 
+@pytest.mark.parametrize("redirect_status", [303, 307])
 def test_build_stack_smoke_payload_status_or_smoke_keeps_proxy_non_gating(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    redirect_status: int,
 ) -> None:
     config = replace(_build_config(tmp_path), proxy_public_url="https://console.example")
 
@@ -605,7 +607,7 @@ def test_build_stack_smoke_payload_status_or_smoke_keeps_proxy_non_gating(
         lambda _config: SimpleNamespace(
             health_status=200,
             readiness_status=200,
-            redirect_status=307,
+            redirect_status=redirect_status,
             readiness_payload={"ready": True, "status": "ok"},
         ),
     )
@@ -634,7 +636,7 @@ def test_build_stack_smoke_payload_status_or_smoke_keeps_proxy_non_gating(
     )
 
     assert payload["ready"] is True
-    assert payload["components"]["operator_visibility_path"]["payload"]["redirect_status"] == 307
+    assert payload["components"]["operator_visibility_path"]["payload"]["redirect_status"] == redirect_status
     assert (
         payload["components"]["operator_visibility_path"]["payload"]["readiness_payload"][
             "include_sensitive"
