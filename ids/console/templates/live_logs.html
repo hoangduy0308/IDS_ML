@@ -60,7 +60,7 @@
         "id": alert.source_event_id,
         "severity": alert.severity or "unknown",
         "detail": (alert.src_ip or "") ~ " → " ~ (alert.dst_ip or ""),
-        "suppressed": alert.get("is_suppressed", False)
+        "suppressed": alert.get("suppressed", False)
       }) %}
     {% endfor %}
 
@@ -100,7 +100,7 @@
         {{ alert.source_event_id }}
         {% if alert.src_ip %} · {{ alert.src_ip }} → {{ alert.dst_ip or "?" }}{% endif %}
       </span>
-      {% if alert.get("is_suppressed") %}
+      {% if alert.get("suppressed") %}
         <span class="badge badge--muted" style="flex-shrink:0">suppressed</span>
       {% endif %}
     </div>

@@ -98,21 +98,26 @@
     }
     var interval = parseInt(container.getAttribute('data-live-logs-poll'), 10) || 7000;
 
+    function esc(s) {
+      return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
     function renderRows(alerts, anomalies) {
       var rows = [];
 
       // Build alert rows
       (alerts || []).forEach(function (alert) {
-        var ts = (alert.event_ts || '').slice(0, 19).replace('T', ' ');
+        var ts = esc((alert.event_ts || '').slice(0, 19).replace('T', ' '));
         var sev = alert.severity || 'unknown';
-        var suppressed = alert.is_suppressed ? ' <span class="badge badge--muted">suppressed</span>' : '';
+        var sevClass = sev === 'critical' ? 'badge--error' : sev === 'high' ? 'badge--warning' : 'badge--muted';
+        var suppressed = alert.suppressed ? ' <span class="badge badge--muted">suppressed</span>' : '';
         rows.push(
           '<div class="live-log-row" style="display:flex;align-items:flex-start;padding:8px 20px;border-bottom:1px solid var(--border);gap:12px">' +
           '<span style="color:var(--muted-foreground);flex-shrink:0;min-width:140px">' + ts + '</span>' +
-          '<span class="badge badge--warning" style="flex-shrink:0">' + sev + '</span>' +
+          '<span class="badge ' + sevClass + '" style="flex-shrink:0">' + esc(sev) + '</span>' +
           '<span class="badge badge--info" style="flex-shrink:0">alert</span>' +
           '<span style="color:var(--foreground);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
-          (alert.source_event_id || '') + suppressed +
+          esc(alert.source_event_id) + suppressed +
           '</span>' +
           '</div>'
         );
@@ -120,14 +125,14 @@
 
       // Build anomaly rows
       (anomalies || []).forEach(function (anom) {
-        var ts = (anom.event_ts || '').slice(0, 19).replace('T', ' ');
+        var ts = esc((anom.event_ts || '').slice(0, 19).replace('T', ' '));
         rows.push(
           '<div class="live-log-row" style="display:flex;align-items:flex-start;padding:8px 20px;border-bottom:1px solid var(--border);gap:12px">' +
           '<span style="color:var(--muted-foreground);flex-shrink:0;min-width:140px">' + ts + '</span>' +
           '<span class="badge badge--muted" style="flex-shrink:0">info</span>' +
           '<span class="badge badge--warning" style="flex-shrink:0">anomaly</span>' +
           '<span style="color:var(--foreground);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
-          (anom.source_event_id || '') +
+          esc(anom.source_event_id) +
           '</span>' +
           '</div>'
         );

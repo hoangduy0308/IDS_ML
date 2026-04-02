@@ -48,7 +48,7 @@
               <td style="text-align:right">
                 <form method="post" action="/suppression-rules/{{ rule.id }}/deactivate" style="display:inline">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                  <button type="submit" class="btn btn--danger btn--sm" style="font-size:11px;padding:3px 8px">
+                  <button type="submit" class="btn btn-danger" style="font-size:11px;padding:3px 8px">
                     Deactivate
                   </button>
                 </form>
@@ -134,7 +134,7 @@
           </select>
         </div>
 
-        <button type="submit" class="btn btn--primary" style="width:100%;padding:9px;font-size:13px;font-weight:600">
+        <button type="submit" class="btn btn-primary" style="width:100%;padding:9px;font-size:13px;font-weight:600">
           Add Rule
         </button>
       </form>
