@@ -6,6 +6,9 @@ from pathlib import Path
 import sys
 from typing import Sequence
 
+import uvicorn
+from fastapi import FastAPI
+
 if __package__ in (None, ""):
     REPO_ROOT = Path(__file__).resolve().parents[1]
     if str(REPO_ROOT) not in sys.path:
@@ -55,7 +58,21 @@ def _apply_cli_overrides(config: OperatorConsoleConfig, args: argparse.Namespace
     return replace(config, **updates)
 
 
-def run_server(*, config: OperatorConsoleConfig) -> None:
+def run_server(app: FastAPI | None = None, *, config: OperatorConsoleConfig) -> None:
+    # Preserve the historical wrapper signature for import-based callers while
+    # still routing reload mode through the canonical import-string factory path.
+    if app is not None and not config.reload:
+        uvicorn.run(
+            app,
+            host=config.host,
+            port=config.port,
+            log_level=config.log_level,
+            reload=False,
+            proxy_headers=True,
+            forwarded_allow_ips=config.forwarded_allow_ips,
+            root_path=config.root_path,
+        )
+        return
     canonical_server.run_server(config=config)
 
 

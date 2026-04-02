@@ -29,6 +29,7 @@ class OperatorConsolePreflightConfig:
     public_base_url: str | None
     root_path: str
     forwarded_allow_ips: str
+    repo_root: Path | None = None
     secret_key: str | None = None
     secret_key_file: Path | None = None
     telegram_bot_token: str | None = None
@@ -83,21 +84,25 @@ def _clean_optional(value: str | None) -> str | None:
     return normalized or None
 
 
-def _trusted_repo_root() -> Path:
+def _trusted_repo_root(config: OperatorConsolePreflightConfig) -> Path:
+    if config.repo_root is not None:
+        return Path(config.repo_root).resolve()
     return Path(__file__).resolve().parents[2]
 
 
 def _require_importable_module_from_trusted_root(
+    config: OperatorConsolePreflightConfig,
     python_binary: Path,
     module_name: str,
     *,
     name: str,
 ) -> str:
+    trusted_root = _trusted_repo_root(config)
     checked, _origin = _resolve_importable_module(
         python_binary,
         module_name,
         name=name,
-        trusted_root=_trusted_repo_root(),
+        trusted_root=trusted_root,
         trusted_root_label="trusted repo root",
     )
     return checked
@@ -130,6 +135,7 @@ def _load_optional_secret(*, value: str | None, file_path: Path | None, name: st
 def validate_preflight(config: OperatorConsolePreflightConfig) -> None:
     python_binary = _require_existing_file(config.python_binary, name="python_binary", executable=True)
     _require_importable_module_from_trusted_root(
+        config,
         python_binary,
         config.app_module,
         name="app_module",
@@ -166,6 +172,7 @@ def validate_preflight(config: OperatorConsolePreflightConfig) -> None:
         if config.manage_module is None:
             raise ValueError("notification-enabled deployments require manage_module")
         _require_importable_module_from_trusted_root(
+            config,
             python_binary,
             config.manage_module,
             name="manage_module",

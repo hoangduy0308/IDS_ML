@@ -20,6 +20,8 @@ from repo_installable_proof_support import (
     resolve_console_script,
     run_command,
     scripts_dir,
+    _shadow_finder_sitecustomize_body,
+    site_packages_dir,
     venv_python,
 )
 
@@ -98,39 +100,17 @@ def _write_sitecustomize(site_dir: Path) -> Path:
     path.write_text(
         "\n".join(
             [
-                "import importlib.util",
                 "import os",
-                "import sys",
-                "from pathlib import Path",
                 "if os.environ.get('IDS_TEST_BYPASS_INTERFACE') == '1':",
                 "    import ids.ops.live_sensor_preflight as live_sensor_preflight",
                 "    live_sensor_preflight._require_interface = lambda interface: interface",
-                "shadow_module = os.environ.get('IDS_TEST_SHADOW_IMPORT_MODULE')",
-                "shadow_root = os.environ.get('IDS_TEST_SHADOW_IMPORT_ROOT')",
-                "if shadow_module and shadow_root:",
-                "    class _ShadowFinder:",
-                "        def find_spec(self, fullname, path=None, target=None):",
-                "            if fullname != shadow_module:",
-                "                return None",
-                "            shadow_path = Path(shadow_root).joinpath(*fullname.split('.')).with_suffix('.py')",
-                "            if not shadow_path.is_file():",
-                "                return None",
-                "            return importlib.util.spec_from_file_location(fullname, shadow_path)",
-                "    sys.meta_path.insert(0, _ShadowFinder())",
             ]
         )
-        + "\n",
+        + "\n"
+        + _shadow_finder_sitecustomize_body(),
         encoding="utf-8",
     )
     return path
-
-
-def _site_packages_dir(python_binary: Path) -> Path:
-    completed = run_command(
-        [str(python_binary), "-c", "import sysconfig; print(sysconfig.get_path('purelib'))"],
-    )
-    assert completed.returncode == 0, completed.stderr
-    return Path(completed.stdout.strip()).resolve()
 
 
 def _write_fake_systemctl(fake_bin: Path, *, venv_python: Path) -> Path:
@@ -274,8 +254,8 @@ def test_repo_installable_bootstrap_proof_runs_installed_ids_stack_lifecycle(tmp
         secret_key_file=secret_key_file,
     )
 
-    site_packages_dir = _site_packages_dir(venv_python_path)
-    _write_sitecustomize(site_packages_dir)
+    site_packages = site_packages_dir(venv_python_path)
+    _write_sitecustomize(site_packages)
     fake_bin = tmp_path / "fake-bin"
     _write_fake_systemctl(fake_bin, venv_python=venv_python_path)
     systemctl_log = tmp_path / "fake-systemctl.log"
@@ -318,17 +298,23 @@ def test_repo_installable_bootstrap_proof_runs_installed_ids_stack_lifecycle(tmp
     bootstrap_payload = json.loads(bootstrap.stdout)
     assert bootstrap_payload["bootstrap_ready"] is True
     assert [step["step"] for step in bootstrap_payload["steps"]] == [
+        "stack_preflight",
         "prepare_host_layout",
         "verify_candidate_bundle",
         "promote_candidate_bundle",
         "migrate_operator_console",
         "bootstrap_operator_admin",
-        "stack_preflight",
         "start_operator_console_service",
         "start_live_sensor_service",
         "stack_status",
         "stack_smoke",
     ]
+    preflight_step = bootstrap_payload["steps"][0]["result"]
+    assert preflight_step["ready"] is False
+    assert preflight_step["bootstrap_gate_ready"] is True
+    assert preflight_step["components"]["bundle_activation"]["ok"] is False
+    assert preflight_step["components"]["live_sensor_preflight"]["ok"] is False
+    assert preflight_step["components"]["operator_console_preflight"]["ok"] is False
 
     preflight = run_command([*stack_base_argv, "--json", "preflight"], cwd=tmp_path, env=env)
     status = run_command([*stack_base_argv, "--json", "status"], cwd=tmp_path, env=env)
@@ -409,6 +395,108 @@ def test_repo_installable_bootstrap_proof_rejects_clean_venv_without_install(tmp
         match="app_module is not importable by python_binary: ids.console.server",
     ):
         resolve_importable_module(clean_python, "ids.console.server", name="app_module")
+
+
+def test_repo_installable_bootstrap_proof_blocks_hostile_module_before_mutation(tmp_path: Path) -> None:
+    venv_python_path = venv_python(tmp_path)
+    install = run_command(
+        [str(venv_python_path), "-m", "pip", "install", "-e", str(REPO_ROOT)],
+        cwd=tmp_path,
+    )
+    assert install.returncode == 0, install.stderr
+
+    scripts_dir_path = scripts_dir(venv_python_path)
+    ids_stack = resolve_console_script(scripts_dir_path, "ids-stack")
+
+    runtime_dir = tmp_path / "runtime"
+    logs_dir = tmp_path / "logs"
+    bundles_dir = tmp_path / "bundles"
+    runtime_dir.mkdir(parents=True, exist_ok=True)
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    bundle_root = _write_bundle_contract(bundles_dir / "candidate")
+
+    secret_key_file = tmp_path / "secrets" / "console.secret"
+    secret_key_file.parent.mkdir(parents=True, exist_ok=True)
+    secret_key_file.write_text("production-secret\n", encoding="utf-8")
+    admin_password_file = tmp_path / "secrets" / "admin.password"
+    admin_password_file.write_text("correct-password\n", encoding="utf-8")
+
+    activation_path = runtime_dir / "active_bundle.json"
+    spool_dir = runtime_dir / "sensor"
+    alerts_output_path = logs_dir / "ids_live_alerts.jsonl"
+    quarantine_output_path = logs_dir / "ids_live_quarantine.jsonl"
+    summary_output_path = logs_dir / "ids_live_sensor_summary.jsonl"
+    operator_env_file = _write_operator_env(
+        tmp_path / "etc" / "ids-operator-console.env",
+        database_path=runtime_dir / "operator_console.db",
+        alerts_output_path=alerts_output_path,
+        quarantine_output_path=quarantine_output_path,
+        summary_output_path=summary_output_path,
+        secret_key_file=secret_key_file,
+    )
+
+    site_packages = site_packages_dir(venv_python_path)
+    _write_sitecustomize(site_packages)
+    fake_bin = tmp_path / "fake-bin"
+    _write_fake_systemctl(fake_bin, venv_python=venv_python_path)
+    systemctl_log = tmp_path / "fake-systemctl.log"
+
+    env = dict(os.environ)
+    env["PATH"] = os.pathsep.join([str(fake_bin), env.get("PATH", "")])
+    env["IDS_TEST_BYPASS_INTERFACE"] = "1"
+    env["IDS_TEST_FAKE_SYSTEMCTL_ACTIVATION_PATH"] = str(activation_path)
+    env["IDS_TEST_FAKE_SYSTEMCTL_SUMMARY_OUTPUT"] = str(summary_output_path)
+    env["IDS_TEST_FAKE_SYSTEMCTL_LOG"] = str(systemctl_log)
+
+    shadow_root = tmp_path / "shadow"
+    shadow_path = shadow_root.joinpath("ids", "ops", "model_bundle_manage.py")
+    shadow_path.parent.mkdir(parents=True, exist_ok=True)
+    shadow_path.write_text("raise RuntimeError('shadowed import crash')\n", encoding="utf-8")
+
+    shadow_env = dict(env)
+    shadow_env["IDS_TEST_SHADOW_IMPORT_MODULE"] = "ids.ops.model_bundle_manage"
+    shadow_env["IDS_TEST_SHADOW_IMPORT_ROOT"] = str(shadow_root)
+
+    stack_base_argv = _stack_base_argv(
+        ids_stack=ids_stack,
+        repo_root=REPO_ROOT,
+        venv_python=venv_python_path,
+        operator_env_file=operator_env_file,
+        activation_path=activation_path,
+        spool_dir=spool_dir,
+        alerts_output_path=alerts_output_path,
+        quarantine_output_path=quarantine_output_path,
+        summary_output_path=summary_output_path,
+    )
+
+    blocked_bootstrap = run_command(
+        [
+            *stack_base_argv,
+            "--json",
+            "bootstrap",
+            "--candidate-bundle-root",
+            str(bundle_root),
+            "--admin-username",
+            "admin",
+            "--admin-password-file",
+            str(admin_password_file),
+        ],
+        cwd=tmp_path,
+        env=shadow_env,
+    )
+
+    assert blocked_bootstrap.returncode == 2, blocked_bootstrap.stderr
+    blocked_payload = json.loads(blocked_bootstrap.stdout)
+    assert blocked_payload["bootstrap_ready"] is False
+    assert blocked_payload["status"] == "degraded"
+    assert [step["step"] for step in blocked_payload["steps"]] == ["stack_preflight"]
+    assert blocked_payload["diagnosis"]["preflight"]["bootstrap_gate_ready"] is False
+    assert blocked_payload["diagnosis"]["preflight"]["host_layout_checks"]["model_manage_module"]["state"] == (
+        "invalid"
+    )
+    assert not activation_path.exists()
+    assert not (runtime_dir / "operator_console.db").exists()
+    assert not systemctl_log.exists()
 
 
 def test_repo_installable_bootstrap_proof_canonical_command_surface() -> None:

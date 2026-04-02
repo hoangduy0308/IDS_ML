@@ -669,6 +669,7 @@ def test_run_stack_bootstrap_bootstrap_or_preflight_executes_canonical_order(
     assert executed == [
         [
             str(config.python_binary.resolve()),
+            "-I",
             "-m",
             config.model_manage_module,
             "--activation-path",
@@ -680,6 +681,7 @@ def test_run_stack_bootstrap_bootstrap_or_preflight_executes_canonical_order(
         ],
         [
             str(config.python_binary.resolve()),
+            "-I",
             "-m",
             config.model_manage_module,
             "--activation-path",
@@ -691,6 +693,7 @@ def test_run_stack_bootstrap_bootstrap_or_preflight_executes_canonical_order(
         ],
         [
             str(config.python_binary.resolve()),
+            "-I",
             "-m",
             config.operator_manage_module,
             "--database-path",
@@ -701,6 +704,7 @@ def test_run_stack_bootstrap_bootstrap_or_preflight_executes_canonical_order(
         ],
         [
             str(config.python_binary.resolve()),
+            "-I",
             "-m",
             config.operator_manage_module,
             "--database-path",
@@ -824,6 +828,7 @@ def test_run_stack_bootstrap_bootstrap_or_preflight_reports_degraded_post_start_
     assert executed == [
         [
             str(config.python_binary.resolve()),
+            "-I",
             "-m",
             config.model_manage_module,
             "--activation-path",
@@ -835,6 +840,7 @@ def test_run_stack_bootstrap_bootstrap_or_preflight_reports_degraded_post_start_
         ],
         [
             str(config.python_binary.resolve()),
+            "-I",
             "-m",
             config.model_manage_module,
             "--activation-path",
@@ -846,6 +852,7 @@ def test_run_stack_bootstrap_bootstrap_or_preflight_reports_degraded_post_start_
         ],
         [
             str(config.python_binary.resolve()),
+            "-I",
             "-m",
             config.operator_manage_module,
             "--database-path",
@@ -856,6 +863,7 @@ def test_run_stack_bootstrap_bootstrap_or_preflight_reports_degraded_post_start_
         ],
         [
             str(config.python_binary.resolve()),
+            "-I",
             "-m",
             config.operator_manage_module,
             "--database-path",
@@ -872,6 +880,101 @@ def test_run_stack_bootstrap_bootstrap_or_preflight_reports_degraded_post_start_
     ]
     assert payload["diagnosis"]["status"]["command"] == "status"
     assert payload["diagnosis"]["smoke"]["command"] == "smoke"
+
+
+def test_run_stack_bootstrap_executes_module_commands_under_validated_isolated_contract(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _build_config(tmp_path)
+    validated_operator_config = stack.load_stack_operator_config(config)
+    systemctl_path = (tmp_path / "bin" / "systemctl").resolve()
+    systemctl_path.parent.mkdir(parents=True, exist_ok=True)
+    systemctl_path.write_text("", encoding="utf-8")
+
+    monkeypatch.setenv("PYTHONPATH", str((tmp_path / "hostile-pythonpath").resolve()))
+    monkeypatch.setenv("PYTHONHOME", str((tmp_path / "hostile-pythonhome").resolve()))
+    monkeypatch.setattr(
+        stack,
+        "_validate_stack_preflight_with_operator_config",
+        lambda *_args, **_kwargs: (
+            {
+                "ready": True,
+                "bootstrap_gate_ready": True,
+                "command": "preflight",
+                "status": "ok",
+            },
+            validated_operator_config,
+        ),
+    )
+    monkeypatch.setattr(
+        stack,
+        "build_stack_status_payload",
+        lambda *_args, **_kwargs: {"ready": True, "command": "status", "components": {}},
+    )
+    monkeypatch.setattr(
+        stack,
+        "build_stack_smoke_payload",
+        lambda *_args, **_kwargs: {"ready": True, "command": "smoke", "components": {}},
+    )
+    monkeypatch.setattr(
+        stack.shutil,
+        "which",
+        lambda executable: str(systemctl_path) if executable == "systemctl" else None,
+    )
+
+    subprocess_calls: list[dict[str, object]] = []
+
+    def fake_subprocess_run(
+        argv: list[str],
+        *,
+        capture_output: bool,
+        check: bool,
+        text: bool,
+        cwd: Path | None = None,
+        env: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        command = [str(part) for part in argv]
+        subprocess_calls.append(
+            {
+                "argv": command,
+                "cwd": cwd,
+                "env": env,
+            }
+        )
+        assert capture_output is True
+        assert check is False
+        assert text is True
+        if len(command) >= 4 and command[1:3] == ["-I", "-m"]:
+            assert cwd == config.python_binary.resolve().parent
+            assert env is not None
+            assert "PYTHONPATH" not in env
+            assert "PYTHONHOME" not in env
+            if "verify" in command:
+                return subprocess.CompletedProcess(command, 0, '{"action":"verify","status":"ok"}', "")
+            if "promote" in command:
+                return subprocess.CompletedProcess(command, 0, '{"action":"promote","status":"ok"}', "")
+            if "migrate" in command:
+                return subprocess.CompletedProcess(command, 0, '{"action":"migrate","status":"ok"}', "")
+            if "bootstrap-admin" in command:
+                return subprocess.CompletedProcess(
+                    command,
+                    0,
+                    '{"action":"bootstrap-admin","status":"ok"}',
+                    "",
+                )
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(stack.subprocess, "run", fake_subprocess_run)
+
+    payload = stack.run_stack_bootstrap(config)
+
+    assert payload["bootstrap_ready"] is True
+    module_calls = [call for call in subprocess_calls if call["argv"][1:3] == ["-I", "-m"]]
+    assert len(module_calls) == 4
+    assert all(call["cwd"] == config.python_binary.resolve().parent for call in module_calls)
+    assert all("PYTHONPATH" not in (call["env"] or {}) for call in module_calls)
+    assert all("PYTHONHOME" not in (call["env"] or {}) for call in module_calls)
 
 
 def test_manage_main_bootstrap_or_preflight_prints_json_payload(
@@ -1242,6 +1345,90 @@ def test_run_command_bootstrap_or_preflight_redacts_inline_password_on_failure()
     message = str(exc_info.value)
     assert "super-secret" not in message
     assert "***REDACTED***" in message
+
+
+def test_run_command_resolves_path_based_executable_before_invocation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    resolved_executable = (tmp_path / "bin" / "tool").resolve()
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        stack.shutil,
+        "which",
+        lambda executable: str(resolved_executable) if executable == "tool" else None,
+    )
+
+    def fake_subprocess_run(
+        argv: list[str],
+        *,
+        capture_output: bool,
+        check: bool,
+        text: bool,
+        cwd: Path | None = None,
+        env: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        captured["argv"] = [str(part) for part in argv]
+        captured["cwd"] = cwd
+        captured["env"] = env
+        assert capture_output is True
+        assert check is False
+        assert text is True
+        return subprocess.CompletedProcess(argv, 0, "ok\n", "")
+
+    monkeypatch.setattr(stack.subprocess, "run", fake_subprocess_run)
+
+    stdout = stack.run_command(["tool", "--flag"])
+
+    assert stdout == "ok"
+    assert captured["argv"] == [str(resolved_executable), "--flag"]
+    assert captured["cwd"] is None
+    assert captured["env"] is None
+
+
+def test_run_command_path_resolution_failure_keeps_redacted_diagnostics(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    resolved_executable = (tmp_path / "bin" / "tool").resolve()
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        stack.shutil,
+        "which",
+        lambda executable: str(resolved_executable) if executable == "tool" else None,
+    )
+
+    def fake_subprocess_run(
+        argv: list[str],
+        *,
+        capture_output: bool,
+        check: bool,
+        text: bool,
+        cwd: Path | None = None,
+        env: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        captured["argv"] = [str(part) for part in argv]
+        captured["cwd"] = cwd
+        captured["env"] = env
+        assert capture_output is True
+        assert check is False
+        assert text is True
+        return subprocess.CompletedProcess(argv, 7, "", "lookup failed")
+
+    monkeypatch.setattr(stack.subprocess, "run", fake_subprocess_run)
+
+    with pytest.raises(RuntimeError) as exc_info:
+        stack.run_command(["tool", "--password", "secret-value"])
+
+    assert captured["argv"] == [str(resolved_executable), "--password", "secret-value"]
+    assert captured["cwd"] is None
+    assert captured["env"] is None
+    message = str(exc_info.value)
+    assert "tool --password ***REDACTED***" in message
+    assert "secret-value" not in message
+    assert "lookup failed" in message
 
 
 def test_same_host_path_helpers_reject_relative_inputs(tmp_path: Path) -> None:

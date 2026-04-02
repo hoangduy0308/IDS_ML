@@ -123,6 +123,24 @@ This refactor preserved `scripts/*` entrypoints during a large internal move, bu
 
 **Full entry:** history/learnings/20260331-repo-structure-wrapper-contracts.md
 
+## [20260403] Bind Privileged Bootstrap Execution To The Validated Interpreter Contract
+**Category:** failure
+**Feature:** ids-repo-installable-full-stack-packaging
+**Tags:** [bootstrap, trust-boundary, security]
+
+This packaging follow-up only became safe once `ids/ops/same_host_stack.py` stopped validating trusted module origins under one import contract and executing them later under another. Preflight approval is meaningless if privileged bootstrap can still resolve code through a different interpreter, `cwd`, or inherited `PYTHON*` state. Future module-based bootstrap paths must run under the exact validated interpreter/env contract and ship contamination tests that prove approval and execution stay bound together.
+
+**Full entry:** history/learnings/20260403-packaging-contract-proof.md
+
+## [20260403] Prove Editable Installs In A Scrubbed Environment That Cannot Fall Back To Warmed `__pycache__`
+**Category:** failure
+**Feature:** ids-repo-installable-full-stack-packaging
+**Tags:** [packaging, editable-install, verification]
+
+This packaging lane looked healthy until a scrubbed install proof exposed that `ids.console.web` source presence was being masked by warmed local `.pyc` state. In-tree or already-warmed verification is not enough to prove an install contract because it can hide missing source files, templates, or package data. Future packaging work should always run a fresh editable-install proof that removes `__pycache__` dependence and asserts the real shipped module and asset payload exists.
+
+**Full entry:** history/learnings/20260403-packaging-contract-proof.md
+
 ## [20260331] Keep Canonical Modules Independent From Compatibility Layers
 **Category:** decision
 **Feature:** repo-structure-rationalization
@@ -149,3 +167,21 @@ This refactor only became review-clean after manifest, activation-record, and ba
 The same-host cleanup showed that `Path.resolve()` is not a security boundary. Host-level helpers and restore inventory logic were only safe after they rejected non-absolute inputs explicitly and proved that manifest-derived paths still lived under the selected backup root after normalization. Future ops/preflight/restore code should always separate path normalization from path authorization and enforce root containment before any filesystem action.
 
 **Full entry:** history/learnings/20260331-repo-structure-wrapper-contracts.md
+
+## [20260403] Always Escape User Data Before innerHTML Injection in Polling Renderers
+**Category:** failure
+**Feature:** ids-console-ui-pencil-rebuild
+**Tags:** [security, xss, javascript, innerHTML, polling]
+
+The Live Logs polling renderer in `console.js` injected `source_event_id` and `event_ts` raw into `innerHTML` on every poll cycle. Any DB-origin string containing `<`, `>`, or `&` becomes executable HTML. Jinja2's auto-escaping via `{{ }}` does not transfer to JS string concatenation — the two contexts have different escape contracts. Future JS polling/SSE renderers must add a minimal `esc()` helper (5 lines: replace `&`, `<`, `>`, `"`) and apply it to every non-constant field before `innerHTML` assignment. Add this to the reviewer checklist for any function that does `container.innerHTML = ...` with API data.
+
+**Full entry:** history/learnings/20260403-console-ui-tdd-rebuild.md
+
+## [20260403] Foundation-First Phase Structure Eliminates Base-Template Drift in Multi-Screen UI Rebuilds
+**Category:** pattern
+**Feature:** ids-console-ui-pencil-rebuild
+**Tags:** [ui, jinja2, tdd, bead-decomposition, templates, css]
+
+A 9-screen FastAPI/Jinja2 console was rebuilt cleanly in 3 phases by delivering the shared foundation first: CSS token layer + base template + auth + all routes as 501 stubs, all with passing tests. Subsequent phases implemented screens in order against a confirmed stable base. Workers never had to guess at template inheritance contracts or CSS variables mid-bead. Future full-page UI rewrites with shared base templates should make Phase 1 = foundation-only (no screen content), with explicit failing → passing tests for the shell before any screen work begins.
+
+**Full entry:** history/learnings/20260403-console-ui-tdd-rebuild.md

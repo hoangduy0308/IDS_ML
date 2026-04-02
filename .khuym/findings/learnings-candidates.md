@@ -1,44 +1,77 @@
-## Candidate: keep-canonical-contracts-separate-from-lifecycle-and-compatibility-layers
-Category: pattern
-Tags: architecture, model-bundle, activation, ops, compatibility, canonical-imports
-Applies to review beads: `ids_ml_new-tv8z`
-Summary: Canonical package code should depend on canonical contracts only, while activation, promotion, rollback, status management, and compatibility wrappers stay in the operational or wrapper layer. When contract modules absorb lifecycle behavior or canonical runtime code imports through `scripts.*`, the repo recreates the same drift seam the restructure was meant to remove.
-Evidence: review bead `ids_ml_new-tv8z` consolidates four overlapping findings around `ids/core/model_bundle.py`, `ids/runtime/inference.py`, and `scripts/ids_model_bundle.py`: split lifecycle operations out of `ids.core`, keep runtime imports off the `scripts` layer, and restore the D8/D9 boundary.
-Related patterns: `history/learnings/20260329-model-bundle-promotion-hardening.md`, `history/learnings/20260329-operator-console-production-hardening.md`, `history/learnings/20260330-extractor-contract-hardening.md`
-Recommended title: YYYYMMDD-keep-canonical-contracts-separate-from-lifecycle-and-compatibility-layers.md
+﻿# Learning Candidates
 
-## Candidate: treat-compatibility-wrappers-and-entrypoints-as-executable-contracts
-Category: failure
-Tags: wrappers, smoke-tests, entrypoints, stack, runtime, ml-pipeline, compatibility
-Applies to review beads: `ids_ml_new-br4g.24`, `ids_ml_new-br4g.25`, `ids_ml_new-0hbt`, `ids_ml_new-bs63`
-Summary: Phase-1 compatibility wrappers are not documentation-only seams; they are supported execution contracts and need explicit smoke coverage plus intentional wrapper surfaces. If the suite tests only canonical modules and leaves `scripts.*` wrappers implicit or wildcard-exported, deployment and automation can drift away from the code paths CI actually proves.
-Evidence: review beads `ids_ml_new-br4g.24` and `ids_ml_new-br4g.25` require smoke coverage for runtime and ops wrappers, `ids_ml_new-0hbt` extends the same gap into migrated `ml_pipeline` entrypoints, and `ids_ml_new-bs63` shows that wildcard re-exports keep the compatibility promise implicit instead of explicit.
-Related patterns: `history/learnings/20260328-operator-console-runtime-wiring.md`, `history/learnings/20260329-same-host-stack-runtime-hardening.md`, `history/learnings/20260330-extractor-contract-hardening.md`
-Recommended title: YYYYMMDD-treat-compatibility-wrappers-and-entrypoints-as-executable-contracts.md
+## 1. Bind Preflight Approval To The Exact Privileged Execution Origin
+- Source findings: A
+- Candidate category: failure
+- Candidate severity: critical
+- Domain/tags: [ops, preflight, security, bootstrap, trust-boundary]
+- Related history:
+  - `history/learnings/20260328-live-sensor-runtime-contracts.md` (`Systemd Packaging Is Safer With Exact-Path Preflight And One Config Source`)
+  - `history/learnings/20260331-repo-structure-wrapper-contracts.md` (`Resolve Paths Then Prove Root Containment For Host-Level File Operations`)
+- Proposed learning:
+  Preflight is not a security boundary if privileged follow-on execution re-resolves the target through ambient cwd, `PYTHON*` environment, or a different interpreter/module search path. When a same-host stack preflight approves a module/interpreter pair for privileged actions, the later execution path must invoke that exact approved origin under the same sanitized execution contract, or fail closed.
+- Applicable when:
+  A bootstrap, migration, promotion, or admin command validates Python modules before invoking them with elevated operational impact.
 
-## Candidate: harden-post-migration-test-layouts-against-hidden-coverage-drift
-Category: failure
-Tags: pytest, test-layout, bootstrap, duplicate-tests, migration, coverage
-Applies to review beads: `ids_ml_new-9ku3`, `ids_ml_new-5fty`
-Summary: After a mirrored test-tree migration, shared bootstrap and test identity need to be treated as first-class contracts. Duplicate test names and per-file `sys.path` surgery can make the suite look comprehensive while silently dropping cases or masking import-layout breakage.
-Evidence: review bead `ids_ml_new-9ku3` captures the shadowed duplicate definitions in `tests/runtime/test_ids_live_sensor_health.py`, while `ids_ml_new-5fty` captures the remaining per-file bootstrap hacks despite the new shared `tests/conftest.py`.
-Related patterns: no direct prior match in `history/learnings/`; this is a new candidate surfaced by the current review rather than a confirmed repeat pattern
-Recommended title: YYYYMMDD-harden-post-migration-test-layouts-against-hidden-coverage-drift.md
+## 2. Treat Constructor Fields And Exported Wrapper Signatures As Compatibility Surfaces
+- Source findings: B, C
+- Candidate category: failure
+- Candidate severity: standard
+- Domain/tags: [compatibility, packaging, api-contracts, wrappers, migration]
+- Related history:
+  - `history/learnings/20260331-repo-structure-wrapper-contracts.md` (`Treat Compatibility Wrappers As Executable Contracts`)
+  - `history/learnings/20260331-repo-structure-wrapper-contracts.md` (`Keep Canonical Modules Independent From Compatibility Layers`)
+  - `history/learnings/20260328-operator-console-runtime-wiring.md` (`Keep The Service Entrypoint Wired To The Real App Factory`)
+- Proposed learning:
+  During canonical-module migrations, compatibility scope is wider than CLI names. Renaming config payload fields from `*_entrypoint` to `*_module` or narrowing exported wrapper call signatures can break external automation and import-based callers even when the new canonical path is correct. Migrations should either ship explicit alias/adapter handling for the old contract or prove no supported callers exist.
+- Applicable when:
+  A packaging or architecture cleanup keeps old wrappers alive while changing constructor payloads, import surfaces, or callable signatures behind them.
 
-## Candidate: normalize-hostile-metadata-at-contract-boundaries
-Category: failure
-Tags: error-handling, metadata, model-bundle, restore, fail-closed
-Applies to review findings: 1, 2
-Summary: Boundary parsers should translate malformed or missing manifest, activation, or backup metadata into domain errors instead of letting raw `KeyError`, `ValueError`, or JSON parse exceptions escape. The same repo keeps rediscovering that external metadata is untrusted and should fail closed at the edge.
-Evidence: review findings 1 and 2 show `ids/core/model_bundle.py`, `ids/core/model_bundle_activation.py`, and `ids/console/ops.py` still surface raw parse and lookup errors before the boundary can normalize them.
-Related patterns: `history/learnings/20260329-model-bundle-promotion-hardening.md`, `history/learnings/20260329-same-host-stack-runtime-hardening.md`, `history/learnings/20260329-operator-console-production-hardening.md`
-Recommended title: YYYYMMDD-normalize-hostile-metadata-at-contract-boundaries.md
+## 6. Always Escape User Data Before innerHTML Injection In Polling Renderers
 
-## Candidate: enforce-path-containment-after-normalization-for-host-level-file-operations
-Category: failure
-Tags: filesystem, path-resolution, containment, preflight, restore, security
-Applies to review findings: 3, 6
-Summary: Host-level file guards should either reject relative inputs before normalization or resolve and then verify containment against the intended root. If the guard trusts a resolved path without a strict root check, a caller can slip past the intended boundary or point restore inventory outside the selected backup root.
-Evidence: review findings 3 and 6 point at `ids/ops/same_host_stack.py` path guards and restore inventory loading; both are containment problems caused by trusting resolved paths without a strict root check.
-Related patterns: `history/learnings/20260328-live-sensor-runtime-contracts.md`, `history/learnings/20260329-same-host-stack-runtime-hardening.md`, `history/learnings/20260328-adapter-rollback-contract.md`
-Recommended title: YYYYMMDD-enforce-path-containment-after-normalization-for-host-level-file-operations.md
+- Source findings: ids-console-ui-pencil-rebuild review (tb05)
+- Candidate category: failure
+- Candidate severity: critical
+- Domain/tags: [security, xss, javascript, innerHTML, polling]
+- Related history: none
+- Proposed learning:
+  Client-side polling renderers that rebuild DOM via `innerHTML` must escape all user-controlled fields before injection. Fields like `source_event_id`, timestamps, or any DB-origin string can contain `<`, `>`, `&`, `"`. A simple `esc()` helper (5 lines) blocks XSS across the entire renderer. Add it to the reviewer checklist for any JS code that does `container.innerHTML = ...` with data from a fetch response.
+- Applicable when:
+  Any vanilla JS function renders API response data into the DOM via innerHTML (not textContent or a safe DOM API).
+
+## 5. Lock Data-Field Key Names In Triage Helpers And Cross-Reference In All Templates
+
+- Source findings: ids-console-ui-pencil-rebuild review (mpc0)
+- Candidate category: failure
+- Candidate severity: standard
+- Domain/tags: [jinja2, templates, data-contracts, consistency]
+- Related history: none
+- Proposed learning:
+  When a DB-layer helper (`list_alerts_for_triage`) sets a specific key (`alert["suppressed"]`), any template that references a variant of that key (`alert.get("is_suppressed")`) silently renders the wrong result. The canonical key name should be anchored in the triage helper's docstring or a data-contract note in the approach/CONTEXT document, and new templates must be cross-checked against the canonical name during review.
+- Applicable when:
+  Multiple Jinja2 templates consume the same triage/query helper output and any of them are written in a different session or by a different worker.
+
+## 4. Use Single-Hyphen CSS Modifier Convention Consistently Across Component Classes
+
+- Source findings: ids-console-ui-pencil-rebuild review (rs8j)
+- Candidate category: failure
+- Candidate severity: standard
+- Domain/tags: [css, naming-convention, templates, ui]
+- Related history: none
+- Proposed learning:
+  When a CSS file defines single-hyphen modifier classes (`btn-primary`, `btn-danger`) and templates in the same project use the same pattern, any new template written with double-hyphen BEM (`btn--primary`, `btn--danger`) will produce silent styling failures — the element renders but unstyled. Establish the modifier convention in the CSS architecture decision (D4 equivalent) and check all new templates against it during review.
+- Applicable when:
+  Adding Jinja2/HTML templates to a project with a hand-rolled CSS token layer. Especially when multiple templates are added in one swarm.
+
+## 3. Pin Command-Resolution Branches With Direct Success And Failure Tests
+- Source findings: D
+- Candidate category: failure
+- Candidate severity: standard
+- Domain/tags: [testing, cli, path-resolution, runtime, contracts]
+- Related history:
+  - `history/learnings/20260330-extractor-contract-hardening.md` (`Pin Command Tokenization And Negative Paths With Executable Round-Trip Tests`)
+  - `history/learnings/20260329-same-host-stack-runtime-hardening.md` (`Failure: wired contract drift at the stack boundary`)
+- Proposed learning:
+  New command-resolution logic is an executable contract, not an implementation detail. If a stack helper adds PATH-based lookup or alternate resolution branches, tests must exercise the real success and failure behavior directly rather than relying on broader bootstrap coverage to reach it incidentally.
+- Applicable when:
+  A stack/runtime helper resolves binaries, modules, or command prefixes before spawning subprocesses or supervising host services.

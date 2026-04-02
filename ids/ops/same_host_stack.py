@@ -135,10 +135,31 @@ def _require_existing_directory(path: Path, *, name: str) -> Path:
 def _build_module_command(python_binary: Path, module_name: str, *args: str) -> list[str]:
     return [
         str(Path(python_binary).resolve()),
+        "-I",
         "-m",
         _clean_module_name(module_name, name="module_name", allow_blank=False),
         *args,
     ]
+
+
+def _build_isolated_python_env() -> dict[str, str]:
+    return {key: value for key, value in os.environ.items() if not key.startswith("PYTHON")}
+
+
+def _build_command_runtime_kwargs(argv: Sequence[str]) -> dict[str, Any]:
+    resolved_argv = [str(part) for part in argv]
+    if (
+        len(resolved_argv) >= 4
+        and Path(resolved_argv[0]).is_absolute()
+        and resolved_argv[1] == "-I"
+        and resolved_argv[2] == "-m"
+    ):
+        python_binary = Path(resolved_argv[0]).resolve()
+        return {
+            "cwd": python_binary.parent,
+            "env": _build_isolated_python_env(),
+        }
+    return {}
 
 
 def _load_json_object(path: Path, *, label: str) -> dict[str, Any]:
@@ -1330,11 +1351,13 @@ def run_command(argv: Sequence[str]) -> str:
         resolved_executable = shutil.which(executable)
         if resolved_executable is not None:
             resolved_argv[0] = resolved_executable
+    runtime_kwargs = _build_command_runtime_kwargs(resolved_argv)
     completed = subprocess.run(
         resolved_argv,
         capture_output=True,
         check=False,
         text=True,
+        **runtime_kwargs,
     )
     if completed.returncode != 0:
         raise RuntimeError(

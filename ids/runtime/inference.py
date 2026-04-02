@@ -77,6 +77,19 @@ class IDSModelConfig:
         )
 
 
+def _build_raw_compat_config(
+    *,
+    model_path: Path | None,
+    feature_columns_path: Path | None,
+    threshold: float | None,
+) -> IDSModelConfig:
+    return IDSModelConfig(
+        model_path=(model_path or DEFAULT_MODEL_PATH).resolve(),
+        feature_columns_path=(feature_columns_path or DEFAULT_FEATURE_COLUMNS_PATH).resolve(),
+        threshold=float(DEFAULT_THRESHOLD if threshold is None else threshold),
+    )
+
+
 def load_input_frame(path: Path) -> pd.DataFrame:
     suffix = path.suffix.lower()
     if suffix == ".csv":
@@ -170,15 +183,14 @@ def build_model_config(
         return IDSModelConfig.from_bundle(bundle_root)
     if config_path is not None:
         return IDSModelConfig.from_config_path(config_path)
-    if all(value is None for value in (model_path, feature_columns_path, threshold)):
-        default_activation_path = DEFAULT_ACTIVATION_PATH.resolve()
-        if default_activation_path.is_file():
-            return IDSModelConfig.from_activation_path(default_activation_path)
-    return IDSModelConfig(
-        model_path=(model_path or DEFAULT_MODEL_PATH).resolve(),
-        feature_columns_path=(feature_columns_path or DEFAULT_FEATURE_COLUMNS_PATH).resolve(),
-        threshold=float(DEFAULT_THRESHOLD if threshold is None else threshold),
-    )
+    raw_override_requested = any(value is not None for value in (model_path, feature_columns_path, threshold))
+    if raw_override_requested:
+        return _build_raw_compat_config(
+            model_path=model_path,
+            feature_columns_path=feature_columns_path,
+            threshold=threshold,
+        )
+    return IDSModelConfig.from_activation_path(DEFAULT_ACTIVATION_PATH.resolve())
 
 
 def build_inferencer(

@@ -10,19 +10,19 @@ Canonical command surfaces:
 - `ids-inference` (`ids.runtime.inference`)
 - `ids-model-bundle-manage` (`ids.ops.model_bundle_manage`)
 
-Compatibility wrappers under `scripts/*` remain supported, but operator-facing runbooks use the canonical installed commands above.
+Compatibility wrappers dưới `scripts/*` vẫn được giữ để tương thích, nhưng runbook vận hành dùng các installed commands canonical ở trên.
 
 ## Bundle nằm ở đâu
 
-Bundle final hiện tại được đóng tại:
+Bundle production được ship trong checkout dưới:
 
-- `F:\Work\IDS_ML_New\artifacts\final_model\catboost_full_data_v1`
+- `/opt/ids_ml_new/artifacts/final_model/catboost_full_data_v1`
 
-Runtime production không đọc bundle bằng cách trỏ tay vào `model.cbm` hay `feature_columns.json`. Thay vào đó, live sensor đọc một activation record host-local, ví dụ:
+Runtime production không đọc bundle bằng cách trỏ tay vào `model.cbm` hay `feature_columns.json`. Thay vào đó, runtime resolve bundle đang active qua activation record host-local:
 
 - `/var/lib/ids-live-sensor/active_bundle.json`
 
-Activation record này trỏ tới đúng một bundle đang active và lưu thêm metadata rollback về bundle known-good trước đó.
+Activation record này trỏ tới đúng một bundle đang active và giữ thêm metadata rollback về bundle known-good trước đó.
 
 ## Bundle gồm gì
 
@@ -63,7 +63,7 @@ Compatibility block hiện tại khóa:
 - `threshold_source = "bundle"`
 - không cho phép external override cho `model_path`, `feature_columns_path`, hoặc `threshold`
 
-Điều này có nghĩa là production runtime không được trộn bundle A với schema hoặc threshold ngoài bundle.
+Điều này có nghĩa là production runtime không được trộn bundle A với schema hoặc threshold ngoài bundle. Nếu không có activation record hợp lệ, canonical runtime entrypoints phải fail-closed thay vì ngầm rơi về raw artifacts.
 
 ### `metrics.json`
 
@@ -79,43 +79,43 @@ Tài liệu mô tả model cuối dưới dạng ngắn gọn, dễ tra cứu.
 
 ## Cách dựng lại bundle
 
-```powershell
+```bash
 ids-package-final-model
 ```
 
-Script này sẽ emit `model_bundle.json` theo contract versioned hiện tại.
+Lệnh này emit `model_bundle.json` theo contract versioned hiện tại.
 
 ## Cách verify và dùng bundle
 
 ### 1. Verify candidate bundle
 
-```powershell
-ids-model-bundle-manage `
-  --activation-path F:\Work\IDS_ML_New\artifacts\runtime\active_bundle.json `
-  --json verify `
-  --bundle-root F:\Work\IDS_ML_New\artifacts\final_model\catboost_full_data_v1
+```bash
+ids-model-bundle-manage \
+  --activation-path /var/lib/ids-live-sensor/active_bundle.json \
+  --json verify \
+  --bundle-root /opt/ids_ml_new/artifacts/final_model/catboost_full_data_v1
 ```
 
 Lệnh này chỉ kiểm tra compatibility contract của candidate bundle. Nó không mutate trạng thái active.
 
 ### 2. Dry-run inference trên cùng host
 
-```powershell
-ids-inference `
-  --bundle-root F:\Work\IDS_ML_New\artifacts\final_model\catboost_full_data_v1 `
-  --input-path F:\Work\IDS_ML_New\artifacts\cic_iot_diad_2024_binary\clean\test.parquet `
-  --output-path F:\Work\IDS_ML_New\artifacts\demo\test_predictions_from_bundle.parquet `
+```bash
+ids-inference \
+  --bundle-root /opt/ids_ml_new/artifacts/final_model/catboost_full_data_v1 \
+  --input-path /opt/ids_ml_new/artifacts/cic_iot_diad_2024_binary/clean/test.parquet \
+  --output-path /opt/ids_ml_new/artifacts/demo/test_predictions_from_bundle.parquet \
   --limit 1000
 ```
 
-Đây là same-host dry-run path hiện tại để kiểm tra bundle mới có thể load, align schema, và score theo đúng inference contract trước khi promote.
+Đây là same-host dry-run path để kiểm tra bundle mới có thể load, align schema, và score theo đúng inference contract trước khi promote.
 
 ### 3. Promote bundle đã verify
 
-```powershell
-ids-model-bundle-manage `
-  --activation-path /var/lib/ids-live-sensor/active_bundle.json `
-  --json promote `
+```bash
+ids-model-bundle-manage \
+  --activation-path /var/lib/ids-live-sensor/active_bundle.json \
+  --json promote \
   --bundle-root /opt/ids_ml_new/artifacts/final_model/catboost_full_data_v1
 ```
 
@@ -123,20 +123,20 @@ Promotion sẽ ghi lại bundle active mới bằng atomic replace. Nếu đã c
 
 ### 4. Rollback về known-good trước đó
 
-```powershell
-ids-model-bundle-manage `
-  --activation-path /var/lib/ids-live-sensor/active_bundle.json `
+```bash
+ids-model-bundle-manage \
+  --activation-path /var/lib/ids-live-sensor/active_bundle.json \
   --json rollback
 ```
 
-Rollback cũng dùng cùng activation contract và cùng cơ chế atomic replace. Không có copy-based fallback.
+Rollback dùng cùng activation contract và cùng cơ chế atomic replace. Không có copy-based fallback.
 
 ## Vai trò của bundle trong realtime pipeline
 
 Bundle là nguồn cấu hình chuẩn cho lớp realtime pre-model pipeline:
 
 - `ids-realtime-pipeline` (`ids.runtime.realtime_pipeline`)
-- [ids_realtime_pipeline_architecture.md](F:/Work/IDS_ML_New/docs/current/runtime/ids_realtime_pipeline_architecture.md)
+- [ids_realtime_pipeline_architecture.md](./ids_realtime_pipeline_architecture.md)
 
 Trong pipeline hiện tại:
 

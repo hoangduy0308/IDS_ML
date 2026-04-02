@@ -77,6 +77,29 @@ def _probe_editable_install(python_path: Path) -> subprocess.CompletedProcess[st
     )
 
 
+def _shadow_finder_sitecustomize_body() -> str:
+    return "\n".join(
+        [
+            "import importlib.util",
+            "import os",
+            "import sys",
+            "from pathlib import Path",
+            "shadow_module = os.environ.get('IDS_TEST_SHADOW_IMPORT_MODULE')",
+            "shadow_root = os.environ.get('IDS_TEST_SHADOW_IMPORT_ROOT')",
+            "if shadow_module and shadow_root:",
+            "    class _ShadowFinder:",
+            "        def find_spec(self, fullname, path=None, target=None):",
+            "            if fullname != shadow_module:",
+            "                return None",
+            "            shadow_path = Path(shadow_root).joinpath(*fullname.split('.')).with_suffix('.py')",
+            "            if not shadow_path.is_file():",
+            "                return None",
+            "            return importlib.util.spec_from_file_location(fullname, shadow_path)",
+            "    sys.meta_path.insert(0, _ShadowFinder())",
+        ]
+    ) + "\n"
+
+
 def shared_editable_repo_python(cache_key: str) -> Path:
     cache_root = Path(tempfile.gettempdir()) / (
         f"ids_ml_new_{cache_key}_{_editable_install_cache_identity()}"
@@ -131,30 +154,7 @@ def site_packages_dir(python_binary: Path) -> Path:
 def write_shadow_sitecustomize(site_packages_dir_path: Path) -> Path:
     site_packages_dir_path.mkdir(parents=True, exist_ok=True)
     path = site_packages_dir_path / "sitecustomize.py"
-    path.write_text(
-        "\n".join(
-            [
-                "import importlib.util",
-                "import os",
-                "import sys",
-                "from pathlib import Path",
-                "shadow_module = os.environ.get('IDS_TEST_SHADOW_IMPORT_MODULE')",
-                "shadow_root = os.environ.get('IDS_TEST_SHADOW_IMPORT_ROOT')",
-                "if shadow_module and shadow_root:",
-                "    class _ShadowFinder:",
-                "        def find_spec(self, fullname, path=None, target=None):",
-                "            if fullname != shadow_module:",
-                "                return None",
-                "            shadow_path = Path(shadow_root).joinpath(*fullname.split('.')).with_suffix('.py')",
-                "            if not shadow_path.is_file():",
-                "                return None",
-                "            return importlib.util.spec_from_file_location(fullname, shadow_path)",
-                "    sys.meta_path.insert(0, _ShadowFinder())",
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
+    path.write_text(_shadow_finder_sitecustomize_body(), encoding="utf-8")
     return path
 
 

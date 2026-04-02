@@ -18,6 +18,7 @@ from ids.core.model_bundle import (  # noqa: E402
     build_feature_schema_metadata,
     build_inference_contract_metadata,
 )
+from ids.core.model_bundle_activation import SUPPORTED_ACTIVATION_RECORD_VERSION  # noqa: E402
 
 
 def write_bundle(bundle_root: Path, *, bundle_name: str, threshold: float) -> Path:
@@ -58,6 +59,10 @@ def write_bundle(bundle_root: Path, *, bundle_name: str, threshold: float) -> Pa
         encoding="utf-8",
     )
     return bundle_root
+
+
+def read_activation_record(path: Path) -> dict[str, object]:
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def test_manage_status_reports_not_ready_without_activation_record(
@@ -108,9 +113,18 @@ def test_manage_verify_promote_status_and_rollback(
         ]
     )
     promote_a_payload = json.loads(capsys.readouterr().out)
+    promote_a_record = read_activation_record(activation_path)
     assert promote_a_rc == 0
     assert promote_a_payload["active_bundle_name"] == "bundle-a"
+    assert promote_a_payload["active_bundle_root"] == str(bundle_a.resolve())
+    assert promote_a_payload["verification_status"] == "verified"
     assert "previous_bundle_root" not in promote_a_payload
+    assert promote_a_record["record_version"] == SUPPORTED_ACTIVATION_RECORD_VERSION
+    assert promote_a_record["active_bundle_root"] == str(bundle_a.resolve())
+    assert promote_a_record["active_bundle_name"] == "bundle-a"
+    assert promote_a_record["verification_status"] == "verified"
+    assert "previous_bundle_root" not in promote_a_record
+    assert "previous_bundle_name" not in promote_a_record
 
     promote_b_rc = manage.main(
         [
@@ -123,21 +137,44 @@ def test_manage_verify_promote_status_and_rollback(
         ]
     )
     promote_b_payload = json.loads(capsys.readouterr().out)
+    promote_b_record = read_activation_record(activation_path)
     assert promote_b_rc == 0
     assert promote_b_payload["active_bundle_name"] == "bundle-b"
+    assert promote_b_payload["active_bundle_root"] == str(bundle_b.resolve())
+    assert promote_b_payload["verification_status"] == "verified"
+    assert promote_b_payload["previous_bundle_root"] == str(bundle_a.resolve())
     assert promote_b_payload["previous_bundle_name"] == "bundle-a"
+    assert promote_b_record["record_version"] == SUPPORTED_ACTIVATION_RECORD_VERSION
+    assert promote_b_record["active_bundle_root"] == str(bundle_b.resolve())
+    assert promote_b_record["active_bundle_name"] == "bundle-b"
+    assert promote_b_record["verification_status"] == "verified"
+    assert promote_b_record["previous_bundle_root"] == str(bundle_a.resolve())
+    assert promote_b_record["previous_bundle_name"] == "bundle-a"
 
     status_rc = manage.main(["--activation-path", str(activation_path), "--json", "status"])
     status_payload = json.loads(capsys.readouterr().out)
     assert status_rc == 0
+    assert status_payload["active_bundle_root"] == str(bundle_b.resolve())
     assert status_payload["active_bundle_name"] == "bundle-b"
+    assert status_payload["verification_status"] == "verified"
+    assert status_payload["previous_bundle_root"] == str(bundle_a.resolve())
     assert status_payload["previous_bundle_name"] == "bundle-a"
 
     rollback_rc = manage.main(["--activation-path", str(activation_path), "--json", "rollback"])
     rollback_payload = json.loads(capsys.readouterr().out)
+    rollback_record = read_activation_record(activation_path)
     assert rollback_rc == 0
+    assert rollback_payload["active_bundle_root"] == str(bundle_a.resolve())
     assert rollback_payload["active_bundle_name"] == "bundle-a"
+    assert rollback_payload["verification_status"] == "verified"
+    assert rollback_payload["previous_bundle_root"] == str(bundle_b.resolve())
     assert rollback_payload["previous_bundle_name"] == "bundle-b"
+    assert rollback_record["record_version"] == SUPPORTED_ACTIVATION_RECORD_VERSION
+    assert rollback_record["active_bundle_root"] == str(bundle_a.resolve())
+    assert rollback_record["active_bundle_name"] == "bundle-a"
+    assert rollback_record["verification_status"] == "verified"
+    assert rollback_record["previous_bundle_root"] == str(bundle_b.resolve())
+    assert rollback_record["previous_bundle_name"] == "bundle-b"
 
 
 def test_manage_rollback_fails_without_previous_known_good(
@@ -200,10 +237,19 @@ def test_manage_failed_promote_preserves_previous_active_bundle(
 
     status_rc = manage.main(["--activation-path", str(activation_path), "--json", "status"])
     status_payload = json.loads(capsys.readouterr().out)
+    activation_record = read_activation_record(activation_path)
 
     assert status_rc == 0
+    assert status_payload["active_bundle_root"] == str(bundle_a.resolve())
     assert status_payload["active_bundle_name"] == "bundle-a"
+    assert status_payload["verification_status"] == "verified"
     assert "previous_bundle_name" not in status_payload
+    assert activation_record["record_version"] == SUPPORTED_ACTIVATION_RECORD_VERSION
+    assert activation_record["active_bundle_root"] == str(bundle_a.resolve())
+    assert activation_record["active_bundle_name"] == "bundle-a"
+    assert activation_record["verification_status"] == "verified"
+    assert "previous_bundle_root" not in activation_record
+    assert "previous_bundle_name" not in activation_record
 
 
 def test_script_wrapper_help_runs_through_module_entrypoint() -> None:

@@ -70,9 +70,9 @@ def _build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path("/var/log/ids-live-sensor/ids_live_sensor_summary.jsonl"),
     )
-    parser.add_argument("--model-manage-entrypoint", type=Path, default=None)
-    parser.add_argument("--operator-manage-entrypoint", type=Path, default=None)
-    parser.add_argument("--operator-server-entrypoint", type=Path, default=None)
+    parser.add_argument("--model-manage-module", default="ids.ops.model_bundle_manage")
+    parser.add_argument("--operator-manage-module", default="ids.ops.operator_console_manage")
+    parser.add_argument("--operator-server-module", default="ids.console.server")
     parser.add_argument("--console-service-name", default="ids-operator-console.service")
     parser.add_argument("--live-sensor-service-name", default="ids-live-sensor.service")
     parser.add_argument(
@@ -122,30 +122,13 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def build_config_from_args(args: argparse.Namespace) -> SameHostStackConfig:
     repo_root = Path(args.repo_root).resolve()
-    default_model_manage_entrypoint = (repo_root / "ids" / "ops" / "model_bundle_manage.py").resolve()
-    default_operator_manage_entrypoint = (
-        repo_root / "ids" / "ops" / "operator_console_manage.py"
-    ).resolve()
-    default_operator_server_entrypoint = (repo_root / "ids" / "console" / "server.py").resolve()
     return SameHostStackConfig(
         repo_root=repo_root,
         python_binary=Path(args.python_binary).resolve(),
         operator_env_file=Path(args.operator_env_file).resolve(),
-        model_manage_entrypoint=(
-            Path(args.model_manage_entrypoint).resolve()
-            if args.model_manage_entrypoint
-            else default_model_manage_entrypoint
-        ),
-        operator_manage_entrypoint=(
-            Path(args.operator_manage_entrypoint).resolve()
-            if args.operator_manage_entrypoint
-            else default_operator_manage_entrypoint
-        ),
-        operator_server_entrypoint=(
-            Path(args.operator_server_entrypoint).resolve()
-            if args.operator_server_entrypoint
-            else default_operator_server_entrypoint
-        ),
+        model_manage_module=str(args.model_manage_module).strip(),
+        operator_manage_module=str(args.operator_manage_module).strip(),
+        operator_server_module=str(args.operator_server_module).strip(),
         activation_path=Path(args.activation_path).resolve(),
         live_sensor_interface=str(args.interface).strip(),
         dumpcap_binary=Path(args.dumpcap_binary).resolve(),
