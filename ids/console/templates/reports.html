@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+
+{% block title %}Reports — VIGIL IDS{% endblock %}
+
+{% block content %}
+{# ── Page header ─────────────────────────────────────────────────────────── #}
+<div class="flex items-center justify-between mb-6">
+  <h1 class="topbar__title">Reports</h1>
+  <span class="text-muted" style="font-size:12px;font-family:var(--font-primary)">{{ generated_at }}</span>
+</div>
+
+{# ── Rollup stat cards ───────────────────────────────────────────────────── #}
+<div class="grid grid-cols-4 gap-4 mb-6">
+
+  <div class="card" style="padding:20px">
+    <div style="font-size:11px;font-weight:600;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Total Alerts</div>
+    <div style="font-size:32px;font-weight:700;font-family:var(--font-primary);color:var(--foreground);line-height:1">{{ rollup.alerts_total }}</div>
+    <div style="font-size:11px;color:var(--muted-foreground);margin-top:6px">All triage statuses</div>
+  </div>
+
+  <div class="card" style="padding:20px">
+    <div style="font-size:11px;font-weight:600;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Total Anomalies</div>
+    <div style="font-size:32px;font-weight:700;font-family:var(--font-primary);color:var(--foreground);line-height:1">{{ rollup.anomalies_total }}</div>
+    <div style="font-size:11px;color:var(--muted-foreground);margin-top:6px">Schema + drift events</div>
+  </div>
+
+  <div class="card" style="padding:20px">
+    <div style="font-size:11px;font-weight:600;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Summaries</div>
+    <div style="font-size:32px;font-weight:700;font-family:var(--font-primary);color:var(--foreground);line-height:1">{{ rollup.summaries_total }}</div>
+    <div style="font-size:11px;color:var(--muted-foreground);margin-top:6px">Periodic snapshots</div>
+  </div>
+
+  <div class="card" style="padding:20px">
+    <div style="font-size:11px;font-weight:600;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">False Positive Rate</div>
+    {% set fp_count = rollup.alerts_by_status.get("false_positive", 0) %}
+    {% set total = rollup.alerts_total %}
+    {% if total > 0 %}
+      {% set fp_pct = (fp_count / total * 100) | round(1) %}
+    {% else %}
+      {% set fp_pct = 0 %}
+    {% endif %}
+    <div style="font-size:32px;font-weight:700;font-family:var(--font-primary);color:var(--foreground);line-height:1">{{ fp_pct }}<span style="font-size:18px">%</span></div>
+    <div style="font-size:11px;color:var(--muted-foreground);margin-top:6px">{{ fp_count }} false positive{% if fp_count != 1 %}s{% endif %}</div>
+  </div>
+
+</div>
+
+{# ── Two-column: Summary table + Breakdown panels ────────────────────────── #}
+<div class="flex gap-4" style="align-items:flex-start">
+
+  {# ── Left: Recent summaries table ────────────────────────────────────── #}
+  <div style="flex:1;min-width:0">
+    <div class="card" style="padding:0;overflow:hidden">
+      <div class="flex items-center justify-between" style="padding:16px 20px;border-bottom:1px solid var(--border)">
+        <span class="card__title">Recent Summaries</span>
+        <span class="text-muted" style="font-size:11px;font-family:var(--font-primary)">≤200 newest</span>
+      </div>
+
+      {% if summaries %}
+      <div class="table-wrap">
+        <table class="data-table data-table--mono">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Sensor</th>
+              <th>Alerts</th>
+              <th>Anomalies</th>
+              <th>Bundle</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for summary in summaries %}
+            {% set spayload = {} %}
+            {# Decode payload_json if present #}
+            {% if summary.get("payload_json") is string %}
+              {# Jinja2 doesn't have json.loads, render what we can #}
+              {% set spayload = {} %}
+            {% elif summary.get("payload_json") is mapping %}
+              {% set spayload = summary.payload_json %}
+            {% endif %}
+            <tr>
+              <td style="color:var(--muted-foreground)">{{ (summary.summary_ts or "")[:19] | replace("T", " ") }}</td>
+              <td style="color:var(--muted-foreground)">{{ summary.sensor_id or "—" }}</td>
+              <td>{{ spayload.get("alert_count", "—") if spayload else "—" }}</td>
+              <td>{{ spayload.get("anomaly_count", "—") if spayload else "—" }}</td>
+              <td style="color:var(--muted-foreground)">
+                {% set bundle_info = spayload.get("active_bundle") if spayload else None %}
+                {% if bundle_info and bundle_info is mapping %}
+                  {{ bundle_info.get("active_bundle_name", "—") }}
+                {% else %}
+                  —
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div style="padding:10px 16px;border-top:1px solid var(--border)">
+        <span style="font-size:12px;color:var(--muted-foreground);font-family:var(--font-primary)">{{ summaries | length }} summar{% if summaries | length != 1 %}ies{% else %}y{% endif %}</span>
+      </div>
+      {% else %}
+      <div style="padding:48px 20px;text-align:center">
+        <div style="font-size:14px;color:var(--muted-foreground)">No summaries available</div>
+        <div style="font-size:12px;color:var(--muted-foreground);margin-top:6px">Summaries appear after the ingest pipeline runs its first window.</div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ── Right: Status + Severity breakdown ──────────────────────────────── #}
+  <div style="width:280px;flex-shrink:0;display:flex;flex-direction:column;gap:16px">
+
+    {# Alert status breakdown #}
+    <div class="card">
+      <div class="card__header">
+        <div class="card__title">By Status</div>
+      </div>
+      {% for state in triage_states %}
+      {% set count = rollup.alerts_by_status.get(state, 0) %}
+      <div class="flex items-center justify-between" style="padding:6px 0;border-top:1px solid var(--border)">
+        <span style="font-size:13px;color:var(--muted-foreground)">{{ triage_labels.get(state, state) }}</span>
+        <span style="font-size:13px;font-weight:600;font-family:var(--font-primary);color:var(--foreground)">{{ count }}</span>
+      </div>
+      {% endfor %}
+    </div>
+
+    {# Alert severity breakdown #}
+    <div class="card">
+      <div class="card__header">
+        <div class="card__title">By Severity</div>
+      </div>
+      {% for sev_key, sev_label in severity_labels.items() %}
+      {% set count = rollup.alerts_by_severity.get(sev_key, 0) %}
+      <div class="flex items-center justify-between" style="padding:6px 0;border-top:1px solid var(--border)">
+        <div class="flex items-center gap-2">
+          {% if sev_key == "critical" %}
+            <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--color-error-foreground)"></span>
+          {% elif sev_key == "high" %}
+            <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--color-warning-foreground)"></span>
+          {% elif sev_key == "medium" %}
+            <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--color-info-foreground)"></span>
+          {% else %}
+            <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--muted-foreground)"></span>
+          {% endif %}
+          <span style="font-size:13px;color:var(--muted-foreground)">{{ sev_label }}</span>
+        </div>
+        <span style="font-size:13px;font-weight:600;font-family:var(--font-primary);color:var(--foreground)">{{ count }}</span>
+      </div>
+      {% endfor %}
+    </div>
+
+    {# Report metadata #}
+    <div class="card">
+      <div class="card__header">
+        <div class="card__title">Report Info</div>
+      </div>
+      <div class="flex items-center justify-between" style="padding:6px 0;border-top:1px solid var(--border)">
+        <span style="font-size:12px;color:var(--muted-foreground)">Generated</span>
+        <span style="font-size:12px;font-family:var(--font-primary);color:var(--foreground)">{{ generated_at[:10] }}</span>
+      </div>
+      {% if rollup.latest_summary_ts %}
+      <div class="flex items-center justify-between" style="padding:6px 0;border-top:1px solid var(--border)">
+        <span style="font-size:12px;color:var(--muted-foreground)">Latest summary</span>
+        <span style="font-size:12px;font-family:var(--font-primary);color:var(--muted-foreground)">{{ rollup.latest_summary_ts[:10] }}</span>
+      </div>
+      {% endif %}
+      <div class="flex items-center justify-between" style="padding:6px 0;border-top:1px solid var(--border)">
+        <span style="font-size:12px;color:var(--muted-foreground)">Max alerts shown</span>
+        <span style="font-size:12px;font-family:var(--font-primary);color:var(--foreground)">500</span>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+{% endblock %}

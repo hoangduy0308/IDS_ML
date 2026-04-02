@@ -16,6 +16,7 @@ from .alerts import (
     list_alerts_for_triage,
     transition_alert_status,
 )
+from .reporting import build_report_bundle, build_report_rollup
 from .auth import (
     current_admin,
     login_admin_with_password,
@@ -389,7 +390,20 @@ def create_operator_console_web_app(
         redirect = require_authenticated_redirect(request, login_path="/login")
         if redirect is not None:
             return redirect
-        raise HTTPException(status_code=501, detail="Not yet implemented")
+        runtime_store = _open_store()
+        try:
+            report_bundle = build_report_bundle(runtime_store)
+            rollup = build_report_rollup(report_bundle)
+            summaries = runtime_store.list_recent_summaries(limit=200)
+        finally:
+            if store is None:
+                runtime_store.close()
+        return render_template(
+            request,
+            "reports.html",
+            rollup=rollup,
+            summaries=summaries,
+        )
 
     # ── Phase 3 HTML routes (not yet implemented — return 501) ───────────────
 
