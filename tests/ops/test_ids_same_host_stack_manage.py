@@ -13,13 +13,17 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 import ids.ops.same_host_stack as stack  # noqa: E402
 import ids.ops.same_host_stack_manage as manage  # noqa: E402
+from ids.ops.same_host_stack import (  # noqa: E402
+    SameHostStackConfig,
+    build_operator_preflight_config,
+)
 from ids.core.model_bundle_activation import SUPPORTED_ACTIVATION_RECORD_VERSION  # noqa: E402
 from repo_installable_proof_support import (
-    shared_editable_repo_python,
     site_packages_dir,
     write_shadow_sitecustomize,
 )
 from wrapper_smoke_support import run_command
+from tests_editable_install_cache import shared_editable_install_python
 
 
 def _make_executable(path: Path) -> Path:
@@ -30,7 +34,7 @@ def _make_executable(path: Path) -> Path:
 
 
 def _install_repo_python() -> Path:
-    return shared_editable_repo_python(f"same-host-stack-proof-{os.getpid()}")
+    return shared_editable_install_python()
 
 
 def _write_operator_env(
@@ -105,6 +109,51 @@ def _build_config(
         admin_username="admin",
         admin_password_file=admin_password_file,
     )
+
+
+def test_build_operator_preflight_config_inherits_repo_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo_root = tmp_path / "repo_root"
+    repo_root.mkdir()
+    config = stack.SameHostStackConfig(
+        repo_root=repo_root,
+        python_binary=Path(sys.executable),
+        operator_env_file=tmp_path / "env",
+        model_manage_module="ids.ops.model_bundle_manage",
+        operator_manage_module="ids.ops.operator_console_manage",
+        operator_server_module="ids.console.server",
+        activation_path=tmp_path / "activation",
+        live_sensor_interface="0.0.0.0",
+        dumpcap_binary=Path(sys.executable),
+        extractor_command_prefix=(),
+        spool_dir=tmp_path / "spool",
+        alerts_output_path=tmp_path / "alerts",
+        quarantine_output_path=tmp_path / "quarantine",
+        summary_output_path=tmp_path / "summary",
+    )
+
+    fake_operator_config = SimpleNamespace(
+        database_path=tmp_path / "db",
+        alerts_input_path=tmp_path / "alerts",
+        quarantine_input_path=tmp_path / "quarantine",
+        summary_input_path=tmp_path / "summary",
+        templates_dir=tmp_path / "templates",
+        static_dir=tmp_path / "static",
+        environment="production",
+        public_base_url="https://example.com",
+        root_path="/",
+        forwarded_allow_ips="127.0.0.1",
+        secret_key=None,
+        secret_key_source=None,
+        telegram_bot_token=None,
+        telegram_bot_token_source=None,
+        telegram_chat_id=None,
+    )
+    monkeypatch.setattr(stack, "load_stack_operator_config", lambda cfg: fake_operator_config)
+
+    preflight_config = build_operator_preflight_config(config)
+    assert preflight_config.repo_root == repo_root.resolve()
 
 
 def test_build_config_from_args_defaults_to_canonical_ids_modules(tmp_path: Path) -> None:
@@ -185,6 +234,7 @@ def test_validate_stack_preflight_bootstrap_or_preflight_delegates_component_con
     payload = stack.validate_stack_preflight(config)
 
     assert payload["ready"] is True
+    assert payload["bootstrap_gate_ready"] is True
     assert payload["components"]["notification"]["status"] == "disabled"
     assert sensor_calls and sensor_calls[0].summary_output_path == config.summary_output_path.resolve()
     assert sensor_calls and sensor_calls[0].extractor_command_prefix == config.extractor_command_prefix
@@ -203,9 +253,86 @@ def test_validate_stack_preflight_bootstrap_or_preflight_requires_operator_env_f
     payload = stack.validate_stack_preflight(config)
 
     assert payload["ready"] is False
+    assert payload["bootstrap_gate_ready"] is False
     assert payload["status"] == "degraded"
     assert payload["host_layout_checks"]["operator_env_file"]["state"] == "missing"
     assert payload["components"]["operator_config"]["status"] == "degraded"
+
+
+def test_validate_stack_preflight_blocks_bootstrap_gate_when_operator_config_load_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _build_config(tmp_path)
+    load_calls = 0
+    operator_preflight_calls: list[stack.OperatorConsolePreflightConfig] = []
+
+    def fail_load(_config: stack.SameHostStackConfig) -> stack.OperatorConsoleConfig:
+        nonlocal load_calls
+        load_calls += 1
+        raise ValueError("operator env parse failed")
+
+    monkeypatch.setattr(stack, "load_stack_operator_config", fail_load)
+    monkeypatch.setattr(
+        stack,
+        "build_bundle_status_payload",
+        lambda path: {
+            "runtime_ready": True,
+            "activation_path": str(path),
+            "active_bundle_name": "bundle-under-test",
+        },
+    )
+    monkeypatch.setattr(stack, "validate_live_sensor_preflight", lambda _preflight_config: None)
+    monkeypatch.setattr(
+        stack,
+        "validate_operator_console_preflight",
+        lambda preflight_config: operator_preflight_calls.append(preflight_config),
+    )
+
+    payload = stack.validate_stack_preflight(config)
+
+    assert load_calls == 1
+    assert all(check["ok"] for check in payload["host_layout_checks"].values())
+    assert operator_preflight_calls == []
+    assert payload["ready"] is False
+    assert payload["bootstrap_gate_ready"] is False
+    assert payload["components"]["operator_config"]["detail"] == "operator env parse failed"
+    assert payload["components"]["operator_console_preflight"]["detail"] == "operator env parse failed"
+    assert payload["components"]["notification"]["detail"] == "operator env parse failed"
+
+
+def test_validate_stack_preflight_reports_expected_prebootstrap_runtime_gaps_without_blocking_bootstrap_gate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _build_config(tmp_path)
+
+    monkeypatch.setattr(
+        stack,
+        "build_bundle_status_payload",
+        lambda path: {
+            "runtime_ready": False,
+            "activation_path": str(path),
+            "detail": "activation record not found",
+        },
+    )
+
+    def fail_sensor(_preflight_config: stack.LiveSensorPreflightConfig) -> None:
+        raise ValueError(f"activation_path not found: {config.activation_path.resolve()}")
+
+    def fail_operator(_preflight_config: stack.OperatorConsolePreflightConfig) -> None:
+        raise ValueError(f"database_path not found: {(tmp_path / 'runtime' / 'operator_console.db').resolve()}")
+
+    monkeypatch.setattr(stack, "validate_live_sensor_preflight", fail_sensor)
+    monkeypatch.setattr(stack, "validate_operator_console_preflight", fail_operator)
+
+    payload = stack.validate_stack_preflight(config)
+
+    assert payload["ready"] is False
+    assert payload["bootstrap_gate_ready"] is True
+    assert payload["components"]["bundle_activation"]["ok"] is False
+    assert payload["components"]["live_sensor_preflight"]["ok"] is False
+    assert payload["components"]["operator_console_preflight"]["ok"] is False
 
 
 @pytest.mark.parametrize(
@@ -299,15 +426,46 @@ def test_validate_stack_preflight_bootstrap_or_preflight_rejects_modules_from_ou
     assert "resolved outside repo_root" in payload["host_layout_checks"][expected_field]["detail"]
 
 
+# noqa: WPS210
+def test_validate_stack_preflight_fails_when_repo_root_missing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    missing_repo = tmp_path / "missing-repo-root"
+    monkeypatch.setattr(
+        sys.modules[__name__],
+        "_install_repo_python",
+        lambda: Path(sys.executable),
+    )
+    config = replace(_build_config(tmp_path), repo_root=missing_repo)
+
+    payload = stack.validate_stack_preflight(config)
+
+    host_layout_checks = payload["host_layout_checks"]
+    assert host_layout_checks["repo_root"]["state"] == "missing"
+    assert payload["ready"] is False
+    assert payload["status"] == "degraded"
+
+    expected_detail = "repo_root must be valid before module trust boundary checks"
+    for module_field in (
+        "model_manage_module",
+        "operator_manage_module",
+        "operator_server_module",
+    ):
+        module_check = host_layout_checks[module_field]
+        assert module_check["state"] == "invalid"
+        assert expected_detail in module_check["detail"]
+
+
 def test_validate_stack_preflight_ignores_inherited_pythonpath_contamination(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Regression: inherited PYTHONPATH must not influence module validation.
 
-    If _build_import_env() stops scrubbing PYTHONPATH, the shadow module on the
-    hostile path would be resolved instead of the trusted-root module, and the
-    trusted-root containment check would fail.
+    This verifies the combined defense: isolated mode (-I) plus env scrubbing.
+    If either layer regresses, the hostile shadow module can surface instead of
+    the trusted-root module.
     """
     config = _build_config(tmp_path)
     shadow_root = tmp_path / "hostile-pythonpath"
@@ -347,7 +505,7 @@ def test_validate_stack_preflight_ignores_inherited_pythonpath_contamination(
 
     payload = stack.validate_stack_preflight(config)
 
-    # Must succeed: _build_import_env scrubs PYTHONPATH so shadow modules are invisible
+    # Must succeed: isolated mode (-I) and env scrubbing keep shadow modules invisible
     assert payload["ready"] is True
 
 
@@ -357,8 +515,8 @@ def test_validate_stack_preflight_ignores_inherited_pythonhome_contamination(
 ) -> None:
     """Regression: inherited PYTHONHOME must not influence module validation.
 
-    A bogus PYTHONHOME would crash the subprocess interpreter if it leaked
-    through _build_import_env().
+    This verifies the combined defense: isolated mode (-I) plus env scrubbing.
+    A bogus PYTHONHOME must not leak through to the subprocess interpreter.
     """
     config = _build_config(tmp_path)
     bogus_home = tmp_path / "bogus-python-home"
@@ -387,8 +545,7 @@ def test_validate_stack_preflight_ignores_inherited_pythonhome_contamination(
 
     payload = stack.validate_stack_preflight(config)
 
-    # Must succeed: _build_import_env scrubs PYTHONHOME so the subprocess
-    # interpreter ignores the bogus path
+    # Must succeed: isolated mode (-I) and env scrubbing keep the bogus home out
     assert payload["ready"] is True
 
 
@@ -410,7 +567,9 @@ def test_run_stack_bootstrap_bootstrap_or_preflight_executes_canonical_order(
         proxy_public_url="https://console.example",
     )
 
+    preflight_calls: list[stack.SameHostStackConfig] = []
     executed: list[list[str]] = []
+    validated_operator_config = stack.load_stack_operator_config(config)
 
     def fake_runner(argv: list[str] | tuple[str, ...]) -> str:
         command = [str(part) for part in argv]
@@ -427,8 +586,24 @@ def test_run_stack_bootstrap_bootstrap_or_preflight_executes_canonical_order(
 
     monkeypatch.setattr(
         stack,
-        "validate_stack_preflight",
-        lambda current_config: {"ready": True, "command": "preflight", "config": str(current_config.repo_root)},
+        "_validate_stack_preflight_with_operator_config",
+        lambda current_config: preflight_calls.append(current_config)
+        or (
+            {
+                "ready": True,
+                "bootstrap_gate_ready": True,
+                "command": "preflight",
+                "config": str(current_config.repo_root),
+            },
+            validated_operator_config,
+        ),
+    )
+    monkeypatch.setattr(
+        stack,
+        "load_stack_operator_config",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("bootstrap must reuse the validated operator-config snapshot")
+        ),
     )
     monkeypatch.setattr(
         stack,
@@ -476,13 +651,14 @@ def test_run_stack_bootstrap_bootstrap_or_preflight_executes_canonical_order(
     payload = stack.run_stack_bootstrap(config, command_runner=fake_runner)
 
     assert payload["bootstrap_ready"] is True
+    assert preflight_calls == [config]
     assert [step["step"] for step in payload["steps"]] == [
+        "stack_preflight",
         "prepare_host_layout",
         "verify_candidate_bundle",
         "promote_candidate_bundle",
         "migrate_operator_console",
         "bootstrap_operator_admin",
-        "stack_preflight",
         "start_operator_console_service",
         "start_live_sensor_service",
         "start_notification_service",
@@ -544,28 +720,70 @@ def test_run_stack_bootstrap_bootstrap_or_preflight_executes_canonical_order(
     assert payload["diagnosis"]["smoke"]["command"] == "smoke"
 
 
+def test_run_stack_bootstrap_bootstrap_or_preflight_stops_on_degraded_preflight(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _build_config(tmp_path)
+
+    executed: list[list[str]] = []
+
+    def fake_runner(argv: list[str] | tuple[str, ...]) -> str:
+        executed.append([str(part) for part in argv])
+        raise AssertionError("bootstrap must not reach module or service commands when preflight is degraded")
+
+    monkeypatch.setattr(
+        stack,
+        "_validate_stack_preflight_with_operator_config",
+        lambda *_args, **_kwargs: (
+            {
+                "ready": False,
+                "bootstrap_gate_ready": False,
+                "command": "preflight",
+                "status": "degraded",
+                "detail": "trust boundary rejected",
+            },
+            None,
+        ),
+    )
+
+    payload = stack.run_stack_bootstrap(config, command_runner=fake_runner)
+
+    assert payload["bootstrap_ready"] is False
+    assert payload["status"] == "degraded"
+    assert [step["step"] for step in payload["steps"]] == ["stack_preflight"]
+    assert payload["diagnosis"]["preflight"]["status"] == "degraded"
+    assert executed == []
+
+
 def test_run_stack_bootstrap_bootstrap_or_preflight_reports_degraded_post_start_verification(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config = _build_config(tmp_path)
 
+    preflight_calls: list[stack.SameHostStackConfig] = []
+    executed: list[list[str]] = []
+    validated_operator_config = stack.load_stack_operator_config(config)
+
     def fake_runner(argv: list[str] | tuple[str, ...]) -> str:
         command = [str(part) for part in argv]
-        if "verify" in command:
-            return json.dumps({"action": "verify", "status": "ok"})
-        if "promote" in command:
-            return json.dumps({"action": "promote", "status": "ok"})
-        if "migrate" in command:
-            return json.dumps({"action": "migrate", "status": "ok"})
-        if "bootstrap-admin" in command:
-            return json.dumps({"action": "bootstrap-admin", "status": "ok"})
+        executed.append(command)
         return ""
 
     monkeypatch.setattr(
         stack,
-        "validate_stack_preflight",
-        lambda *_args, **_kwargs: {"ready": True, "command": "preflight"},
+        "_validate_stack_preflight_with_operator_config",
+        lambda current_config: preflight_calls.append(current_config)
+        or (
+            {
+                "ready": True,
+                "bootstrap_gate_ready": True,
+                "command": "preflight",
+                "status": "ok",
+            },
+            validated_operator_config,
+        ),
     )
     monkeypatch.setattr(
         stack,
@@ -590,6 +808,70 @@ def test_run_stack_bootstrap_bootstrap_or_preflight_reports_degraded_post_start_
 
     assert payload["bootstrap_ready"] is False
     assert payload["status"] == "degraded"
+    assert preflight_calls == [config]
+    assert [step["step"] for step in payload["steps"]] == [
+        "stack_preflight",
+        "prepare_host_layout",
+        "verify_candidate_bundle",
+        "promote_candidate_bundle",
+        "migrate_operator_console",
+        "bootstrap_operator_admin",
+        "start_operator_console_service",
+        "start_live_sensor_service",
+        "stack_status",
+        "stack_smoke",
+    ]
+    assert executed == [
+        [
+            str(config.python_binary.resolve()),
+            "-m",
+            config.model_manage_module,
+            "--activation-path",
+            str(config.activation_path.resolve()),
+            "--json",
+            "verify",
+            "--bundle-root",
+            str(config.candidate_bundle_root.resolve()),
+        ],
+        [
+            str(config.python_binary.resolve()),
+            "-m",
+            config.model_manage_module,
+            "--activation-path",
+            str(config.activation_path.resolve()),
+            "--json",
+            "promote",
+            "--bundle-root",
+            str(config.candidate_bundle_root.resolve()),
+        ],
+        [
+            str(config.python_binary.resolve()),
+            "-m",
+            config.operator_manage_module,
+            "--database-path",
+            str((tmp_path / "runtime" / "operator_console.db").resolve()),
+            "--json",
+            "migrate",
+            "--allow-bootstrap",
+        ],
+        [
+            str(config.python_binary.resolve()),
+            "-m",
+            config.operator_manage_module,
+            "--database-path",
+            str((tmp_path / "runtime" / "operator_console.db").resolve()),
+            "--json",
+            "bootstrap-admin",
+            "--username",
+            "admin",
+            "--password-file",
+            str(config.admin_password_file.resolve()),
+        ],
+        ["systemctl", "start", "ids-operator-console.service"],
+        ["systemctl", "start", "ids-live-sensor.service"],
+    ]
+    assert payload["diagnosis"]["status"]["command"] == "status"
+    assert payload["diagnosis"]["smoke"]["command"] == "smoke"
 
 
 def test_manage_main_bootstrap_or_preflight_prints_json_payload(

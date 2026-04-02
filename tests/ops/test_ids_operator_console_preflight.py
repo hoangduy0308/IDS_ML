@@ -1,24 +1,32 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from repo_installable_proof_support import (
     run_command,
-    shared_editable_repo_python,
     site_packages_dir,
     write_shadow_sitecustomize,
 )
+from tests_editable_install_cache import shared_editable_install_python
 from wrapper_smoke_support import assert_help_smoke, run_python_module_help, run_python_script_help
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 import ids.ops.operator_console_manage as manage  # noqa: E402
 import ids.ops.operator_console_preflight as preflight  # noqa: E402
+import ids.ops.same_host_stack as same_host_stack  # noqa: E402
 from ids.ops.operator_console_preflight import (  # noqa: E402
     OperatorConsolePreflightConfig,
     validate_preflight,
+    _trusted_repo_root,
+)
+from ids.ops.same_host_stack import (  # noqa: E402
+    SameHostStackConfig,
+    build_operator_preflight_config,
 )
 
 
@@ -30,7 +38,7 @@ def _make_executable(path: Path) -> Path:
 
 
 def _install_repo_python() -> Path:
-    return shared_editable_repo_python(f"preflight-proof-{os.getpid()}")
+    return shared_editable_install_python()
 
 
 def _make_preflight_config(tmp_path: Path, **overrides: object) -> OperatorConsolePreflightConfig:
@@ -89,6 +97,46 @@ def test_preflight_accepts_valid_contract(tmp_path: Path, monkeypatch: pytest.Mo
     config = _make_preflight_config(tmp_path)
     monkeypatch.setattr(preflight, "_is_executable_file", lambda path: True)
     validate_preflight(config)
+
+
+def _make_minimal_preflight_config(tmp_path: Path, repo_root: Path | None) -> OperatorConsolePreflightConfig:
+    base = tmp_path / "minimal"
+    base.mkdir()
+    def path(name: str) -> Path:
+        p = base / name
+        p.parent.mkdir(parents=True, exist_ok=True)
+        return p
+
+    return OperatorConsolePreflightConfig(
+        python_binary=Path(sys.executable),
+        app_module="ids.console.server",
+        manage_module="ids.ops.operator_console_manage",
+        database_path=path("db.sqlite"),
+        alerts_input_path=path("alerts.jsonl"),
+        quarantine_input_path=path("quarantine.jsonl"),
+        summary_input_path=path("summary.jsonl"),
+        templates_dir=base / "templates",
+        static_dir=base / "static",
+        environment="production",
+        public_base_url="https://example.com",
+        root_path="/",
+        forwarded_allow_ips="127.0.0.1",
+        repo_root=repo_root,
+    )
+
+
+def test_trusted_repo_root_prefers_repo_root(tmp_path: Path) -> None:
+    override = tmp_path / "override"
+    config = _make_minimal_preflight_config(tmp_path, repo_root=override)
+
+    assert _trusted_repo_root(config) == override.resolve()
+
+
+def test_trusted_repo_root_defaults_to_module_path(tmp_path: Path) -> None:
+    config = _make_minimal_preflight_config(tmp_path, repo_root=None)
+
+    expected = Path(preflight.__file__).resolve().parents[2]
+    assert _trusted_repo_root(config) == expected
 
 
 def test_preflight_requires_admin_bootstrap(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -215,7 +263,7 @@ def test_preflight_rejects_non_importable_manage_module(
                 "telegram_chat_id": "-100preflight",
             },
             "ids.ops.operator_console_manage",
-            "manage_module resolved outside trusted repo root",
+            "(manage_module|app_module) resolved outside trusted repo root",
         ),
     ],
 )
@@ -247,6 +295,8 @@ def test_preflight_rejects_shadowed_module(
             "raise RuntimeError('hostile ops package import should not run')\n",
             encoding="utf-8",
         )
+        if not (package_root / "__init__.py").exists():
+            (package_root / "__init__.py").write_text("pass\n", encoding="utf-8")
     shadow_path = shadow_root.joinpath(*shadow_module.split(".")).with_suffix(".py")
     shadow_path.parent.mkdir(parents=True, exist_ok=True)
     shadow_path.write_text("SHADOWED = True\n", encoding="utf-8")
@@ -275,7 +325,7 @@ def test_preflight_rejects_trusted_root_module_that_crashes_during_import(
     )
     shadow_pth = site_packages_dir(config.python_binary) / "zz_shadow_import.pth"
     shadow_pth.write_text(str(trusted_root.resolve()) + "\n", encoding="utf-8")
-    monkeypatch.setattr(preflight, "_trusted_repo_root", lambda: trusted_root)
+    monkeypatch.setattr(preflight, "_trusted_repo_root", lambda *_: trusted_root)
     monkeypatch.setattr(preflight, "_is_executable_file", lambda path: True)
 
     try:
@@ -338,9 +388,9 @@ def test_preflight_ignores_inherited_pythonpath_contamination(
 ) -> None:
     """Regression: inherited PYTHONPATH must not influence module validation.
 
-    If _build_import_env() stops scrubbing PYTHONPATH, the shadow module on the
-    hostile path would be resolved instead of the trusted-root module, and the
-    trusted-root containment check would fail.
+    This verifies the combined defense: isolated mode (-I) plus env scrubbing.
+    If either layer regresses, the hostile shadow module can surface instead of
+    the trusted-root module.
     """
     config = _make_preflight_config(tmp_path)
     shadow_root = tmp_path / "hostile-pythonpath"
@@ -358,7 +408,7 @@ def test_preflight_ignores_inherited_pythonpath_contamination(
     monkeypatch.setenv("PYTHONPATH", str(shadow_root.resolve()))
     monkeypatch.setattr(preflight, "_is_executable_file", lambda path: True)
 
-    # Must succeed: _build_import_env scrubs PYTHONPATH so the shadow is invisible
+    # Must succeed: isolated mode (-I) and env scrubbing keep the shadow invisible
     validate_preflight(config)
 
 
@@ -368,8 +418,8 @@ def test_preflight_ignores_inherited_pythonhome_contamination(
 ) -> None:
     """Regression: inherited PYTHONHOME must not influence module validation.
 
-    A bogus PYTHONHOME would crash the subprocess interpreter if it leaked
-    through _build_import_env().
+    This verifies the combined defense: isolated mode (-I) plus env scrubbing.
+    A bogus PYTHONHOME must not leak through to the subprocess interpreter.
     """
     config = _make_preflight_config(tmp_path)
     bogus_home = tmp_path / "bogus-python-home"
@@ -377,8 +427,7 @@ def test_preflight_ignores_inherited_pythonhome_contamination(
     monkeypatch.setenv("PYTHONHOME", str(bogus_home.resolve()))
     monkeypatch.setattr(preflight, "_is_executable_file", lambda path: True)
 
-    # Must succeed: _build_import_env scrubs PYTHONHOME so the subprocess
-    # interpreter ignores the bogus path
+    # Must succeed: isolated mode (-I) and env scrubbing keep the bogus home out
     validate_preflight(config)
 
 

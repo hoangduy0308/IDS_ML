@@ -237,28 +237,41 @@ def build_sensor_preflight_config(config: SameHostStackConfig) -> LiveSensorPref
     )
 
 
-def build_operator_preflight_config(config: SameHostStackConfig) -> OperatorConsolePreflightConfig:
-    operator_config = load_stack_operator_config(config)
-    telegram_token = operator_config.telegram_bot_token if operator_config.telegram_bot_token_source is None else None
+def build_operator_preflight_config(
+    config: SameHostStackConfig,
+    *,
+    operator_config: OperatorConsoleConfig | None = None,
+) -> OperatorConsolePreflightConfig:
+    resolved_operator_config = operator_config or load_stack_operator_config(config)
+    telegram_token = (
+        resolved_operator_config.telegram_bot_token
+        if resolved_operator_config.telegram_bot_token_source is None
+        else None
+    )
     return OperatorConsolePreflightConfig(
         python_binary=Path(config.python_binary).resolve(),
         app_module=config.operator_server_module,
         manage_module=config.operator_manage_module,
-        database_path=operator_config.database_path,
-        alerts_input_path=operator_config.alerts_input_path,
-        quarantine_input_path=operator_config.quarantine_input_path,
-        summary_input_path=operator_config.summary_input_path,
-        templates_dir=operator_config.templates_dir,
-        static_dir=operator_config.static_dir,
-        environment=operator_config.environment,
-        public_base_url=operator_config.public_base_url,
-        root_path=operator_config.root_path,
-        forwarded_allow_ips=operator_config.forwarded_allow_ips,
-        secret_key=operator_config.secret_key if operator_config.secret_key_source is None else None,
-        secret_key_file=operator_config.secret_key_source,
+        database_path=resolved_operator_config.database_path,
+        alerts_input_path=resolved_operator_config.alerts_input_path,
+        quarantine_input_path=resolved_operator_config.quarantine_input_path,
+        summary_input_path=resolved_operator_config.summary_input_path,
+        templates_dir=resolved_operator_config.templates_dir,
+        static_dir=resolved_operator_config.static_dir,
+        environment=resolved_operator_config.environment,
+        public_base_url=resolved_operator_config.public_base_url,
+        root_path=resolved_operator_config.root_path,
+        forwarded_allow_ips=resolved_operator_config.forwarded_allow_ips,
+        secret_key=(
+            resolved_operator_config.secret_key
+            if resolved_operator_config.secret_key_source is None
+            else None
+        ),
+        secret_key_file=resolved_operator_config.secret_key_source,
         telegram_bot_token=telegram_token,
-        telegram_bot_token_file=operator_config.telegram_bot_token_source,
-        telegram_chat_id=operator_config.telegram_chat_id,
+        telegram_bot_token_file=resolved_operator_config.telegram_bot_token_source,
+        telegram_chat_id=resolved_operator_config.telegram_chat_id,
+        repo_root=Path(config.repo_root).resolve(),
     )
 
 
@@ -357,9 +370,14 @@ def _build_operator_smoke_component(config: SameHostStackConfig) -> dict[str, An
     }
 
 
-def _build_notification_path_component(config: SameHostStackConfig) -> dict[str, Any]:
+def _build_notification_path_component(
+    config: SameHostStackConfig,
+    *,
+    operator_config: OperatorConsoleConfig | None = None,
+) -> dict[str, Any]:
     try:
-        payload = build_notification_component(load_stack_operator_config(config), include_sensitive=False)
+        resolved_operator_config = operator_config or load_stack_operator_config(config)
+        payload = build_notification_component(resolved_operator_config, include_sensitive=False)
     except Exception as exc:
         return _build_failure_component(
             exc=exc,
@@ -377,6 +395,23 @@ def _build_notification_path_component(config: SameHostStackConfig) -> dict[str,
         "state": str(payload.get("state", "unknown")),
         "detail": None if ok else "notification runtime is enabled but not healthy",
         "payload": payload,
+    }
+
+
+def _build_operator_config_failure_component(
+    config: SameHostStackConfig,
+    *,
+    detail: str,
+) -> dict[str, Any]:
+    return {
+        "ok": False,
+        "state": "degraded",
+        "detail": detail,
+        "payload": {
+            "enabled": False,
+            "configured": False,
+            "operator_env_file": str(Path(config.operator_env_file).resolve()),
+        },
     }
 
 
@@ -1023,7 +1058,9 @@ def run_stack_post_restore_check(
     }
 
 
-def validate_stack_preflight(config: SameHostStackConfig) -> dict[str, Any]:
+def _validate_stack_preflight_with_operator_config(
+    config: SameHostStackConfig,
+) -> tuple[dict[str, Any], OperatorConsoleConfig | None]:
     host_layout_checks: dict[str, dict[str, Any]] = {}
 
     def check_directory(path: Path, *, name: str) -> Path | None:
@@ -1072,11 +1109,13 @@ def validate_stack_preflight(config: SameHostStackConfig) -> dict[str, Any]:
         try:
             if python_binary_path is None:
                 raise ValueError("python_binary must be valid before module import checks")
+            if repo_root is None:
+                raise ValueError("repo_root must be valid before module trust boundary checks")
             checked, _origin = _resolve_importable_module(
                 python_binary_path,
                 module_name,
                 name=name,
-                trusted_root=Path(repo_root).resolve() if repo_root is not None else None,
+                trusted_root=Path(repo_root).resolve(),
                 trusted_root_label="repo_root",
             )
         except Exception as exc:
@@ -1112,6 +1151,7 @@ def validate_stack_preflight(config: SameHostStackConfig) -> dict[str, Any]:
     )
     operator_env_file = check_file(config.operator_env_file, name="operator_env_file")
 
+    operator_config_error: str | None = None
     try:
         operator_config = load_stack_operator_config(config)
         operator_config_component = {
@@ -1123,10 +1163,11 @@ def validate_stack_preflight(config: SameHostStackConfig) -> dict[str, Any]:
         }
     except Exception as exc:
         operator_config = None
+        operator_config_error = str(exc)
         operator_config_component = {
             "ok": False,
             "status": "degraded",
-            "detail": str(exc),
+            "detail": operator_config_error,
             "database_path": None,
             "summary_input_path": None,
         }
@@ -1151,29 +1192,50 @@ def validate_stack_preflight(config: SameHostStackConfig) -> dict[str, Any]:
             "summary_output_path": str(Path(config.summary_output_path).resolve()),
         }
 
-    try:
-        validate_operator_console_preflight(build_operator_preflight_config(config))
-        operator_console_preflight = {
-            "ok": True,
-            "status": "ready",
-            "detail": None,
-            "database_path": str(operator_config.database_path) if operator_config is not None else None,
-            "summary_input_path": str(operator_config.summary_input_path) if operator_config is not None else None,
-        }
-    except Exception as exc:
+    if operator_config is None:
         operator_console_preflight = {
             "ok": False,
             "status": "degraded",
-            "detail": str(exc),
-            "database_path": str(operator_config.database_path) if operator_config is not None else None,
-            "summary_input_path": str(operator_config.summary_input_path) if operator_config is not None else None,
+            "detail": operator_config_error,
+            "database_path": None,
+            "summary_input_path": None,
         }
+        notification_component = _build_operator_config_failure_component(
+            config,
+            detail=operator_config_error or "operator config unavailable",
+        )
+    else:
+        try:
+            validate_operator_console_preflight(
+                build_operator_preflight_config(config, operator_config=operator_config)
+            )
+            operator_console_preflight = {
+                "ok": True,
+                "status": "ready",
+                "detail": None,
+                "database_path": str(operator_config.database_path),
+                "summary_input_path": str(operator_config.summary_input_path),
+            }
+        except Exception as exc:
+            operator_console_preflight = {
+                "ok": False,
+                "status": "degraded",
+                "detail": str(exc),
+                "database_path": str(operator_config.database_path),
+                "summary_input_path": str(operator_config.summary_input_path),
+            }
 
-    notification_component = _build_notification_path_component(config)
+        notification_component = _build_notification_path_component(
+            config,
+            operator_config=operator_config,
+        )
     notification_status = str(notification_component.get("state", "degraded"))
     notification_payload = dict(notification_component.get("payload", {}))
 
-    ready = all(check["ok"] for check in host_layout_checks.values()) and all(
+    bootstrap_gate_ready = all(check["ok"] for check in host_layout_checks.values()) and bool(
+        operator_config_component["ok"]
+    )
+    ready = bootstrap_gate_ready and all(
         [
             bundle_status["ok"],
             live_sensor_preflight["ok"],
@@ -1181,52 +1243,65 @@ def validate_stack_preflight(config: SameHostStackConfig) -> dict[str, Any]:
             notification_component["ok"],
         ]
     )
-    return {
-        "ready": ready,
-        "command": "preflight",
-        "host_layout": {
-            "repo_root": str(repo_root) if repo_root is not None else str(Path(config.repo_root).resolve()),
-            "python_binary": str(python_binary) if python_binary is not None else str(Path(config.python_binary).resolve()),
-            "operator_env_file": str(operator_env_file) if operator_env_file is not None else str(Path(config.operator_env_file).resolve()),
-            "model_manage_module": model_manage_module or str(config.model_manage_module).strip(),
-            "operator_manage_module": operator_manage_module or str(config.operator_manage_module).strip(),
-            "operator_server_module": operator_server_module or str(config.operator_server_module).strip(),
-            "sensor_spool_dir": str(Path(config.spool_dir).resolve()),
-            "sensor_log_root": str(Path(config.summary_output_path).resolve().parent),
-            "operator_database_path": str(operator_config.database_path) if operator_config is not None else None,
-            "operator_secret_source": (
-                str(operator_config.secret_key_source)
-                if operator_config is not None and operator_config.secret_key_source is not None
-                else ("inline" if operator_config is not None else None)
-            ),
-        },
-        "host_layout_checks": host_layout_checks,
-        "components": {
-            "bundle_activation": bundle_status,
-            "operator_config": operator_config_component,
-            "live_sensor_preflight": live_sensor_preflight,
-            "operator_console_preflight": operator_console_preflight,
-            "notification": {
-                "ok": notification_component["ok"],
-                "status": notification_status,
-                "enabled": bool(notification_payload.get("enabled")),
-                "detail": notification_component.get("detail"),
-                "payload": notification_payload,
+    return (
+        {
+            "ready": ready,
+            "bootstrap_gate_ready": bootstrap_gate_ready,
+            "command": "preflight",
+            "host_layout": {
+                "repo_root": str(repo_root) if repo_root is not None else str(Path(config.repo_root).resolve()),
+                "python_binary": str(python_binary) if python_binary is not None else str(Path(config.python_binary).resolve()),
+                "operator_env_file": str(operator_env_file) if operator_env_file is not None else str(Path(config.operator_env_file).resolve()),
+                "model_manage_module": model_manage_module or str(config.model_manage_module).strip(),
+                "operator_manage_module": operator_manage_module or str(config.operator_manage_module).strip(),
+                "operator_server_module": operator_server_module or str(config.operator_server_module).strip(),
+                "sensor_spool_dir": str(Path(config.spool_dir).resolve()),
+                "sensor_log_root": str(Path(config.summary_output_path).resolve().parent),
+                "operator_database_path": str(operator_config.database_path) if operator_config is not None else None,
+                "operator_secret_source": (
+                    str(operator_config.secret_key_source)
+                    if operator_config is not None and operator_config.secret_key_source is not None
+                    else ("inline" if operator_config is not None else None)
+                ),
             },
+            "host_layout_checks": host_layout_checks,
+            "components": {
+                "bundle_activation": bundle_status,
+                "operator_config": operator_config_component,
+                "live_sensor_preflight": live_sensor_preflight,
+                "operator_console_preflight": operator_console_preflight,
+                "notification": {
+                    "ok": notification_component["ok"],
+                    "status": notification_status,
+                    "enabled": bool(notification_payload.get("enabled")),
+                    "detail": notification_component.get("detail"),
+                    "payload": notification_payload,
+                },
+            },
+            "status": "ok" if ready else "degraded",
         },
-        "status": "ok" if ready else "degraded",
-    }
+        operator_config,
+    )
 
 
-def prepare_host_layout(config: SameHostStackConfig) -> dict[str, Any]:
-    load_stack_operator_config(config)
+def validate_stack_preflight(config: SameHostStackConfig) -> dict[str, Any]:
+    payload, _operator_config = _validate_stack_preflight_with_operator_config(config)
+    return payload
+
+
+def prepare_host_layout(
+    config: SameHostStackConfig,
+    *,
+    operator_config: OperatorConsoleConfig | None = None,
+) -> dict[str, Any]:
+    resolved_operator_config = operator_config or load_stack_operator_config(config)
     created: list[str] = []
     for path in (
         Path(config.spool_dir).resolve(),
         Path(config.alerts_output_path).resolve().parent,
         Path(config.quarantine_output_path).resolve().parent,
         Path(config.summary_output_path).resolve().parent,
-        build_operator_preflight_config(config).database_path.parent,
+        resolved_operator_config.database_path.parent,
     ):
         if not path.exists():
             path.mkdir(parents=True, exist_ok=True)
@@ -1302,13 +1377,43 @@ def run_stack_bootstrap(
     proxy_checker: ProxyChecker = _default_proxy_checker,
 ) -> dict[str, Any]:
     candidate_bundle_root, admin_username = _require_bootstrap_inputs(config)
-    operator_config = load_stack_operator_config(config)
     steps: list[dict[str, Any]] = []
 
+    preflight_payload, operator_config = _validate_stack_preflight_with_operator_config(config)
+    steps.append(
+        {
+            "step": "stack_preflight",
+            "result": preflight_payload,
+        }
+    )
+    # Fail closed: do not create layout, mutate bundles, or start services unless preflight is ready.
+    if not preflight_payload.get("bootstrap_gate_ready", preflight_payload.get("ready")):
+        return {
+            "bootstrap_ready": False,
+            "command": "bootstrap",
+            "status": "degraded",
+            "notification_enabled": False,
+            "steps": steps,
+            "diagnosis": {
+                "preflight": preflight_payload,
+            },
+        }
+
+    if operator_config is None:
+        return {
+            "bootstrap_ready": False,
+            "command": "bootstrap",
+            "status": "degraded",
+            "notification_enabled": False,
+            "steps": steps,
+            "diagnosis": {
+                "preflight": preflight_payload,
+            },
+        }
     steps.append(
         {
             "step": "prepare_host_layout",
-            "result": prepare_host_layout(config),
+            "result": prepare_host_layout(config, operator_config=operator_config),
         }
     )
 
@@ -1384,13 +1489,6 @@ def run_stack_bootstrap(
         }
     )
 
-    steps.append(
-        {
-            "step": "stack_preflight",
-            "result": validate_stack_preflight(config),
-        }
-    )
-
     console_service_command = ["systemctl", "start", config.console_service_name]
     command_runner(console_service_command)
     steps.append(
@@ -1411,7 +1509,12 @@ def run_stack_bootstrap(
         }
     )
 
-    notification_runtime_component = _build_notification_path_component(config)
+    # Keep bootstrap on the same validated operator-config snapshot that passed
+    # preflight so exact-path/operator-env resolution cannot drift mid-run.
+    notification_runtime_component = _build_notification_path_component(
+        config,
+        operator_config=operator_config,
+    )
     notification_is_enabled = bool(notification_runtime_component.get("payload", {}).get("enabled"))
     if notification_is_enabled:
         notification_service_command = ["systemctl", "start", config.notification_service_name]
