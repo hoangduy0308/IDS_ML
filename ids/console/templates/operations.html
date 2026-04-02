@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+
+{% block title %}Operations — VIGIL IDS{% endblock %}
+
+{% block content %}
+{# ── Page header ─────────────────────────────────────────────────────────── #}
+<div class="flex items-center justify-between mb-6">
+  <h1 class="topbar__title">Operations</h1>
+  <span class="text-muted" style="font-size:12px;font-family:var(--font-primary)">{{ generated_at }}</span>
+</div>
+
+{# ── Stat cards ──────────────────────────────────────────────────────────── #}
+{% set comps = readiness.get("components", {}) %}
+{% set system_ready = readiness.get("ready", False) %}
+{% set bundle = comps.get("active_bundle", {}).get("state") %}
+
+<div class="grid grid-cols-4 gap-4 mb-6">
+
+  {# Stat: Total anomalies #}
+  <div class="card" style="padding:20px">
+    <div style="font-size:11px;font-weight:600;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Total Anomalies</div>
+    <div style="font-size:32px;font-weight:700;font-family:var(--font-primary);color:var(--foreground);line-height:1">{{ anomalies | length }}</div>
+    <div style="font-size:11px;color:var(--muted-foreground);margin-top:6px">Last 200 events</div>
+  </div>
+
+  {# Stat: Unique anomaly types #}
+  {% set anom_types = anomalies | map(attribute="anomaly_type") | unique | list %}
+  <div class="card" style="padding:20px">
+    <div style="font-size:11px;font-weight:600;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Anomaly Types</div>
+    <div style="font-size:32px;font-weight:700;font-family:var(--font-primary);color:var(--foreground);line-height:1">{{ anom_types | length }}</div>
+    <div style="font-size:11px;color:var(--muted-foreground);margin-top:6px">Distinct types seen</div>
+  </div>
+
+  {# Stat: System status #}
+  <div class="card" style="padding:20px">
+    <div style="font-size:11px;font-weight:600;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">System Status</div>
+    {% if system_ready %}
+      <div style="font-size:22px;font-weight:700;color:var(--color-success-foreground);line-height:1.2;margin-bottom:6px">Normal</div>
+      <span class="badge badge--success">operational</span>
+    {% else %}
+      <div style="font-size:22px;font-weight:700;color:var(--color-error-foreground);line-height:1.2;margin-bottom:6px">Degraded</div>
+      <span class="badge badge--error">check components</span>
+    {% endif %}
+  </div>
+
+  {# Stat: Active bundle #}
+  <div class="card" style="padding:20px">
+    <div style="font-size:11px;font-weight:600;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Active Bundle</div>
+    {% if bundle %}
+      <div style="font-size:14px;font-weight:700;font-family:var(--font-primary);color:var(--foreground);line-height:1.4;margin-bottom:6px">{{ bundle.get("active_bundle_name", "—") }}</div>
+      {% set compat = bundle.get("compatibility_status", "unknown") %}
+      {% if compat == "compatible" %}
+        <span class="badge badge--success">compatible</span>
+      {% else %}
+        <span class="badge badge--warning">{{ compat }}</span>
+      {% endif %}
+    {% else %}
+      <div style="font-size:14px;font-weight:700;color:var(--muted-foreground)">No bundle</div>
+      <span class="badge badge--muted">not loaded</span>
+    {% endif %}
+  </div>
+
+</div>
+
+{# ── Two-column layout: Anomaly table + Readiness components ─────────────── #}
+<div class="flex gap-4" style="align-items:flex-start">
+
+  {# ── Left: Anomaly table ────────────────────────────────────────────── #}
+  <div style="flex:1;min-width:0">
+    <div class="card" style="padding:0;overflow:hidden">
+      <div class="flex items-center justify-between" style="padding:16px 20px;border-bottom:1px solid var(--border)">
+        <span class="card__title">Recent Anomalies</span>
+        <span class="text-muted" style="font-size:11px;font-family:var(--font-primary)">≤200 newest</span>
+      </div>
+
+      {% if anomalies %}
+      <div class="table-wrap">
+        <table class="data-table data-table--mono">
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th>Event ID</th>
+              <th>Reason</th>
+              <th>Sensor</th>
+              <th>Time</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for anom in anomalies %}
+            <tr>
+              <td>
+                {% set atype = anom.anomaly_type or "unknown" %}
+                {% if "schema" in atype %}
+                  <span class="badge badge--warning">{{ atype }}</span>
+                {% elif "drift" in atype %}
+                  <span class="badge badge--info">{{ atype }}</span>
+                {% else %}
+                  <span class="badge badge--muted">{{ atype }}</span>
+                {% endif %}
+              </td>
+              <td style="color:var(--foreground)">{{ anom.source_event_id }}</td>
+              <td style="color:var(--muted-foreground);max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ anom.reason or '' }}">{{ anom.reason or "—" }}</td>
+              <td style="color:var(--muted-foreground)">{{ anom.sensor_id or "—" }}</td>
+              <td style="color:var(--muted-foreground)">{{ (anom.event_ts or "")[:19] | replace("T", " ") }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div style="padding:10px 16px;border-top:1px solid var(--border)">
+        <span style="font-size:12px;color:var(--muted-foreground);font-family:var(--font-primary)">{{ anomalies | length }} anomal{% if anomalies | length != 1 %}ies{% else %}y{% endif %}</span>
+      </div>
+      {% else %}
+      <div style="padding:48px 20px;text-align:center">
+        <div style="font-size:14px;color:var(--muted-foreground);margin-bottom:8px">No anomalies detected</div>
+        <div style="font-size:12px;color:var(--muted-foreground)">Anomaly events will appear here as the sensor processes data.</div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ── Right: Readiness component matrix ──────────────────────────────── #}
+  <div style="width:280px;flex-shrink:0">
+    <div class="card">
+      <div class="card__header">
+        <div class="card__title">System Components</div>
+        <div class="card__subtitle">Readiness breakdown</div>
+      </div>
+
+      {% set comp_list = [
+        ("config", "Config"),
+        ("schema", "DB Schema"),
+        ("admin_bootstrap", "Admin Bootstrap"),
+        ("data_paths", "Data Paths"),
+        ("active_bundle", "Active Bundle"),
+        ("notification", "Notifications"),
+      ] %}
+      {% for comp_key, comp_label in comp_list %}
+      {% set comp = comps.get(comp_key, {}) %}
+      {% set ok = comp.get("ok", False) %}
+      <div class="flex items-center justify-between" style="padding:8px 0;border-top:1px solid var(--border)">
+        <span style="font-size:13px;color:var(--foreground)">{{ comp_label }}</span>
+        {% if ok %}
+          <span class="badge badge--success">OK</span>
+        {% else %}
+          <span class="badge badge--error">degraded</span>
+        {% endif %}
+      </div>
+      {% endfor %}
+
+      {# Overall readiness summary #}
+      <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+        <div class="flex items-center justify-between">
+          <span style="font-size:13px;font-weight:600;color:var(--foreground)">Overall</span>
+          {% if system_ready %}
+            <span class="badge badge--success">Ready</span>
+          {% else %}
+            <span class="badge badge--error">Not Ready</span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    {# Schema details #}
+    {% set schema = comps.get("schema", {}) %}
+    {% if schema %}
+    <div class="card" style="margin-top:16px">
+      <div class="card__header">
+        <div class="card__title">Schema</div>
+      </div>
+      <div class="flex items-center justify-between" style="margin-bottom:6px">
+        <span style="font-size:12px;color:var(--muted-foreground)">State</span>
+        <span class="badge {% if schema.get('state') == 'current' %}badge--success{% else %}badge--warning{% endif %}">{{ schema.get("state", "unknown") }}</span>
+      </div>
+      <div class="flex items-center justify-between">
+        <span style="font-size:12px;color:var(--muted-foreground)">Version</span>
+        <span style="font-size:12px;font-family:var(--font-primary);color:var(--foreground)">v{{ schema.get("version", "?") }}</span>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

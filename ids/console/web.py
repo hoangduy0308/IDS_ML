@@ -370,7 +370,19 @@ def create_operator_console_web_app(
         redirect = require_authenticated_redirect(request, login_path="/login")
         if redirect is not None:
             return redirect
-        raise HTTPException(status_code=501, detail="Not yet implemented")
+        runtime_store = _open_store()
+        try:
+            readiness = build_readiness_payload(config, include_sensitive=True)
+            anomalies = runtime_store.list_anomalies(limit=200)
+        finally:
+            if store is None:
+                runtime_store.close()
+        return render_template(
+            request,
+            "operations.html",
+            readiness=readiness,
+            anomalies=anomalies,
+        )
 
     @app.get("/reports", response_class=HTMLResponse)
     def reports_page(request: Request) -> Response:
