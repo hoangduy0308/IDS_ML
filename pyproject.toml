@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ids-ml-new"
+version = "0.1.0"
+description = "Repo-installable IDS same-host runtime and ML stack."
+readme = "README.md"
+requires-python = ">=3.11"
+dynamic = ["dependencies"]
+
+[project.scripts]
+ids-inference = "ids.runtime.inference:main"
+ids-realtime-pipeline = "ids.runtime.realtime_pipeline:main"
+ids-live-sensor = "ids.runtime.live_sensor:main"
+ids-live-sensor-health = "ids.runtime.live_sensor_health:main"
+ids-live-sensor-preflight = "ids.ops.live_sensor_preflight:main"
+ids-model-bundle-manage = "ids.ops.model_bundle_manage:main"
+ids-operator-console-server = "ids.console.server:main"
+ids-operator-console-preflight = "ids.ops.operator_console_preflight:main"
+ids-operator-console-manage = "ids.ops.operator_console_manage:main"
+ids-stack = "ids.ops.same_host_stack_manage:main"
+ids-package-final-model = "ml_pipeline.packaging.package_final_model:main"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ids*", "ml_pipeline*"]
+
+[tool.setuptools.package-data]
+"ids.console" = ["templates/**/*.html", "static/*.css", "static/*.js"]

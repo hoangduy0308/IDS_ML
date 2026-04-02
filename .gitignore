@@ -27,3 +27,6 @@ kaggle_tmp_kernel/
 
 # bv (beads viewer) local config and caches
 .bv/
+
+# Python build artifacts
+*.egg-info/
