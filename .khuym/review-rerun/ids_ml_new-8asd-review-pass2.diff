@@ -1,0 +1,1626 @@
+﻿diff --git a/deploy/systemd/ids-operator-console-notify.service b/deploy/systemd/ids-operator-console-notify.service
+index 7a12229..78a4807 100644
+--- a/deploy/systemd/ids-operator-console-notify.service
++++ b/deploy/systemd/ids-operator-console-notify.service
+@@ -25,7 +25,7 @@ Environment=IDS_OPERATOR_CONSOLE_SECRET_KEY_FILE=/etc/ids-operator-console/conso
+ Environment=IDS_OPERATOR_CONSOLE_TELEGRAM_BOT_TOKEN=
+ Environment=IDS_OPERATOR_CONSOLE_TELEGRAM_BOT_TOKEN_FILE=
+ Environment=IDS_OPERATOR_CONSOLE_TELEGRAM_CHAT_ID=
+-ExecStartPre=/usr/bin/python3 -m ids.ops.operator_console_preflight --python-binary /usr/bin/python3 --app-entrypoint /opt/ids_ml_new/ids/console/server.py --manage-entrypoint /opt/ids_ml_new/ids/ops/operator_console_manage.py --database-path ${IDS_OPERATOR_CONSOLE_DATABASE_PATH} --alerts-input-path ${IDS_OPERATOR_CONSOLE_ALERTS_INPUT_PATH} --quarantine-input-path ${IDS_OPERATOR_CONSOLE_QUARANTINE_INPUT_PATH} --summary-input-path ${IDS_OPERATOR_CONSOLE_SUMMARY_INPUT_PATH} --templates-dir ${IDS_OPERATOR_CONSOLE_TEMPLATES_DIR} --static-dir ${IDS_OPERATOR_CONSOLE_STATIC_DIR} --environment ${IDS_OPERATOR_CONSOLE_ENVIRONMENT} --public-base-url ${IDS_OPERATOR_CONSOLE_PUBLIC_BASE_URL} --root-path ${IDS_OPERATOR_CONSOLE_ROOT_PATH} --forwarded-allow-ips ${IDS_OPERATOR_CONSOLE_FORWARDED_ALLOW_IPS} --secret-key-file ${IDS_OPERATOR_CONSOLE_SECRET_KEY_FILE}
++ExecStartPre=/usr/bin/python3 -m ids.ops.operator_console_preflight --python-binary /usr/bin/python3 --app-module ids.console.server --manage-module ids.ops.operator_console_manage --database-path ${IDS_OPERATOR_CONSOLE_DATABASE_PATH} --alerts-input-path ${IDS_OPERATOR_CONSOLE_ALERTS_INPUT_PATH} --quarantine-input-path ${IDS_OPERATOR_CONSOLE_QUARANTINE_INPUT_PATH} --summary-input-path ${IDS_OPERATOR_CONSOLE_SUMMARY_INPUT_PATH} --templates-dir ${IDS_OPERATOR_CONSOLE_TEMPLATES_DIR} --static-dir ${IDS_OPERATOR_CONSOLE_STATIC_DIR} --environment ${IDS_OPERATOR_CONSOLE_ENVIRONMENT} --public-base-url ${IDS_OPERATOR_CONSOLE_PUBLIC_BASE_URL} --root-path ${IDS_OPERATOR_CONSOLE_ROOT_PATH} --forwarded-allow-ips ${IDS_OPERATOR_CONSOLE_FORWARDED_ALLOW_IPS} --secret-key-file ${IDS_OPERATOR_CONSOLE_SECRET_KEY_FILE}
+ ExecStart=/usr/bin/bash -lc 'exec /usr/bin/python3 -m ids.ops.operator_console_manage --database-path "$IDS_OPERATOR_CONSOLE_DATABASE_PATH" notify-worker --poll-interval-seconds 30'
+ Restart=on-failure
+ RestartSec=30s
+diff --git a/deploy/systemd/ids-operator-console.service b/deploy/systemd/ids-operator-console.service
+index fc40bc6..a1b8856 100644
+--- a/deploy/systemd/ids-operator-console.service
++++ b/deploy/systemd/ids-operator-console.service
+@@ -27,7 +27,7 @@ Environment=IDS_OPERATOR_CONSOLE_SECRET_KEY_FILE=/etc/ids-operator-console/conso
+ Environment=IDS_OPERATOR_CONSOLE_TELEGRAM_BOT_TOKEN=
+ Environment=IDS_OPERATOR_CONSOLE_TELEGRAM_BOT_TOKEN_FILE=
+ Environment=IDS_OPERATOR_CONSOLE_TELEGRAM_CHAT_ID=
+-ExecStartPre=/usr/bin/python3 -m ids.ops.operator_console_preflight --python-binary /usr/bin/python3 --app-entrypoint /opt/ids_ml_new/ids/console/server.py --manage-entrypoint /opt/ids_ml_new/ids/ops/operator_console_manage.py --database-path ${IDS_OPERATOR_CONSOLE_DATABASE_PATH} --alerts-input-path ${IDS_OPERATOR_CONSOLE_ALERTS_INPUT_PATH} --quarantine-input-path ${IDS_OPERATOR_CONSOLE_QUARANTINE_INPUT_PATH} --summary-input-path ${IDS_OPERATOR_CONSOLE_SUMMARY_INPUT_PATH} --templates-dir ${IDS_OPERATOR_CONSOLE_TEMPLATES_DIR} --static-dir ${IDS_OPERATOR_CONSOLE_STATIC_DIR} --environment ${IDS_OPERATOR_CONSOLE_ENVIRONMENT} --public-base-url ${IDS_OPERATOR_CONSOLE_PUBLIC_BASE_URL} --root-path ${IDS_OPERATOR_CONSOLE_ROOT_PATH} --forwarded-allow-ips ${IDS_OPERATOR_CONSOLE_FORWARDED_ALLOW_IPS} --secret-key-file ${IDS_OPERATOR_CONSOLE_SECRET_KEY_FILE}
++ExecStartPre=/usr/bin/python3 -m ids.ops.operator_console_preflight --python-binary /usr/bin/python3 --app-module ids.console.server --manage-module ids.ops.operator_console_manage --database-path ${IDS_OPERATOR_CONSOLE_DATABASE_PATH} --alerts-input-path ${IDS_OPERATOR_CONSOLE_ALERTS_INPUT_PATH} --quarantine-input-path ${IDS_OPERATOR_CONSOLE_QUARANTINE_INPUT_PATH} --summary-input-path ${IDS_OPERATOR_CONSOLE_SUMMARY_INPUT_PATH} --templates-dir ${IDS_OPERATOR_CONSOLE_TEMPLATES_DIR} --static-dir ${IDS_OPERATOR_CONSOLE_STATIC_DIR} --environment ${IDS_OPERATOR_CONSOLE_ENVIRONMENT} --public-base-url ${IDS_OPERATOR_CONSOLE_PUBLIC_BASE_URL} --root-path ${IDS_OPERATOR_CONSOLE_ROOT_PATH} --forwarded-allow-ips ${IDS_OPERATOR_CONSOLE_FORWARDED_ALLOW_IPS} --secret-key-file ${IDS_OPERATOR_CONSOLE_SECRET_KEY_FILE}
+ ExecStart=/usr/bin/bash -lc 'exec /usr/bin/python3 -m ids.console.server --host "$IDS_OPERATOR_CONSOLE_HOST" --port "$IDS_OPERATOR_CONSOLE_PORT" --log-level "$IDS_OPERATOR_CONSOLE_LOG_LEVEL"'
+ Restart=on-failure
+ RestartSec=5s
+diff --git a/docs/current/runtime/final_model_bundle.md b/docs/current/runtime/final_model_bundle.md
+index dd58deb..4dec890 100644
+--- a/docs/current/runtime/final_model_bundle.md
++++ b/docs/current/runtime/final_model_bundle.md
+@@ -10,19 +10,19 @@ Canonical command surfaces:
+ - `ids-inference` (`ids.runtime.inference`)
+ - `ids-model-bundle-manage` (`ids.ops.model_bundle_manage`)
+ 
+-Compatibility wrappers under `scripts/*` remain supported, but operator-facing runbooks use the canonical installed commands above.
++Compatibility wrappers dưới `scripts/*` vẫn được giữ để tương thích, nhưng runbook vận hành dùng các installed commands canonical ở trên.
+ 
+ ## Bundle nằm ở đâu
+ 
+-Bundle final hiện tại được đóng tại:
++Bundle production được ship trong checkout dưới:
+ 
+-- `F:\Work\IDS_ML_New\artifacts\final_model\catboost_full_data_v1`
++- `/opt/ids_ml_new/artifacts/final_model/catboost_full_data_v1`
+ 
+-Runtime production không đọc bundle bằng cách trỏ tay vào `model.cbm` hay `feature_columns.json`. Thay vào đó, live sensor đọc một activation record host-local, ví dụ:
++Runtime production không đọc bundle bằng cách trỏ tay vào `model.cbm` hay `feature_columns.json`. Thay vào đó, runtime resolve bundle đang active qua activation record host-local:
+ 
+ - `/var/lib/ids-live-sensor/active_bundle.json`
+ 
+-Activation record này trỏ tới đúng một bundle đang active và lưu thêm metadata rollback về bundle known-good trước đó.
++Activation record này trỏ tới đúng một bundle đang active và giữ thêm metadata rollback về bundle known-good trước đó.
+ 
+ ## Bundle gồm gì
+ 
+@@ -63,7 +63,7 @@ Compatibility block hiện tại khóa:
+ - `threshold_source = "bundle"`
+ - không cho phép external override cho `model_path`, `feature_columns_path`, hoặc `threshold`
+ 
+-Điều này có nghĩa là production runtime không được trộn bundle A với schema hoặc threshold ngoài bundle.
++Điều này có nghĩa là production runtime không được trộn bundle A với schema hoặc threshold ngoài bundle. Nếu không có activation record hợp lệ, canonical runtime entrypoints phải fail-closed thay vì ngầm rơi về raw artifacts.
+ 
+ ### `metrics.json`
+ 
+@@ -79,43 +79,43 @@ Tài liệu mô tả model cuối dưới dạng ngắn gọn, dễ tra cứu.
+ 
+ ## Cách dựng lại bundle
+ 
+-```powershell
++```bash
+ ids-package-final-model
+ ```
+ 
+-Script này sẽ emit `model_bundle.json` theo contract versioned hiện tại.
++Lệnh này emit `model_bundle.json` theo contract versioned hiện tại.
+ 
+ ## Cách verify và dùng bundle
+ 
+ ### 1. Verify candidate bundle
+ 
+-```powershell
+-ids-model-bundle-manage `
+-  --activation-path F:\Work\IDS_ML_New\artifacts\runtime\active_bundle.json `
+-  --json verify `
+-  --bundle-root F:\Work\IDS_ML_New\artifacts\final_model\catboost_full_data_v1
++```bash
++ids-model-bundle-manage \
++  --activation-path /var/lib/ids-live-sensor/active_bundle.json \
++  --json verify \
++  --bundle-root /opt/ids_ml_new/artifacts/final_model/catboost_full_data_v1
+ ```
+ 
+ Lệnh này chỉ kiểm tra compatibility contract của candidate bundle. Nó không mutate trạng thái active.
+ 
+ ### 2. Dry-run inference trên cùng host
+ 
+-```powershell
+-ids-inference `
+-  --bundle-root F:\Work\IDS_ML_New\artifacts\final_model\catboost_full_data_v1 `
+-  --input-path F:\Work\IDS_ML_New\artifacts\cic_iot_diad_2024_binary\clean\test.parquet `
+-  --output-path F:\Work\IDS_ML_New\artifacts\demo\test_predictions_from_bundle.parquet `
++```bash
++ids-inference \
++  --bundle-root /opt/ids_ml_new/artifacts/final_model/catboost_full_data_v1 \
++  --input-path /opt/ids_ml_new/artifacts/cic_iot_diad_2024_binary/clean/test.parquet \
++  --output-path /opt/ids_ml_new/artifacts/demo/test_predictions_from_bundle.parquet \
+   --limit 1000
+ ```
+ 
+-Đây là same-host dry-run path hiện tại để kiểm tra bundle mới có thể load, align schema, và score theo đúng inference contract trước khi promote.
++Đây là same-host dry-run path để kiểm tra bundle mới có thể load, align schema, và score theo đúng inference contract trước khi promote.
+ 
+ ### 3. Promote bundle đã verify
+ 
+-```powershell
+-ids-model-bundle-manage `
+-  --activation-path /var/lib/ids-live-sensor/active_bundle.json `
+-  --json promote `
++```bash
++ids-model-bundle-manage \
++  --activation-path /var/lib/ids-live-sensor/active_bundle.json \
++  --json promote \
+   --bundle-root /opt/ids_ml_new/artifacts/final_model/catboost_full_data_v1
+ ```
+ 
+@@ -123,20 +123,20 @@ Promotion sẽ ghi lại bundle active mới bằng atomic replace. Nếu đã c
+ 
+ ### 4. Rollback về known-good trước đó
+ 
+-```powershell
+-ids-model-bundle-manage `
+-  --activation-path /var/lib/ids-live-sensor/active_bundle.json `
++```bash
++ids-model-bundle-manage \
++  --activation-path /var/lib/ids-live-sensor/active_bundle.json \
+   --json rollback
+ ```
+ 
+-Rollback cũng dùng cùng activation contract và cùng cơ chế atomic replace. Không có copy-based fallback.
++Rollback dùng cùng activation contract và cùng cơ chế atomic replace. Không có copy-based fallback.
+ 
+ ## Vai trò của bundle trong realtime pipeline
+ 
+ Bundle là nguồn cấu hình chuẩn cho lớp realtime pre-model pipeline:
+ 
+ - `ids-realtime-pipeline` (`ids.runtime.realtime_pipeline`)
+-- [ids_realtime_pipeline_architecture.md](F:/Work/IDS_ML_New/docs/current/runtime/ids_realtime_pipeline_architecture.md)
++- [ids_realtime_pipeline_architecture.md](./ids_realtime_pipeline_architecture.md)
+ 
+ Trong pipeline hiện tại:
+ 
+diff --git a/ids/core/path_defaults.py b/ids/core/path_defaults.py
+index ccccff5..6b206e4 100644
+--- a/ids/core/path_defaults.py
++++ b/ids/core/path_defaults.py
+@@ -20,6 +20,8 @@ def resolve_repo_root(*, env_var: str = DEFAULT_REPO_ROOT_ENV_VAR) -> Path:
+     env_value = _clean_env(os.environ.get(env_var))
+     if env_value is not None:
+         return Path(env_value).expanduser().resolve()
++    if DEFAULT_REPO_ROOT.exists():
++        return DEFAULT_REPO_ROOT.resolve()
+     return Path(__file__).resolve().parents[2]
+ 
+ 
+diff --git a/ids/ops/operator_console_preflight.py b/ids/ops/operator_console_preflight.py
+index cecabac..1d83dfc 100644
+--- a/ids/ops/operator_console_preflight.py
++++ b/ids/ops/operator_console_preflight.py
+@@ -4,6 +4,7 @@ import argparse
+ import os
+ from dataclasses import dataclass
+ from pathlib import Path
++import subprocess
+ from typing import Sequence
+ 
+ from ids.console.config import PLACEHOLDER_SECRET_VALUES
+@@ -13,8 +14,8 @@ from ids.console.migrations import inspect_operator_store
+ @dataclass(frozen=True)
+ class OperatorConsolePreflightConfig:
+     python_binary: Path
+-    app_entrypoint: Path
+-    manage_entrypoint: Path | None
++    app_module: str
++    manage_module: str | None
+     database_path: Path
+     alerts_input_path: Path
+     quarantine_input_path: Path
+@@ -79,6 +80,43 @@ def _clean_optional(value: str | None) -> str | None:
+     return normalized or None
+ 
+ 
++def _clean_module_name(value: str | None, *, name: str) -> str | None:
++    normalized = _clean_optional(value)
++    if normalized is None:
++        return None
++    if any(part.strip() == "" for part in normalized.split(".")):
++        raise ValueError(f"{name} must be a dotted Python module path")
++    return normalized
++
++
++def _require_importable_module(
++    python_binary: Path,
++    module_name: str,
++    *,
++    name: str,
++) -> str:
++    normalized = _clean_module_name(module_name, name=name)
++    if normalized is None:
++        raise ValueError(f"{name} must not be blank")
++    completed = subprocess.run(
++        [
++            str(python_binary),
++            "-c",
++            (
++                "import importlib.util, sys; "
++                f"name={normalized!r}; "
++                "sys.exit(0 if importlib.util.find_spec(name) is not None else 1)"
++            ),
++        ],
++        capture_output=True,
++        check=False,
++        text=True,
++    )
++    if completed.returncode != 0:
++        raise ValueError(f"{name} is not importable by python_binary: {normalized}")
++    return normalized
++
++
+ def _load_secret_value(config: OperatorConsolePreflightConfig) -> str:
+     if config.secret_key and config.secret_key_file:
+         raise ValueError("secret_key and secret_key_file may not both be set")
+@@ -104,8 +142,8 @@ def _load_optional_secret(*, value: str | None, file_path: Path | None, name: st
+ 
+ 
+ def validate_preflight(config: OperatorConsolePreflightConfig) -> None:
+-    _require_existing_file(config.python_binary, name="python_binary", executable=True)
+-    _require_existing_file(config.app_entrypoint, name="app_entrypoint")
++    python_binary = _require_existing_file(config.python_binary, name="python_binary", executable=True)
++    _require_importable_module(python_binary, config.app_module, name="app_module")
+     _require_existing_file(config.database_path, name="database_path")
+     _require_existing_parent(config.alerts_input_path, name="alerts_input_path")
+     _require_existing_parent(config.quarantine_input_path, name="quarantine_input_path")
+@@ -135,9 +173,9 @@ def validate_preflight(config: OperatorConsolePreflightConfig) -> None:
+             "telegram_bot_token and telegram_chat_id must be set together or both omitted"
+         )
+     if token is not None:
+-        if config.manage_entrypoint is None:
+-            raise ValueError("notification-enabled deployments require manage_entrypoint")
+-        _require_existing_file(config.manage_entrypoint, name="manage_entrypoint")
++        if config.manage_module is None:
++            raise ValueError("notification-enabled deployments require manage_module")
++        _require_importable_module(python_binary, config.manage_module, name="manage_module")
+ 
+     inspection = inspect_operator_store(config.database_path)
+     if inspection.schema_state != "current":
+@@ -155,8 +193,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+         )
+     )
+     parser.add_argument("--python-binary", type=Path, required=True)
+-    parser.add_argument("--app-entrypoint", type=Path, required=True)
+-    parser.add_argument("--manage-entrypoint", type=Path, default=None)
++    parser.add_argument("--app-module", required=True)
++    parser.add_argument("--manage-module", default=None)
+     parser.add_argument("--database-path", type=Path, required=True)
+     parser.add_argument("--alerts-input-path", type=Path, required=True)
+     parser.add_argument("--quarantine-input-path", type=Path, required=True)
+@@ -184,8 +222,8 @@ def build_config_from_args(args: argparse.Namespace) -> OperatorConsolePreflight
+     env_telegram_chat_id = _clean_optional(os.environ.get("IDS_OPERATOR_CONSOLE_TELEGRAM_CHAT_ID"))
+     return OperatorConsolePreflightConfig(
+         python_binary=Path(args.python_binary),
+-        app_entrypoint=Path(args.app_entrypoint),
+-        manage_entrypoint=Path(args.manage_entrypoint) if args.manage_entrypoint else None,
++        app_module=str(args.app_module),
++        manage_module=_clean_module_name(args.manage_module, name="manage_module"),
+         database_path=Path(args.database_path),
+         alerts_input_path=Path(args.alerts_input_path),
+         quarantine_input_path=Path(args.quarantine_input_path),
+diff --git a/ids/ops/same_host_stack.py b/ids/ops/same_host_stack.py
+index 1af5af2..876d598 100644
+--- a/ids/ops/same_host_stack.py
++++ b/ids/ops/same_host_stack.py
+@@ -5,6 +5,7 @@ from datetime import datetime, timezone
+ import json
+ import os
+ from pathlib import Path
++import shutil
+ import subprocess
+ import sys
+ from typing import Any, Callable, Sequence
+@@ -48,9 +49,9 @@ class SameHostStackConfig:
+     repo_root: Path
+     python_binary: Path
+     operator_env_file: Path
+-    model_manage_entrypoint: Path
+-    operator_manage_entrypoint: Path
+-    operator_server_entrypoint: Path
++    model_manage_module: str
++    operator_manage_module: str
++    operator_server_module: str
+     activation_path: Path
+     live_sensor_interface: str
+     dumpcap_binary: Path
+@@ -105,6 +106,15 @@ def _path_state_from_exception(exc: Exception) -> str:
+     return "invalid"
+ 
+ 
++def _clean_module_name(value: str, *, name: str) -> str:
++    normalized = str(value).strip()
++    if not normalized:
++        raise ValueError(f"{name} must not be blank")
++    if any(part.strip() == "" for part in normalized.split(".")):
++        raise ValueError(f"{name} must be a dotted Python module path")
++    return normalized
++
++
+ def _require_existing_file(path: Path, *, name: str, executable: bool = False) -> Path:
+     candidate = Path(path)
+     if not candidate.is_absolute():
+@@ -127,6 +137,41 @@ def _require_existing_directory(path: Path, *, name: str) -> Path:
+     return resolved
+ 
+ 
++def _require_importable_module(
++    python_binary: Path,
++    module_name: str,
++    *,
++    name: str,
++) -> str:
++    normalized = _clean_module_name(module_name, name=name)
++    completed = subprocess.run(
++        [
++            str(Path(python_binary).resolve()),
++            "-c",
++            (
++                "import importlib.util, sys; "
++                f"name={normalized!r}; "
++                "sys.exit(0 if importlib.util.find_spec(name) is not None else 1)"
++            ),
++        ],
++        capture_output=True,
++        check=False,
++        text=True,
++    )
++    if completed.returncode != 0:
++        raise ValueError(f"{name} is not importable by python_binary: {normalized}")
++    return normalized
++
++
++def _build_module_command(python_binary: Path, module_name: str, *args: str) -> list[str]:
++    return [
++        str(Path(python_binary).resolve()),
++        "-m",
++        _clean_module_name(module_name, name="module_name"),
++        *args,
++    ]
++
++
+ def _load_json_object(path: Path, *, label: str) -> dict[str, Any]:
+     try:
+         payload = json.loads(path.read_text(encoding="utf-8"))
+@@ -228,8 +273,8 @@ def build_operator_preflight_config(config: SameHostStackConfig) -> OperatorCons
+     telegram_token = operator_config.telegram_bot_token if operator_config.telegram_bot_token_source is None else None
+     return OperatorConsolePreflightConfig(
+         python_binary=Path(config.python_binary).resolve(),
+-        app_entrypoint=Path(config.operator_server_entrypoint).resolve(),
+-        manage_entrypoint=Path(config.operator_manage_entrypoint).resolve(),
++        app_module=config.operator_server_module,
++        manage_module=config.operator_manage_module,
+         database_path=operator_config.database_path,
+         alerts_input_path=operator_config.alerts_input_path,
+         quarantine_input_path=operator_config.quarantine_input_path,
+@@ -328,7 +373,7 @@ def _build_operator_smoke_component(config: SameHostStackConfig) -> dict[str, An
+             state="degraded",
+             payload={"operator_env_file": str(Path(config.operator_env_file).resolve())},
+         )
+-    redirect_ok = smoke.redirect_status in {200, 302, 307, 308}
++    redirect_ok = smoke.redirect_status in {200, 302, 303, 307, 308}
+     ok = smoke.health_status == 200 and smoke.readiness_status == 200 and redirect_ok
+     return {
+         "ok": ok,
+@@ -1054,17 +1099,41 @@ def validate_stack_preflight(config: SameHostStackConfig) -> dict[str, Any]:
+ 
+     repo_root = check_directory(config.repo_root, name="repo_root")
+     python_binary = check_file(config.python_binary, name="python_binary", executable=True)
+-    model_manage_entrypoint = check_file(
+-        config.model_manage_entrypoint,
+-        name="model_manage_entrypoint",
++    def check_module(module_name: str, *, name: str, python_binary_path: Path | None) -> str | None:
++        try:
++            if python_binary_path is None:
++                raise ValueError("python_binary must be valid before module import checks")
++            checked = _require_importable_module(python_binary_path, module_name, name=name)
++        except Exception as exc:
++            host_layout_checks[name] = {
++                "ok": False,
++                "state": _path_state_from_exception(exc),
++                "detail": str(exc),
++                "module": str(module_name).strip(),
++            }
++            return None
++        host_layout_checks[name] = {
++            "ok": True,
++            "state": "ready",
++            "detail": None,
++            "module": checked,
++        }
++        return checked
++
++    model_manage_module = check_module(
++        config.model_manage_module,
++        name="model_manage_module",
++        python_binary_path=python_binary,
+     )
+-    operator_manage_entrypoint = check_file(
+-        config.operator_manage_entrypoint,
+-        name="operator_manage_entrypoint",
++    operator_manage_module = check_module(
++        config.operator_manage_module,
++        name="operator_manage_module",
++        python_binary_path=python_binary,
+     )
+-    operator_server_entrypoint = check_file(
+-        config.operator_server_entrypoint,
+-        name="operator_server_entrypoint",
++    operator_server_module = check_module(
++        config.operator_server_module,
++        name="operator_server_module",
++        python_binary_path=python_binary,
+     )
+     operator_env_file = check_file(config.operator_env_file, name="operator_env_file")
+ 
+@@ -1144,9 +1213,9 @@ def validate_stack_preflight(config: SameHostStackConfig) -> dict[str, Any]:
+             "repo_root": str(repo_root) if repo_root is not None else str(Path(config.repo_root).resolve()),
+             "python_binary": str(python_binary) if python_binary is not None else str(Path(config.python_binary).resolve()),
+             "operator_env_file": str(operator_env_file) if operator_env_file is not None else str(Path(config.operator_env_file).resolve()),
+-            "model_manage_entrypoint": str(model_manage_entrypoint) if model_manage_entrypoint is not None else str(Path(config.model_manage_entrypoint).resolve()),
+-            "operator_manage_entrypoint": str(operator_manage_entrypoint) if operator_manage_entrypoint is not None else str(Path(config.operator_manage_entrypoint).resolve()),
+-            "operator_server_entrypoint": str(operator_server_entrypoint) if operator_server_entrypoint is not None else str(Path(config.operator_server_entrypoint).resolve()),
++            "model_manage_module": model_manage_module or str(config.model_manage_module).strip(),
++            "operator_manage_module": operator_manage_module or str(config.operator_manage_module).strip(),
++            "operator_server_module": operator_server_module or str(config.operator_server_module).strip(),
+             "sensor_spool_dir": str(Path(config.spool_dir).resolve()),
+             "sensor_log_root": str(Path(config.summary_output_path).resolve().parent),
+             "operator_database_path": str(operator_config.database_path) if operator_config is not None else None,
+@@ -1205,8 +1274,14 @@ def run_command(argv: Sequence[str]) -> str:
+         redacted_argv.append(string_part)
+         if string_part == "--password":
+             redact_next = True
++    resolved_argv = [str(part) for part in argv]
++    executable = resolved_argv[0]
++    if not Path(executable).is_absolute():
++        resolved_executable = shutil.which(executable)
++        if resolved_executable is not None:
++            resolved_argv[0] = resolved_executable
+     completed = subprocess.run(
+-        [str(part) for part in argv],
++        resolved_argv,
+         capture_output=True,
+         check=False,
+         text=True,
+@@ -1262,16 +1337,16 @@ def run_stack_bootstrap(
+         }
+     )
+ 
+-    verify_command = [
+-        str(Path(config.python_binary).resolve()),
+-        str(Path(config.model_manage_entrypoint).resolve()),
++    verify_command = _build_module_command(
++        config.python_binary,
++        config.model_manage_module,
+         "--activation-path",
+         str(Path(config.activation_path).resolve()),
+         "--json",
+         "verify",
+         "--bundle-root",
+         str(candidate_bundle_root),
+-    ]
++    )
+     steps.append(
+         {
+             "step": "verify_candidate_bundle",
+@@ -1280,16 +1355,16 @@ def run_stack_bootstrap(
+         }
+     )
+ 
+-    promote_command = [
+-        str(Path(config.python_binary).resolve()),
+-        str(Path(config.model_manage_entrypoint).resolve()),
++    promote_command = _build_module_command(
++        config.python_binary,
++        config.model_manage_module,
+         "--activation-path",
+         str(Path(config.activation_path).resolve()),
+         "--json",
+         "promote",
+         "--bundle-root",
+         str(candidate_bundle_root),
+-    ]
++    )
+     steps.append(
+         {
+             "step": "promote_candidate_bundle",
+@@ -1298,15 +1373,15 @@ def run_stack_bootstrap(
+         }
+     )
+ 
+-    migrate_command = [
+-        str(Path(config.python_binary).resolve()),
+-        str(Path(config.operator_manage_entrypoint).resolve()),
++    migrate_command = _build_module_command(
++        config.python_binary,
++        config.operator_manage_module,
+         "--database-path",
+         str(operator_config.database_path),
+         "--json",
+         "migrate",
+         "--allow-bootstrap",
+-    ]
++    )
+     steps.append(
+         {
+             "step": "migrate_operator_console",
+@@ -1315,9 +1390,9 @@ def run_stack_bootstrap(
+         }
+     )
+ 
+-    bootstrap_admin_command = [
+-        str(Path(config.python_binary).resolve()),
+-        str(Path(config.operator_manage_entrypoint).resolve()),
++    bootstrap_admin_command = _build_module_command(
++        config.python_binary,
++        config.operator_manage_module,
+         "--database-path",
+         str(operator_config.database_path),
+         "--json",
+@@ -1325,7 +1400,7 @@ def run_stack_bootstrap(
+         "--username",
+         admin_username,
+         *_build_password_args(config),
+-    ]
++    )
+     steps.append(
+         {
+             "step": "bootstrap_operator_admin",
+diff --git a/ids/ops/same_host_stack_manage.py b/ids/ops/same_host_stack_manage.py
+index 7f196e6..d473ebf 100644
+--- a/ids/ops/same_host_stack_manage.py
++++ b/ids/ops/same_host_stack_manage.py
+@@ -70,9 +70,9 @@ def _build_parser() -> argparse.ArgumentParser:
+         type=Path,
+         default=Path("/var/log/ids-live-sensor/ids_live_sensor_summary.jsonl"),
+     )
+-    parser.add_argument("--model-manage-entrypoint", type=Path, default=None)
+-    parser.add_argument("--operator-manage-entrypoint", type=Path, default=None)
+-    parser.add_argument("--operator-server-entrypoint", type=Path, default=None)
++    parser.add_argument("--model-manage-module", default="ids.ops.model_bundle_manage")
++    parser.add_argument("--operator-manage-module", default="ids.ops.operator_console_manage")
++    parser.add_argument("--operator-server-module", default="ids.console.server")
+     parser.add_argument("--console-service-name", default="ids-operator-console.service")
+     parser.add_argument("--live-sensor-service-name", default="ids-live-sensor.service")
+     parser.add_argument(
+@@ -122,30 +122,13 @@ def _build_parser() -> argparse.ArgumentParser:
+ 
+ def build_config_from_args(args: argparse.Namespace) -> SameHostStackConfig:
+     repo_root = Path(args.repo_root).resolve()
+-    default_model_manage_entrypoint = (repo_root / "ids" / "ops" / "model_bundle_manage.py").resolve()
+-    default_operator_manage_entrypoint = (
+-        repo_root / "ids" / "ops" / "operator_console_manage.py"
+-    ).resolve()
+-    default_operator_server_entrypoint = (repo_root / "ids" / "console" / "server.py").resolve()
+     return SameHostStackConfig(
+         repo_root=repo_root,
+         python_binary=Path(args.python_binary).resolve(),
+         operator_env_file=Path(args.operator_env_file).resolve(),
+-        model_manage_entrypoint=(
+-            Path(args.model_manage_entrypoint).resolve()
+-            if args.model_manage_entrypoint
+-            else default_model_manage_entrypoint
+-        ),
+-        operator_manage_entrypoint=(
+-            Path(args.operator_manage_entrypoint).resolve()
+-            if args.operator_manage_entrypoint
+-            else default_operator_manage_entrypoint
+-        ),
+-        operator_server_entrypoint=(
+-            Path(args.operator_server_entrypoint).resolve()
+-            if args.operator_server_entrypoint
+-            else default_operator_server_entrypoint
+-        ),
++        model_manage_module=str(args.model_manage_module).strip(),
++        operator_manage_module=str(args.operator_manage_module).strip(),
++        operator_server_module=str(args.operator_server_module).strip(),
+         activation_path=Path(args.activation_path).resolve(),
+         live_sensor_interface=str(args.interface).strip(),
+         dumpcap_binary=Path(args.dumpcap_binary).resolve(),
+diff --git a/ids/runtime/inference.py b/ids/runtime/inference.py
+index 038016e..2058adf 100644
+--- a/ids/runtime/inference.py
++++ b/ids/runtime/inference.py
+@@ -77,6 +77,19 @@ class IDSModelConfig:
+         )
+ 
+ 
++def _build_raw_compat_config(
++    *,
++    model_path: Path | None,
++    feature_columns_path: Path | None,
++    threshold: float | None,
++) -> IDSModelConfig:
++    return IDSModelConfig(
++        model_path=(model_path or DEFAULT_MODEL_PATH).resolve(),
++        feature_columns_path=(feature_columns_path or DEFAULT_FEATURE_COLUMNS_PATH).resolve(),
++        threshold=float(DEFAULT_THRESHOLD if threshold is None else threshold),
++    )
++
++
+ def load_input_frame(path: Path) -> pd.DataFrame:
+     suffix = path.suffix.lower()
+     if suffix == ".csv":
+@@ -170,15 +183,14 @@ def build_model_config(
+         return IDSModelConfig.from_bundle(bundle_root)
+     if config_path is not None:
+         return IDSModelConfig.from_config_path(config_path)
+-    if all(value is None for value in (model_path, feature_columns_path, threshold)):
+-        default_activation_path = DEFAULT_ACTIVATION_PATH.resolve()
+-        if default_activation_path.is_file():
+-            return IDSModelConfig.from_activation_path(default_activation_path)
+-    return IDSModelConfig(
+-        model_path=(model_path or DEFAULT_MODEL_PATH).resolve(),
+-        feature_columns_path=(feature_columns_path or DEFAULT_FEATURE_COLUMNS_PATH).resolve(),
+-        threshold=float(DEFAULT_THRESHOLD if threshold is None else threshold),
+-    )
++    raw_override_requested = any(value is not None for value in (model_path, feature_columns_path, threshold))
++    if raw_override_requested:
++        return _build_raw_compat_config(
++            model_path=model_path,
++            feature_columns_path=feature_columns_path,
++            threshold=threshold,
++        )
++    return IDSModelConfig.from_activation_path(DEFAULT_ACTIVATION_PATH.resolve())
+ 
+ 
+ def build_inferencer(
+diff --git a/ids/runtime/realtime_pipeline.py b/ids/runtime/realtime_pipeline.py
+index ae134fa..902e259 100644
+--- a/ids/runtime/realtime_pipeline.py
++++ b/ids/runtime/realtime_pipeline.py
+@@ -14,7 +14,6 @@ import pandas as pd
+ 
+ from ids.core.feature_contract import FlowFeatureContract, QuarantinedFlowRecord
+ from ids.runtime.inference import (
+-    DEFAULT_FEATURE_COLUMNS_PATH,
+     IDSInferencer,
+     build_inferencer,
+ )
+@@ -383,10 +382,11 @@ def main() -> None:
+             "feature_columns_path",
+             None,
+         )
+-        if inferencer_feature_columns_path is not None:
+-            resolved_feature_columns_path = Path(inferencer_feature_columns_path)
+-        else:
+-            resolved_feature_columns_path = DEFAULT_FEATURE_COLUMNS_PATH
++        if inferencer_feature_columns_path is None:
++            raise ValueError(
++                "inferencer did not expose feature_columns_path; supply --feature-columns-path explicitly"
++            )
++        resolved_feature_columns_path = Path(inferencer_feature_columns_path)
+     contract = FlowFeatureContract.from_feature_file(resolved_feature_columns_path)
+     runner = RealtimePipelineRunner(
+         contract=contract,
+diff --git a/tests/docs/test_docs_path_smoke.py b/tests/docs/test_docs_path_smoke.py
+index 4ddf0fa..f6c5109 100644
+--- a/tests/docs/test_docs_path_smoke.py
++++ b/tests/docs/test_docs_path_smoke.py
+@@ -83,3 +83,4 @@ def test_packaged_operator_docs_keep_canonical_command_surface() -> None:
+ 
+     assert "ids-package-final-model" in bundle_doc
+     assert "ids-model-bundle-manage" in bundle_doc
++    assert "F:\\Work\\IDS_ML_New" not in bundle_doc
+diff --git a/tests/ops/test_ids_operator_console_ops.py b/tests/ops/test_ids_operator_console_ops.py
+index afddfb2..c242e12 100644
+--- a/tests/ops/test_ids_operator_console_ops.py
++++ b/tests/ops/test_ids_operator_console_ops.py
+@@ -6,6 +6,7 @@ import json
+ import os
+ import sqlite3
+ import shutil
++import sys
+ 
+ import pytest
+ 
+@@ -83,9 +84,9 @@ def _make_preflight_config(tmp_path: Path, **overrides: object) -> OperatorConso
+     )
+ 
+     kwargs: dict[str, object] = {
+-        "python_binary": _make_executable(tmp_path / "bin" / "python3"),
+-        "app_entrypoint": tmp_path / "scripts" / "ids_operator_console_server.py",
+-        "manage_entrypoint": tmp_path / "scripts" / "ids_operator_console_manage.py",
++        "python_binary": Path(sys.executable).resolve(),
++        "app_module": "ids.console.server",
++        "manage_module": "ids.ops.operator_console_manage",
+         "database_path": db_path,
+         "alerts_input_path": logs_dir / "ids_live_alerts.jsonl",
+         "quarantine_input_path": logs_dir / "ids_live_quarantine.jsonl",
+@@ -101,9 +102,6 @@ def _make_preflight_config(tmp_path: Path, **overrides: object) -> OperatorConso
+         "telegram_bot_token": None,
+         "telegram_chat_id": None,
+     }
+-    Path(kwargs["app_entrypoint"]).parent.mkdir(parents=True, exist_ok=True)
+-    Path(kwargs["app_entrypoint"]).write_text("print('ok')\n", encoding="utf-8")
+-    Path(kwargs["manage_entrypoint"]).write_text("print('ok')\n", encoding="utf-8")
+     kwargs.update(overrides)
+     return OperatorConsolePreflightConfig(**kwargs)
+ 
+diff --git a/tests/ops/test_ids_operator_console_preflight.py b/tests/ops/test_ids_operator_console_preflight.py
+index f9d0319..16ca2b5 100644
+--- a/tests/ops/test_ids_operator_console_preflight.py
++++ b/tests/ops/test_ids_operator_console_preflight.py
+@@ -1,6 +1,7 @@
+ from __future__ import annotations
+ 
+ from pathlib import Path
++import sys
+ 
+ import pytest
+ 
+@@ -49,9 +50,9 @@ def _make_preflight_config(tmp_path: Path, **overrides: object) -> OperatorConso
+     secret_path = tmp_path / "console.secret"
+     secret_path.write_text("production-secret\n", encoding="utf-8")
+     kwargs: dict[str, object] = {
+-        "python_binary": _make_executable(tmp_path / "bin" / "python3"),
+-        "app_entrypoint": tmp_path / "scripts" / "ids_operator_console_server.py",
+-        "manage_entrypoint": tmp_path / "scripts" / "ids_operator_console_manage.py",
++        "python_binary": Path(sys.executable).resolve(),
++        "app_module": "ids.console.server",
++        "manage_module": "ids.ops.operator_console_manage",
+         "database_path": db_path,
+         "alerts_input_path": logs_dir / "ids_live_alerts.jsonl",
+         "quarantine_input_path": logs_dir / "ids_live_quarantine.jsonl",
+@@ -68,9 +69,6 @@ def _make_preflight_config(tmp_path: Path, **overrides: object) -> OperatorConso
+         "telegram_bot_token_file": None,
+         "telegram_chat_id": None,
+     }
+-    Path(kwargs["app_entrypoint"]).parent.mkdir(parents=True, exist_ok=True)
+-    Path(kwargs["app_entrypoint"]).write_text("print('ok')\n", encoding="utf-8")
+-    Path(kwargs["manage_entrypoint"]).write_text("print('ok')\n", encoding="utf-8")
+     kwargs.update(overrides)
+     return OperatorConsolePreflightConfig(**kwargs)
+ 
+@@ -104,8 +102,8 @@ def test_deploy_artifacts_are_wired_to_proxy_and_secret_contract() -> None:
+     assert "IDS_OPERATOR_CONSOLE_SECRET_KEY_FILE" in service_text
+     assert "--public-base-url ${IDS_OPERATOR_CONSOLE_PUBLIC_BASE_URL}" in service_text
+     assert "--secret-key-file ${IDS_OPERATOR_CONSOLE_SECRET_KEY_FILE}" in service_text
+-    assert "--manage-entrypoint /opt/ids_ml_new/ids/ops/operator_console_manage.py" in service_text
+-    assert "--app-entrypoint /opt/ids_ml_new/ids/console/server.py" in service_text
++    assert "--manage-module ids.ops.operator_console_manage" in service_text
++    assert "--app-module ids.console.server" in service_text
+     assert "IDS_OPERATOR_CONSOLE_TEMPLATES_DIR=/opt/ids_ml_new/ids/console/templates" in service_text
+     assert "IDS_OPERATOR_CONSOLE_STATIC_DIR=/opt/ids_ml_new/ids/console/static" in service_text
+     assert "python3 -m ids.ops.operator_console_preflight" in service_text
+@@ -115,8 +113,8 @@ def test_deploy_artifacts_are_wired_to_proxy_and_secret_contract() -> None:
+     assert "-m ids.ops.operator_console_manage --database-path \"$IDS_OPERATOR_CONSOLE_DATABASE_PATH\" notify-worker" in notify_service_text
+     assert "--iterations 1" not in notify_service_text
+     assert "notify-worker --poll-interval-seconds 30" in notify_service_text
+-    assert "--manage-entrypoint /opt/ids_ml_new/ids/ops/operator_console_manage.py" in notify_service_text
+-    assert "--app-entrypoint /opt/ids_ml_new/ids/console/server.py" in notify_service_text
++    assert "--manage-module ids.ops.operator_console_manage" in notify_service_text
++    assert "--app-module ids.console.server" in notify_service_text
+     assert "IDS_OPERATOR_CONSOLE_TEMPLATES_DIR=/opt/ids_ml_new/ids/console/templates" in notify_service_text
+     assert "IDS_OPERATOR_CONSOLE_STATIC_DIR=/opt/ids_ml_new/ids/console/static" in notify_service_text
+     assert "python3 -m ids.ops.operator_console_preflight" in notify_service_text
+@@ -128,19 +126,19 @@ def test_deploy_artifacts_are_wired_to_proxy_and_secret_contract() -> None:
+     assert "proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;" in nginx_text
+ 
+ 
+-def test_preflight_rejects_notification_enabled_missing_manage_entrypoint(
++def test_preflight_rejects_notification_enabled_missing_manage_module(
+     tmp_path: Path,
+     monkeypatch: pytest.MonkeyPatch,
+ ) -> None:
+     config = _make_preflight_config(
+         tmp_path,
+-        manage_entrypoint=None,
++        manage_module=None,
+         telegram_bot_token="token",
+         telegram_chat_id="-100preflight",
+     )
+     monkeypatch.setattr(preflight, "_is_executable_file", lambda path: True)
+ 
+-    with pytest.raises(ValueError, match="manage_entrypoint"):
++    with pytest.raises(ValueError, match="manage_module"):
+         validate_preflight(config)
+ 
+ 
+@@ -166,10 +164,10 @@ def test_preflight_main_fails_closed_on_partial_env_notification_config(
+             [
+                 "--python-binary",
+                 str(config.python_binary),
+-                "--app-entrypoint",
+-                str(config.app_entrypoint),
+-                "--manage-entrypoint",
+-                str(config.manage_entrypoint),
++                "--app-module",
++                str(config.app_module),
++                "--manage-module",
++                str(config.manage_module),
+                 "--database-path",
+                 str(config.database_path),
+                 "--alerts-input-path",
+diff --git a/tests/ops/test_ids_repo_installable_bootstrap_proof.py b/tests/ops/test_ids_repo_installable_bootstrap_proof.py
+index cbe1d39..3debc73 100644
+--- a/tests/ops/test_ids_repo_installable_bootstrap_proof.py
++++ b/tests/ops/test_ids_repo_installable_bootstrap_proof.py
+@@ -1,7 +1,8 @@
+ from __future__ import annotations
+ 
+-from dataclasses import replace
++from datetime import datetime, timezone
+ import json
++import os
+ from pathlib import Path
+ import subprocess
+ import sys
+@@ -17,6 +18,45 @@ from ids.core.model_bundle import (  # noqa: E402
+ REPO_ROOT = Path(__file__).resolve().parents[2]
+ 
+ 
++def _run(argv: list[str], *, cwd: Path, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
++    return subprocess.run(
++        argv,
++        cwd=cwd,
++        env=env,
++        capture_output=True,
++        text=True,
++        check=False,
++    )
++
++
++def _venv_python(tmp_path: Path) -> Path:
++    venv_dir = tmp_path / "venv"
++    completed = _run([sys.executable, "-m", "venv", "--system-site-packages", str(venv_dir)], cwd=tmp_path)
++    assert completed.returncode == 0, completed.stderr
++    windows_python = venv_dir / "Scripts" / "python.exe"
++    posix_python = venv_dir / "bin" / "python"
++    python_path = windows_python if windows_python.exists() else posix_python
++    assert python_path.exists(), f"venv python not found under {venv_dir}"
++    return python_path.resolve()
++
++
++def _scripts_dir(venv_python: Path) -> Path:
++    completed = _run(
++        [str(venv_python), "-c", "import sysconfig; print(sysconfig.get_path('scripts'))"],
++        cwd=REPO_ROOT,
++    )
++    assert completed.returncode == 0, completed.stderr
++    return Path(completed.stdout.strip()).resolve()
++
++
++def _resolve_console_script(scripts_dir: Path, command_name: str) -> Path:
++    for suffix in ("", ".exe", ".cmd", ".bat"):
++        candidate = scripts_dir / f"{command_name}{suffix}"
++        if candidate.exists():
++            return candidate.resolve()
++    raise AssertionError(f"console script not found for {command_name} under {scripts_dir}")
++
++
+ def _write_bundle_contract(bundle_root: Path) -> Path:
+     bundle_root.mkdir(parents=True, exist_ok=True)
+     feature_columns_path = bundle_root / "feature_columns.json"
+@@ -57,128 +97,243 @@ def _write_bundle_contract(bundle_root: Path) -> Path:
+     return bundle_root
+ 
+ 
+-def _build_stack_config(tmp_path: Path) -> stack.SameHostStackConfig:
+-    repo_root = REPO_ROOT.resolve()
+-    operator_runtime = tmp_path / "runtime"
+-    operator_logs = tmp_path / "logs"
+-    operator_runtime.mkdir(parents=True, exist_ok=True)
+-    operator_logs.mkdir(parents=True, exist_ok=True)
+-
+-    secret_key_file = tmp_path / "secrets" / "console.secret"
+-    secret_key_file.parent.mkdir(parents=True, exist_ok=True)
+-    secret_key_file.write_text("production-secret\n", encoding="utf-8")
+-    admin_password_file = tmp_path / "secrets" / "admin.password"
+-    admin_password_file.write_text("correct-password\n", encoding="utf-8")
+-
+-    operator_env_file = tmp_path / "etc" / "ids-operator-console.env"
+-    operator_env_file.parent.mkdir(parents=True, exist_ok=True)
+-    operator_env_file.write_text(
++def _write_operator_env(
++    path: Path,
++    *,
++    database_path: Path,
++    alerts_output_path: Path,
++    quarantine_output_path: Path,
++    summary_output_path: Path,
++    secret_key_file: Path,
++) -> Path:
++    path.parent.mkdir(parents=True, exist_ok=True)
++    path.write_text(
+         "\n".join(
+             [
+-                f"IDS_OPERATOR_CONSOLE_DATABASE_PATH={operator_runtime / 'operator_console.db'}",
+-                f"IDS_OPERATOR_CONSOLE_SUMMARY_INPUT_PATH={operator_logs / 'ids_live_sensor_summary.jsonl'}",
++                "IDS_OPERATOR_CONSOLE_ENVIRONMENT=production",
++                "IDS_OPERATOR_CONSOLE_PUBLIC_BASE_URL=https://console.example",
++                f"IDS_OPERATOR_CONSOLE_DATABASE_PATH={database_path}",
++                f"IDS_OPERATOR_CONSOLE_ALERTS_INPUT_PATH={alerts_output_path}",
++                f"IDS_OPERATOR_CONSOLE_QUARANTINE_INPUT_PATH={quarantine_output_path}",
++                f"IDS_OPERATOR_CONSOLE_SUMMARY_INPUT_PATH={summary_output_path}",
+                 f"IDS_OPERATOR_CONSOLE_SECRET_KEY_FILE={secret_key_file}",
+             ]
+         )
+         + "\n",
+         encoding="utf-8",
+     )
++    return path
++
+ 
+-    return stack.SameHostStackConfig(
+-        repo_root=repo_root,
+-        python_binary=Path(sys.executable).resolve(),
+-        operator_env_file=operator_env_file.resolve(),
+-        model_manage_entrypoint=(repo_root / "ids" / "ops" / "model_bundle_manage.py").resolve(),
+-        operator_manage_entrypoint=(repo_root / "ids" / "ops" / "operator_console_manage.py").resolve(),
+-        operator_server_entrypoint=(repo_root / "ids" / "console" / "server.py").resolve(),
+-        activation_path=(tmp_path / "runtime" / "active_bundle.json").resolve(),
+-        live_sensor_interface="eth0",
+-        dumpcap_binary=Path(sys.executable).resolve(),
+-        extractor_command_prefix=(str(Path(sys.executable).resolve()),),
+-        spool_dir=(tmp_path / "runtime" / "sensor").resolve(),
+-        alerts_output_path=(tmp_path / "logs" / "ids_live_alerts.jsonl").resolve(),
+-        quarantine_output_path=(tmp_path / "logs" / "ids_live_quarantine.jsonl").resolve(),
+-        summary_output_path=(tmp_path / "logs" / "ids_live_sensor_summary.jsonl").resolve(),
+-        candidate_bundle_root=(tmp_path / "bundles" / "candidate").resolve(),
+-        admin_username="admin",
+-        admin_password_file=admin_password_file.resolve(),
++def _write_sitecustomize(site_dir: Path) -> Path:
++    site_dir.mkdir(parents=True, exist_ok=True)
++    path = site_dir / "sitecustomize.py"
++    path.write_text(
++        "\n".join(
++            [
++                "import os",
++                "if os.environ.get('IDS_TEST_BYPASS_INTERFACE') == '1':",
++                "    import ids.ops.live_sensor_preflight as live_sensor_preflight",
++                "    live_sensor_preflight._require_interface = lambda interface: interface",
++            ]
++        )
++        + "\n",
++        encoding="utf-8",
+     )
++    return path
+ 
+ 
+-def _run_python_command(argv: list[str]) -> str:
+-    completed = subprocess.run(
+-        argv,
+-        cwd=REPO_ROOT,
+-        capture_output=True,
+-        text=True,
+-        check=False,
+-    )
+-    if completed.returncode != 0:
+-        raise RuntimeError(
+-            f"command failed ({completed.returncode}): {' '.join(argv)}\n"
+-            f"stdout:\n{completed.stdout}\n"
+-            f"stderr:\n{completed.stderr}"
++def _write_fake_systemctl(fake_bin: Path, *, venv_python: Path) -> Path:
++    fake_bin.mkdir(parents=True, exist_ok=True)
++    helper = fake_bin / "fake_systemctl.py"
++    helper.write_text(
++        "\n".join(
++            [
++                "from datetime import datetime, timezone",
++                "import json",
++                "import os",
++                "from pathlib import Path",
++                "import sys",
++                "",
++                "def _write_summary() -> None:",
++                "    activation_path = Path(os.environ['IDS_TEST_FAKE_SYSTEMCTL_ACTIVATION_PATH'])",
++                "    summary_output_path = Path(os.environ['IDS_TEST_FAKE_SYSTEMCTL_SUMMARY_OUTPUT'])",
++                "    payload = json.loads(activation_path.read_text(encoding='utf-8'))",
++                "    summary_output_path.parent.mkdir(parents=True, exist_ok=True)",
++                "    summary_event = {",
++                "        'event_type': 'live_sensor_summary',",
++                "        'timestamp': datetime.now(timezone.utc).isoformat(),",
++                "        'reason': 'capture-ok',",
++                "        'active_bundle': {",
++                "            'activation_path': str(activation_path.resolve()),",
++                "            'active_bundle_root': payload['active_bundle_root'],",
++                "            'active_bundle_name': payload['active_bundle_name'],",
++                "        },",
++                "    }",
++                "    summary_output_path.write_text(json.dumps(summary_event) + '\\n', encoding='utf-8')",
++                "",
++                "def main(argv: list[str]) -> int:",
++                "    log_path = Path(os.environ['IDS_TEST_FAKE_SYSTEMCTL_LOG'])",
++                "    log_path.parent.mkdir(parents=True, exist_ok=True)",
++                "    display_argv = [Path(argv[0]).name, *argv[1:]]",
++                "    with log_path.open('a', encoding='utf-8') as handle:",
++                "        handle.write(' '.join(display_argv) + '\\n')",
++                "    if len(argv) >= 3 and argv[1] == 'start' and argv[2] == 'ids-live-sensor.service':",
++                "        _write_summary()",
++                "    return 0",
++                "",
++                "raise SystemExit(main(sys.argv))",
++            ]
+         )
+-    return completed.stdout.strip()
+-
+-
+-def test_repo_installable_bootstrap_proof_lifecycle_and_activation_contract(
+-    tmp_path: Path,
+-    monkeypatch,
+-) -> None:
+-    config = _build_stack_config(tmp_path)
+-    _write_bundle_contract(Path(config.candidate_bundle_root))
+-
+-    executed: list[list[str]] = []
+-
+-    def fake_runner(argv: list[str] | tuple[str, ...]) -> str:
+-        command = [str(part) for part in argv]
+-        executed.append(command)
+-        if len(command) >= 2 and command[1].endswith("model_bundle_manage.py"):
+-            module_command = [command[0], "-m", "ids.ops.model_bundle_manage", *command[2:]]
+-            return _run_python_command(module_command)
+-        if len(command) >= 2 and command[1].endswith("operator_console_manage.py"):
+-            if "migrate" in command:
+-                return json.dumps({"ok": True, "action": "migrate"})
+-            if "bootstrap-admin" in command:
+-                return json.dumps({"ok": True, "action": "bootstrap-admin"})
+-        if command[:2] == ["systemctl", "start"]:
+-            return ""
+-        raise AssertionError(f"unexpected command: {command}")
+-
+-    monkeypatch.setattr(
+-        stack,
+-        "validate_stack_preflight",
+-        lambda _config: {"ready": True, "command": "preflight"},
++        + "\n",
++        encoding="utf-8",
+     )
+-    monkeypatch.setattr(
+-        stack,
+-        "build_stack_status_payload",
+-        lambda *_args, **_kwargs: {
+-            "ready": True,
+-            "command": "status",
+-            "components": {"reverse_proxy_edge_seam": {"payload": {"configured": False}}},
+-        },
++
++    if os.name == "nt":
++        wrapper = fake_bin / "systemctl.cmd"
++        wrapper.write_text(
++            f'@"{venv_python}" "{helper}" %*\r\n',
++            encoding="utf-8",
++        )
++    else:
++        wrapper = fake_bin / "systemctl"
++        wrapper.write_text(
++            f'#!/bin/sh\nexec "{venv_python}" "{helper}" "$@"\n',
++            encoding="utf-8",
++            newline="\n",
++        )
++        wrapper.chmod(wrapper.stat().st_mode | 0o111)
++    return wrapper
++
++
++def _stack_base_argv(
++    *,
++    ids_stack: Path,
++    repo_root: Path,
++    venv_python: Path,
++    operator_env_file: Path,
++    activation_path: Path,
++    spool_dir: Path,
++    alerts_output_path: Path,
++    quarantine_output_path: Path,
++    summary_output_path: Path,
++) -> list[str]:
++    return [
++        str(ids_stack),
++        "--repo-root",
++        str(repo_root),
++        "--python-binary",
++        str(venv_python),
++        "--operator-env-file",
++        str(operator_env_file),
++        "--activation-path",
++        str(activation_path),
++        "--interface",
++        "test0",
++        "--dumpcap-binary",
++        str(venv_python),
++        "--extractor-command-prefix",
++        str(venv_python),
++        "--spool-dir",
++        str(spool_dir),
++        "--alerts-output-path",
++        str(alerts_output_path),
++        "--quarantine-output-path",
++        str(quarantine_output_path),
++        "--summary-output-path",
++        str(summary_output_path),
++    ]
++
++
++def test_repo_installable_bootstrap_proof_runs_installed_ids_stack_lifecycle(tmp_path: Path) -> None:
++    venv_python = _venv_python(tmp_path)
++    install = _run(
++        [str(venv_python), "-m", "pip", "install", "--no-deps", "-e", str(REPO_ROOT)],
++        cwd=tmp_path,
+     )
+-    monkeypatch.setattr(
+-        stack,
+-        "build_stack_smoke_payload",
+-        lambda *_args, **_kwargs: {
+-            "ready": True,
+-            "command": "smoke",
+-            "components": {"reverse_proxy_edge_seam": {"payload": {"configured": False}}},
+-        },
++    assert install.returncode == 0, install.stderr
++
++    scripts_dir = _scripts_dir(venv_python)
++    ids_stack = _resolve_console_script(scripts_dir, "ids-stack")
++    ids_bundle_manage = _resolve_console_script(scripts_dir, "ids-model-bundle-manage")
++
++    runtime_dir = tmp_path / "runtime"
++    logs_dir = tmp_path / "logs"
++    bundles_dir = tmp_path / "bundles"
++    runtime_dir.mkdir(parents=True, exist_ok=True)
++    logs_dir.mkdir(parents=True, exist_ok=True)
++    bundle_root = _write_bundle_contract(bundles_dir / "candidate")
++
++    secret_key_file = tmp_path / "secrets" / "console.secret"
++    secret_key_file.parent.mkdir(parents=True, exist_ok=True)
++    secret_key_file.write_text("production-secret\n", encoding="utf-8")
++    admin_password_file = tmp_path / "secrets" / "admin.password"
++    admin_password_file.write_text("correct-password\n", encoding="utf-8")
++
++    activation_path = runtime_dir / "active_bundle.json"
++    spool_dir = runtime_dir / "sensor"
++    alerts_output_path = logs_dir / "ids_live_alerts.jsonl"
++    quarantine_output_path = logs_dir / "ids_live_quarantine.jsonl"
++    summary_output_path = logs_dir / "ids_live_sensor_summary.jsonl"
++    operator_env_file = _write_operator_env(
++        tmp_path / "etc" / "ids-operator-console.env",
++        database_path=runtime_dir / "operator_console.db",
++        alerts_output_path=alerts_output_path,
++        quarantine_output_path=quarantine_output_path,
++        summary_output_path=summary_output_path,
++        secret_key_file=secret_key_file,
+     )
+-    monkeypatch.setattr(
+-        stack,
+-        "_build_notification_path_component",
+-        lambda _config: {"ok": True, "state": "disabled", "detail": None, "payload": {"enabled": False}},
++
++    site_dir = tmp_path / "sitecustomize"
++    _write_sitecustomize(site_dir)
++    fake_bin = tmp_path / "fake-bin"
++    _write_fake_systemctl(fake_bin, venv_python=venv_python)
++    systemctl_log = tmp_path / "fake-systemctl.log"
++
++    env = dict(os.environ)
++    existing_pythonpath = env.get("PYTHONPATH")
++    env["PYTHONPATH"] = (
++        str(site_dir)
++        if not existing_pythonpath
++        else os.pathsep.join([str(site_dir), existing_pythonpath])
+     )
++    env["PATH"] = os.pathsep.join([str(fake_bin), env.get("PATH", "")])
++    env["IDS_TEST_BYPASS_INTERFACE"] = "1"
++    env["IDS_TEST_FAKE_SYSTEMCTL_ACTIVATION_PATH"] = str(activation_path)
++    env["IDS_TEST_FAKE_SYSTEMCTL_SUMMARY_OUTPUT"] = str(summary_output_path)
++    env["IDS_TEST_FAKE_SYSTEMCTL_LOG"] = str(systemctl_log)
+ 
+-    payload = stack.run_stack_bootstrap(config, command_runner=fake_runner)
++    stack_base_argv = _stack_base_argv(
++        ids_stack=ids_stack,
++        repo_root=REPO_ROOT,
++        venv_python=venv_python,
++        operator_env_file=operator_env_file,
++        activation_path=activation_path,
++        spool_dir=spool_dir,
++        alerts_output_path=alerts_output_path,
++        quarantine_output_path=quarantine_output_path,
++        summary_output_path=summary_output_path,
++    )
+ 
+-    assert payload["bootstrap_ready"] is True
+-    assert [step["step"] for step in payload["steps"]] == [
++    bootstrap = _run(
++        [
++            *stack_base_argv,
++            "--json",
++            "bootstrap",
++            "--candidate-bundle-root",
++            str(bundle_root),
++            "--admin-username",
++            "admin",
++            "--admin-password-file",
++            str(admin_password_file),
++        ],
++        cwd=tmp_path,
++        env=env,
++    )
++    assert bootstrap.returncode == 0, bootstrap.stderr
++    bootstrap_payload = json.loads(bootstrap.stdout)
++    assert bootstrap_payload["bootstrap_ready"] is True
++    assert [step["step"] for step in bootstrap_payload["steps"]] == [
+         "prepare_host_layout",
+         "verify_candidate_bundle",
+         "promote_candidate_bundle",
+@@ -191,17 +346,40 @@ def test_repo_installable_bootstrap_proof_lifecycle_and_activation_contract(
+         "stack_smoke",
+     ]
+ 
+-    verify_command = executed[0]
+-    promote_command = executed[1]
+-    assert verify_command[1].replace("\\", "/").endswith("ids/ops/model_bundle_manage.py")
+-    assert promote_command[1].replace("\\", "/").endswith("ids/ops/model_bundle_manage.py")
+-    assert "--activation-path" in verify_command and "--bundle-root" in verify_command
+-    assert "--activation-path" in promote_command and "--bundle-root" in promote_command
++    preflight = _run([*stack_base_argv, "--json", "preflight"], cwd=tmp_path, env=env)
++    status = _run([*stack_base_argv, "--json", "status"], cwd=tmp_path, env=env)
++    smoke = _run([*stack_base_argv, "--json", "smoke"], cwd=tmp_path, env=env)
++    bundle_status = _run(
++        [
++            str(ids_bundle_manage),
++            "--activation-path",
++            str(activation_path),
++            "--json",
++            "status",
++        ],
++        cwd=tmp_path,
++        env=env,
++    )
++
++    assert preflight.returncode == 0, preflight.stderr
++    assert status.returncode == 0, status.stderr
++    assert smoke.returncode == 0, smoke.stderr
++    assert bundle_status.returncode == 0, bundle_status.stderr
++    assert json.loads(preflight.stdout)["ready"] is True
++    assert json.loads(status.stdout)["ready"] is True
++    assert json.loads(smoke.stdout)["ready"] is True
++    assert json.loads(bundle_status.stdout)["runtime_ready"] is True
+ 
+-    activation_payload = stack.build_bundle_status_payload(Path(config.activation_path))
++    activation_payload = stack.build_bundle_status_payload(activation_path)
+     assert activation_payload["runtime_ready"] is True
+     assert activation_payload["active_bundle_name"] == "bundle-proof"
+ 
++    systemctl_calls = systemctl_log.read_text(encoding="utf-8").splitlines()
++    assert systemctl_calls == [
++        "fake_systemctl.py start ids-operator-console.service",
++        "fake_systemctl.py start ids-live-sensor.service",
++    ]
++
+ 
+ def test_repo_installable_bootstrap_proof_canonical_command_surface() -> None:
+     pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+diff --git a/tests/ops/test_ids_repo_installable_surface.py b/tests/ops/test_ids_repo_installable_surface.py
+index f19131a..fe930b6 100644
+--- a/tests/ops/test_ids_repo_installable_surface.py
++++ b/tests/ops/test_ids_repo_installable_surface.py
+@@ -22,7 +22,7 @@ def _run(argv: list[str], *, cwd: Path = REPO_ROOT) -> subprocess.CompletedProce
+ 
+ def _venv_python(tmp_path: Path) -> Path:
+     venv_dir = tmp_path / "venv"
+-    create = _run([sys.executable, "-m", "venv", str(venv_dir)], cwd=tmp_path)
++    create = _run([sys.executable, "-m", "venv", "--system-site-packages", str(venv_dir)], cwd=tmp_path)
+     assert create.returncode == 0, create.stderr
+ 
+     windows_python = venv_dir / "Scripts" / "python.exe"
+@@ -69,10 +69,18 @@ def test_editable_install_surface_exposes_entrypoints_and_console_assets(tmp_pat
+     assert install.returncode == 0, install.stderr
+ 
+     scripts_dir = _scripts_dir(venv_python)
+-    ids_stack = _resolve_console_script(scripts_dir, "ids-stack")
+-    ids_bundle_manage = _resolve_console_script(scripts_dir, "ids-model-bundle-manage")
+-    assert ids_stack.exists()
+-    assert ids_bundle_manage.exists()
++    pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
++    expected_scripts: dict[str, str] = pyproject["project"]["scripts"]
++    resolved_scripts = {
++        command_name: _resolve_console_script(scripts_dir, command_name)
++        for command_name in expected_scripts
++    }
++    assert all(path.exists() for path in resolved_scripts.values())
++
++    for command_name, script_path in resolved_scripts.items():
++        help_run = _run([str(script_path), "--help"], cwd=tmp_path)
++        assert help_run.returncode == 0, f"{command_name}: {help_run.stderr}"
++        assert "usage:" in help_run.stdout.lower(), command_name
+ 
+     inspect = _run(
+         [
+@@ -84,9 +92,7 @@ def test_editable_install_surface_exposes_entrypoints_and_console_assets(tmp_pat
+                 "dist=md.distribution('ids-ml-new'); "
+                 "eps={ep.name: ep.value for ep in dist.entry_points if ep.group=='console_scripts'}; "
+                 "print(json.dumps({"
+-                "'ids-stack': eps.get('ids-stack'), "
+-                "'ids-model-bundle-manage': eps.get('ids-model-bundle-manage'), "
+-                "'ids-live-sensor': eps.get('ids-live-sensor'), "
++                "'entry_points': eps, "
+                 "'templates_dir': files('ids.console').joinpath('templates').is_dir(), "
+                 "'static_dir': files('ids.console').joinpath('static').is_dir()"
+                 "}))"
+@@ -97,8 +103,6 @@ def test_editable_install_surface_exposes_entrypoints_and_console_assets(tmp_pat
+     assert inspect.returncode == 0, inspect.stderr
+     payload = json.loads(inspect.stdout)
+ 
+-    assert payload["ids-stack"] == "ids.ops.same_host_stack_manage:main"
+-    assert payload["ids-model-bundle-manage"] == "ids.ops.model_bundle_manage:main"
+-    assert payload["ids-live-sensor"] == "ids.runtime.live_sensor:main"
++    assert payload["entry_points"] == expected_scripts
+     assert payload["templates_dir"] is True
+     assert payload["static_dir"] is True
+diff --git a/tests/ops/test_ids_same_host_stack_manage.py b/tests/ops/test_ids_same_host_stack_manage.py
+index 17b157a..104a655 100644
+--- a/tests/ops/test_ids_same_host_stack_manage.py
++++ b/tests/ops/test_ids_same_host_stack_manage.py
+@@ -53,16 +53,10 @@ def _build_config(
+     telegram_enabled: bool = False,
+ ) -> stack.SameHostStackConfig:
+     repo_root = tmp_path / "repo"
+-    (repo_root / "scripts" / "ids_operator_console" / "templates").mkdir(parents=True, exist_ok=True)
+-    (repo_root / "scripts" / "ids_operator_console" / "static").mkdir(parents=True, exist_ok=True)
+-    model_manage = repo_root / "scripts" / "ids_model_bundle_manage.py"
+-    operator_manage = repo_root / "scripts" / "ids_operator_console_manage.py"
+-    operator_server = repo_root / "scripts" / "ids_operator_console_server.py"
+-    model_manage.write_text("print('model-manage')\n", encoding="utf-8")
+-    operator_manage.write_text("print('operator-manage')\n", encoding="utf-8")
+-    operator_server.write_text("print('operator-server')\n", encoding="utf-8")
+-
+-    python_binary = _make_executable(tmp_path / "bin" / "python3")
++    (repo_root / "ids" / "console" / "templates").mkdir(parents=True, exist_ok=True)
++    (repo_root / "ids" / "console" / "static").mkdir(parents=True, exist_ok=True)
++
++    python_binary = Path(sys.executable).resolve()
+     _make_executable(tmp_path / "bin" / "dumpcap")
+     extractor_binary = _make_executable(tmp_path / "bin" / "extractor")
+ 
+@@ -84,9 +78,9 @@ def _build_config(
+         repo_root=repo_root,
+         python_binary=python_binary,
+         operator_env_file=operator_env_file,
+-        model_manage_entrypoint=model_manage,
+-        operator_manage_entrypoint=operator_manage,
+-        operator_server_entrypoint=operator_server,
++        model_manage_module="ids.ops.model_bundle_manage",
++        operator_manage_module="ids.ops.operator_console_manage",
++        operator_server_module="ids.console.server",
+         activation_path=tmp_path / "runtime" / "active_bundle.json",
+         live_sensor_interface="eth0",
+         dumpcap_binary=tmp_path / "bin" / "dumpcap",
+@@ -101,20 +95,18 @@ def _build_config(
+     )
+ 
+ 
+-def test_build_config_from_args_defaults_to_canonical_ids_entrypoints(tmp_path: Path) -> None:
++def test_build_config_from_args_defaults_to_canonical_ids_modules(tmp_path: Path) -> None:
+     repo_root = (tmp_path / "repo-root").resolve()
+     args = manage._build_parser().parse_args(["--repo-root", str(repo_root), "preflight"])
+ 
+     config = manage.build_config_from_args(args)
+ 
+-    assert config.model_manage_entrypoint == (repo_root / "ids" / "ops" / "model_bundle_manage.py")
+-    assert config.operator_manage_entrypoint == (
+-        repo_root / "ids" / "ops" / "operator_console_manage.py"
+-    )
+-    assert config.operator_server_entrypoint == (repo_root / "ids" / "console" / "server.py")
+-    assert "scripts" not in str(config.model_manage_entrypoint)
+-    assert "scripts" not in str(config.operator_manage_entrypoint)
+-    assert "scripts" not in str(config.operator_server_entrypoint)
++    assert config.model_manage_module == "ids.ops.model_bundle_manage"
++    assert config.operator_manage_module == "ids.ops.operator_console_manage"
++    assert config.operator_server_module == "ids.console.server"
++    assert "scripts" not in config.model_manage_module
++    assert "scripts" not in config.operator_manage_module
++    assert "scripts" not in config.operator_server_module
+ 
+ 
+ def _write_backup_artifacts(
+@@ -305,7 +297,8 @@ def test_run_stack_bootstrap_bootstrap_or_preflight_executes_canonical_order(
+     assert executed == [
+         [
+             str(config.python_binary.resolve()),
+-            str(config.model_manage_entrypoint.resolve()),
++            "-m",
++            config.model_manage_module,
+             "--activation-path",
+             str(config.activation_path.resolve()),
+             "--json",
+@@ -315,7 +308,8 @@ def test_run_stack_bootstrap_bootstrap_or_preflight_executes_canonical_order(
+         ],
+         [
+             str(config.python_binary.resolve()),
+-            str(config.model_manage_entrypoint.resolve()),
++            "-m",
++            config.model_manage_module,
+             "--activation-path",
+             str(config.activation_path.resolve()),
+             "--json",
+@@ -325,7 +319,8 @@ def test_run_stack_bootstrap_bootstrap_or_preflight_executes_canonical_order(
+         ],
+         [
+             str(config.python_binary.resolve()),
+-            str(config.operator_manage_entrypoint.resolve()),
++            "-m",
++            config.operator_manage_module,
+             "--database-path",
+             str((tmp_path / "runtime" / "operator_console.db").resolve()),
+             "--json",
+@@ -334,7 +329,8 @@ def test_run_stack_bootstrap_bootstrap_or_preflight_executes_canonical_order(
+         ],
+         [
+             str(config.python_binary.resolve()),
+-            str(config.operator_manage_entrypoint.resolve()),
++            "-m",
++            config.operator_manage_module,
+             "--database-path",
+             str((tmp_path / "runtime" / "operator_console.db").resolve()),
+             "--json",
+diff --git a/tests/runtime/test_ids_inference.py b/tests/runtime/test_ids_inference.py
+index ec1d36c..9cd5ba9 100644
+--- a/tests/runtime/test_ids_inference.py
++++ b/tests/runtime/test_ids_inference.py
+@@ -11,6 +11,7 @@ import pytest
+ REPO_ROOT = Path(__file__).resolve().parents[2]
+ 
+ from ids.runtime.inference import (  # noqa: E402
++    ActiveBundleResolutionError,
+     IDSInferencer,
+     IDSModelConfig,
+     build_inferencer,
+@@ -239,6 +240,17 @@ def test_build_model_config_prefers_default_activation_path_when_present(
+     assert config.threshold == 0.65
+ 
+ 
++def test_build_model_config_fails_closed_when_default_activation_path_is_missing(
++    tmp_path: Path,
++    monkeypatch: pytest.MonkeyPatch,
++) -> None:
++    missing_activation_path = tmp_path / DEFAULT_ACTIVATION_RECORD_NAME
++    monkeypatch.setattr("ids.runtime.inference.DEFAULT_ACTIVATION_PATH", missing_activation_path)
++
++    with pytest.raises(ActiveBundleResolutionError, match="Activation record not found"):
++        build_model_config()
++
++
+ def test_build_model_config_rejects_external_overrides_when_bundle_used(tmp_path: Path) -> None:
+     bundle_root = tmp_path / "bundle"
+     bundle_root.mkdir()
+diff --git a/tests/runtime/test_ids_realtime_pipeline.py b/tests/runtime/test_ids_realtime_pipeline.py
+index b2012f9..78f333d 100644
+--- a/tests/runtime/test_ids_realtime_pipeline.py
++++ b/tests/runtime/test_ids_realtime_pipeline.py
+@@ -27,6 +27,11 @@ from ids.runtime.realtime_pipeline import (  # noqa: E402
+ class DummyInferencer:
+     def __init__(self, threshold: float = 0.5) -> None:
+         self.threshold = threshold
++        self.config = type(
++            "Config",
++            (),
++            {"feature_columns_path": Path("dummy_features.json")},
++        )()
+ 
+     def predict(self, frame: pd.DataFrame, include_input: bool = True) -> pd.DataFrame:
+         scores = frame["Flow Duration"].astype(float) / 100.0
+
+*** UNTRACKED FILE: pyproject.toml ***
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ids-ml-new"
+version = "0.1.0"
+description = "Repo-installable IDS same-host runtime and ML stack."
+readme = "README.md"
+requires-python = ">=3.11"
+dynamic = ["dependencies"]
+
+[project.scripts]
+ids-inference = "ids.runtime.inference:main"
+ids-realtime-pipeline = "ids.runtime.realtime_pipeline:main"
+ids-live-sensor = "ids.runtime.live_sensor:main"
+ids-live-sensor-health = "ids.runtime.live_sensor_health:main"
+ids-live-sensor-preflight = "ids.ops.live_sensor_preflight:main"
+ids-model-bundle-manage = "ids.ops.model_bundle_manage:main"
+ids-operator-console-server = "ids.console.server:main"
+ids-operator-console-preflight = "ids.ops.operator_console_preflight:main"
+ids-operator-console-manage = "ids.ops.operator_console_manage:main"
+ids-stack = "ids.ops.same_host_stack_manage:main"
+ids-package-final-model = "ml_pipeline.packaging.package_final_model:main"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ids*", "ml_pipeline*"]
+
+[tool.setuptools.package-data]
+"ids.console" = ["templates/**/*.html", "static/*.css", "static/*.js"]
+
+*** UNTRACKED FILE: ids/console/server.py ***
+from __future__ import annotations
+
+import argparse
+from dataclasses import replace
+from typing import Sequence
+
+import uvicorn
+from fastapi import FastAPI
+
+from ids.console import OperatorConsoleConfig, load_operator_console_config
+from ids.console.web import create_operator_console_web_app
+
+
+def build_operator_console_app(config: OperatorConsoleConfig) -> FastAPI:
+    return create_operator_console_web_app(config)
+
+
+def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run the IDS Operator Console service.")
+    parser.add_argument("--host", help="Override bind host from environment config.")
+    parser.add_argument("--port", type=int, help="Override bind port from environment config.")
+    parser.add_argument("--log-level", help="Override log level from environment config.")
+    parser.add_argument(
+        "--reload",
+        action="store_true",
+        help="Enable uvicorn reload mode (development only).",
+    )
+    return parser.parse_args(argv)
+
+
+def _apply_cli_overrides(config: OperatorConsoleConfig, args: argparse.Namespace) -> OperatorConsoleConfig:
+    updates: dict[str, object] = {}
+    if args.host is not None:
+        updates["host"] = args.host
+    if args.port is not None:
+        updates["port"] = args.port
+    if args.log_level is not None:
+        updates["log_level"] = args.log_level
+    if args.reload:
+        updates["reload"] = True
+    if not updates:
+        return config
+    return replace(config, **updates)
+
+
+def run_server(app: FastAPI, *, config: OperatorConsoleConfig) -> None:
+    uvicorn.run(
+        app,
+        host=config.host,
+        port=config.port,
+        log_level=config.log_level,
+        reload=config.reload,
+        proxy_headers=True,
+        forwarded_allow_ips=config.forwarded_allow_ips,
+        root_path=config.root_path,
+    )
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = _parse_args(argv)
+    config = _apply_cli_overrides(load_operator_console_config(), args)
+    app = build_operator_console_app(config)
+    run_server(app, config=config)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+*** UNTRACKED FILE: tests/core/test_ids_path_defaults.py ***
+from __future__ import annotations
+
+from pathlib import Path
+
+from ids.core import path_defaults
+
+
+def test_resolve_repo_root_prefers_env_override(monkeypatch, tmp_path: Path) -> None:
+    overridden_root = tmp_path / "env-root"
+    overridden_root.mkdir()
+    monkeypatch.setenv(path_defaults.DEFAULT_REPO_ROOT_ENV_VAR, str(overridden_root))
+
+    assert path_defaults.resolve_repo_root() == overridden_root.resolve()
+
+
+def test_resolve_repo_root_uses_default_linux_root_when_present(monkeypatch, tmp_path: Path) -> None:
+    linux_root = tmp_path / "opt" / "ids_ml_new"
+    linux_root.mkdir(parents=True)
+    monkeypatch.delenv(path_defaults.DEFAULT_REPO_ROOT_ENV_VAR, raising=False)
+    monkeypatch.setattr(path_defaults, "DEFAULT_REPO_ROOT", linux_root)
+
+    assert path_defaults.resolve_repo_root() == linux_root.resolve()
+
+
+def test_resolve_repo_root_falls_back_to_checkout_when_default_root_missing(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.delenv(path_defaults.DEFAULT_REPO_ROOT_ENV_VAR, raising=False)
+    monkeypatch.setattr(path_defaults, "DEFAULT_REPO_ROOT", tmp_path / "missing-linux-root")
+
+    resolved = path_defaults.resolve_repo_root()
+
+    assert resolved == Path(path_defaults.__file__).resolve().parents[2]
+
+
+def test_resolve_repo_path_uses_explicit_repo_root(tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo-root"
+    repo_root.mkdir()
+
+    resolved = path_defaults.resolve_repo_path("artifacts", "final_model", repo_root=repo_root)
+
+    assert resolved == (repo_root / "artifacts" / "final_model").resolve()
+

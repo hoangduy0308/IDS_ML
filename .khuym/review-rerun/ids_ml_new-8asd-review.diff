@@ -1,0 +1,1465 @@
+
+diff --git a/deploy/systemd/ids-live-sensor.service b/deploy/systemd/ids-live-sensor.service
+index b9ec5e7..ada41bb 100644
+--- a/deploy/systemd/ids-live-sensor.service
++++ b/deploy/systemd/ids-live-sensor.service
+@@ -16,8 +16,8 @@ Environment=IDS_LIVE_SENSOR_SUMMARY_OUTPUT=/var/log/ids-live-sensor/ids_live_sen
+ Environment=IDS_LIVE_SENSOR_DUMPCAP_BINARY=/usr/bin/dumpcap
+ Environment=IDS_LIVE_SENSOR_EXTRACTOR_COMMAND_PREFIX=/opt/cicflowmeter/Cmd
+ Environment=IDS_LIVE_SENSOR_ACTIVE_BUNDLE_PATH=/var/lib/ids-live-sensor/active_bundle.json
+-ExecStartPre=/usr/bin/python3 /opt/ids_ml_new/scripts/ids_live_sensor_preflight.py --interface ${IDS_LIVE_SENSOR_INTERFACE} --dumpcap-binary ${IDS_LIVE_SENSOR_DUMPCAP_BINARY} --extractor-command-prefix ${IDS_LIVE_SENSOR_EXTRACTOR_COMMAND_PREFIX} --activation-path ${IDS_LIVE_SENSOR_ACTIVE_BUNDLE_PATH} --spool-dir ${IDS_LIVE_SENSOR_SPOOL_DIR} --alerts-output-path ${IDS_LIVE_SENSOR_ALERTS_OUTPUT} --quarantine-output-path ${IDS_LIVE_SENSOR_QUARANTINE_OUTPUT} --summary-output-path ${IDS_LIVE_SENSOR_SUMMARY_OUTPUT}
+-ExecStart=/usr/bin/bash -lc 'exec /usr/bin/python3 /opt/ids_ml_new/scripts/ids_live_sensor.py --interface "$IDS_LIVE_SENSOR_INTERFACE" --spool-dir "$IDS_LIVE_SENSOR_SPOOL_DIR" --capture-window-duration-seconds 2.5 --capture-window-file-count 2 --max-pending-windows 2 --capture-buffer-megabytes 64 --update-interval-seconds 0.5 --dumpcap-binary "$IDS_LIVE_SENSOR_DUMPCAP_BINARY" --extractor-command-prefix ${IDS_LIVE_SENSOR_EXTRACTOR_COMMAND_PREFIX} --adapter-profile-id cicflowmeter_primary_v1 --alerts-output-path "$IDS_LIVE_SENSOR_ALERTS_OUTPUT" --quarantine-output-path "$IDS_LIVE_SENSOR_QUARANTINE_OUTPUT" --summary-output-path "$IDS_LIVE_SENSOR_SUMMARY_OUTPUT" --activation-path "$IDS_LIVE_SENSOR_ACTIVE_BUNDLE_PATH"'
++ExecStartPre=/usr/bin/python3 -m ids.ops.live_sensor_preflight --interface ${IDS_LIVE_SENSOR_INTERFACE} --dumpcap-binary ${IDS_LIVE_SENSOR_DUMPCAP_BINARY} --extractor-command-prefix ${IDS_LIVE_SENSOR_EXTRACTOR_COMMAND_PREFIX} --activation-path ${IDS_LIVE_SENSOR_ACTIVE_BUNDLE_PATH} --spool-dir ${IDS_LIVE_SENSOR_SPOOL_DIR} --alerts-output-path ${IDS_LIVE_SENSOR_ALERTS_OUTPUT} --quarantine-output-path ${IDS_LIVE_SENSOR_QUARANTINE_OUTPUT} --summary-output-path ${IDS_LIVE_SENSOR_SUMMARY_OUTPUT}
++ExecStart=/usr/bin/bash -lc 'exec /usr/bin/python3 -m ids.runtime.live_sensor --interface "$IDS_LIVE_SENSOR_INTERFACE" --spool-dir "$IDS_LIVE_SENSOR_SPOOL_DIR" --capture-window-duration-seconds 2.5 --capture-window-file-count 2 --max-pending-windows 2 --capture-buffer-megabytes 64 --update-interval-seconds 0.5 --dumpcap-binary "$IDS_LIVE_SENSOR_DUMPCAP_BINARY" --extractor-command-prefix ${IDS_LIVE_SENSOR_EXTRACTOR_COMMAND_PREFIX} --adapter-profile-id cicflowmeter_primary_v1 --alerts-output-path "$IDS_LIVE_SENSOR_ALERTS_OUTPUT" --quarantine-output-path "$IDS_LIVE_SENSOR_QUARANTINE_OUTPUT" --summary-output-path "$IDS_LIVE_SENSOR_SUMMARY_OUTPUT" --activation-path "$IDS_LIVE_SENSOR_ACTIVE_BUNDLE_PATH"'
+ Restart=on-failure
+ RestartSec=5s
+ StateDirectory=ids-live-sensor
+diff --git a/deploy/systemd/ids-operator-console-notify.service b/deploy/systemd/ids-operator-console-notify.service
+index d0f50cb..7a12229 100644
+--- a/deploy/systemd/ids-operator-console-notify.service
++++ b/deploy/systemd/ids-operator-console-notify.service
+@@ -19,14 +19,14 @@ Environment=IDS_OPERATOR_CONSOLE_DATABASE_PATH=/var/lib/ids-operator-console/ope
+ Environment=IDS_OPERATOR_CONSOLE_ALERTS_INPUT_PATH=/var/log/ids-live-sensor/ids_live_alerts.jsonl
+ Environment=IDS_OPERATOR_CONSOLE_QUARANTINE_INPUT_PATH=/var/log/ids-live-sensor/ids_live_quarantine.jsonl
+ Environment=IDS_OPERATOR_CONSOLE_SUMMARY_INPUT_PATH=/var/log/ids-live-sensor/ids_live_sensor_summary.jsonl
+-Environment=IDS_OPERATOR_CONSOLE_TEMPLATES_DIR=/opt/ids_ml_new/scripts/ids_operator_console/templates
+-Environment=IDS_OPERATOR_CONSOLE_STATIC_DIR=/opt/ids_ml_new/scripts/ids_operator_console/static
++Environment=IDS_OPERATOR_CONSOLE_TEMPLATES_DIR=/opt/ids_ml_new/ids/console/templates
++Environment=IDS_OPERATOR_CONSOLE_STATIC_DIR=/opt/ids_ml_new/ids/console/static
+ Environment=IDS_OPERATOR_CONSOLE_SECRET_KEY_FILE=/etc/ids-operator-console/console.secret
+ Environment=IDS_OPERATOR_CONSOLE_TELEGRAM_BOT_TOKEN=
+ Environment=IDS_OPERATOR_CONSOLE_TELEGRAM_BOT_TOKEN_FILE=
+ Environment=IDS_OPERATOR_CONSOLE_TELEGRAM_CHAT_ID=
+-ExecStartPre=/usr/bin/python3 /opt/ids_ml_new/scripts/ids_operator_console_preflight.py --python-binary /usr/bin/python3 --app-entrypoint /opt/ids_ml_new/scripts/ids_operator_console_server.py --manage-entrypoint /opt/ids_ml_new/scripts/ids_operator_console_manage.py --database-path ${IDS_OPERATOR_CONSOLE_DATABASE_PATH} --alerts-input-path ${IDS_OPERATOR_CONSOLE_ALERTS_INPUT_PATH} --quarantine-input-path ${IDS_OPERATOR_CONSOLE_QUARANTINE_INPUT_PATH} --summary-input-path ${IDS_OPERATOR_CONSOLE_SUMMARY_INPUT_PATH} --templates-dir ${IDS_OPERATOR_CONSOLE_TEMPLATES_DIR} --static-dir ${IDS_OPERATOR_CONSOLE_STATIC_DIR} --environment ${IDS_OPERATOR_CONSOLE_ENVIRONMENT} --public-base-url ${IDS_OPERATOR_CONSOLE_PUBLIC_BASE_URL} --root-path ${IDS_OPERATOR_CONSOLE_ROOT_PATH} --forwarded-allow-ips ${IDS_OPERATOR_CONSOLE_FORWARDED_ALLOW_IPS} --secret-key-file ${IDS_OPERATOR_CONSOLE_SECRET_KEY_FILE}
+-ExecStart=/usr/bin/bash -lc 'exec /usr/bin/python3 /opt/ids_ml_new/scripts/ids_operator_console_manage.py --database-path "$IDS_OPERATOR_CONSOLE_DATABASE_PATH" notify-worker --poll-interval-seconds 30'
++ExecStartPre=/usr/bin/python3 -m ids.ops.operator_console_preflight --python-binary /usr/bin/python3 --app-entrypoint /opt/ids_ml_new/ids/console/server.py --manage-entrypoint /opt/ids_ml_new/ids/ops/operator_console_manage.py --database-path ${IDS_OPERATOR_CONSOLE_DATABASE_PATH} --alerts-input-path ${IDS_OPERATOR_CONSOLE_ALERTS_INPUT_PATH} --quarantine-input-path ${IDS_OPERATOR_CONSOLE_QUARANTINE_INPUT_PATH} --summary-input-path ${IDS_OPERATOR_CONSOLE_SUMMARY_INPUT_PATH} --templates-dir ${IDS_OPERATOR_CONSOLE_TEMPLATES_DIR} --static-dir ${IDS_OPERATOR_CONSOLE_STATIC_DIR} --environment ${IDS_OPERATOR_CONSOLE_ENVIRONMENT} --public-base-url ${IDS_OPERATOR_CONSOLE_PUBLIC_BASE_URL} --root-path ${IDS_OPERATOR_CONSOLE_ROOT_PATH} --forwarded-allow-ips ${IDS_OPERATOR_CONSOLE_FORWARDED_ALLOW_IPS} --secret-key-file ${IDS_OPERATOR_CONSOLE_SECRET_KEY_FILE}
++ExecStart=/usr/bin/bash -lc 'exec /usr/bin/python3 -m ids.ops.operator_console_manage --database-path "$IDS_OPERATOR_CONSOLE_DATABASE_PATH" notify-worker --poll-interval-seconds 30'
+ Restart=on-failure
+ RestartSec=30s
+ StateDirectory=ids-operator-console
+diff --git a/deploy/systemd/ids-operator-console.service b/deploy/systemd/ids-operator-console.service
+index be6f605..fc40bc6 100644
+--- a/deploy/systemd/ids-operator-console.service
++++ b/deploy/systemd/ids-operator-console.service
+@@ -21,14 +21,14 @@ Environment=IDS_OPERATOR_CONSOLE_DATABASE_PATH=/var/lib/ids-operator-console/ope
+ Environment=IDS_OPERATOR_CONSOLE_ALERTS_INPUT_PATH=/var/log/ids-live-sensor/ids_live_alerts.jsonl
+ Environment=IDS_OPERATOR_CONSOLE_QUARANTINE_INPUT_PATH=/var/log/ids-live-sensor/ids_live_quarantine.jsonl
+ Environment=IDS_OPERATOR_CONSOLE_SUMMARY_INPUT_PATH=/var/log/ids-live-sensor/ids_live_sensor_summary.jsonl
+-Environment=IDS_OPERATOR_CONSOLE_TEMPLATES_DIR=/opt/ids_ml_new/scripts/ids_operator_console/templates
+-Environment=IDS_OPERATOR_CONSOLE_STATIC_DIR=/opt/ids_ml_new/scripts/ids_operator_console/static
++Environment=IDS_OPERATOR_CONSOLE_TEMPLATES_DIR=/opt/ids_ml_new/ids/console/templates
++Environment=IDS_OPERATOR_CONSOLE_STATIC_DIR=/opt/ids_ml_new/ids/console/static
+ Environment=IDS_OPERATOR_CONSOLE_SECRET_KEY_FILE=/etc/ids-operator-console/console.secret
+ Environment=IDS_OPERATOR_CONSOLE_TELEGRAM_BOT_TOKEN=
+ Environment=IDS_OPERATOR_CONSOLE_TELEGRAM_BOT_TOKEN_FILE=
+ Environment=IDS_OPERATOR_CONSOLE_TELEGRAM_CHAT_ID=
+-ExecStartPre=/usr/bin/python3 /opt/ids_ml_new/scripts/ids_operator_console_preflight.py --python-binary /usr/bin/python3 --app-entrypoint /opt/ids_ml_new/scripts/ids_operator_console_server.py --manage-entrypoint /opt/ids_ml_new/scripts/ids_operator_console_manage.py --database-path ${IDS_OPERATOR_CONSOLE_DATABASE_PATH} --alerts-input-path ${IDS_OPERATOR_CONSOLE_ALERTS_INPUT_PATH} --quarantine-input-path ${IDS_OPERATOR_CONSOLE_QUARANTINE_INPUT_PATH} --summary-input-path ${IDS_OPERATOR_CONSOLE_SUMMARY_INPUT_PATH} --templates-dir ${IDS_OPERATOR_CONSOLE_TEMPLATES_DIR} --static-dir ${IDS_OPERATOR_CONSOLE_STATIC_DIR} --environment ${IDS_OPERATOR_CONSOLE_ENVIRONMENT} --public-base-url ${IDS_OPERATOR_CONSOLE_PUBLIC_BASE_URL} --root-path ${IDS_OPERATOR_CONSOLE_ROOT_PATH} --forwarded-allow-ips ${IDS_OPERATOR_CONSOLE_FORWARDED_ALLOW_IPS} --secret-key-file ${IDS_OPERATOR_CONSOLE_SECRET_KEY_FILE}
+-ExecStart=/usr/bin/bash -lc 'exec /usr/bin/python3 /opt/ids_ml_new/scripts/ids_operator_console_server.py --host "$IDS_OPERATOR_CONSOLE_HOST" --port "$IDS_OPERATOR_CONSOLE_PORT" --log-level "$IDS_OPERATOR_CONSOLE_LOG_LEVEL"'
++ExecStartPre=/usr/bin/python3 -m ids.ops.operator_console_preflight --python-binary /usr/bin/python3 --app-entrypoint /opt/ids_ml_new/ids/console/server.py --manage-entrypoint /opt/ids_ml_new/ids/ops/operator_console_manage.py --database-path ${IDS_OPERATOR_CONSOLE_DATABASE_PATH} --alerts-input-path ${IDS_OPERATOR_CONSOLE_ALERTS_INPUT_PATH} --quarantine-input-path ${IDS_OPERATOR_CONSOLE_QUARANTINE_INPUT_PATH} --summary-input-path ${IDS_OPERATOR_CONSOLE_SUMMARY_INPUT_PATH} --templates-dir ${IDS_OPERATOR_CONSOLE_TEMPLATES_DIR} --static-dir ${IDS_OPERATOR_CONSOLE_STATIC_DIR} --environment ${IDS_OPERATOR_CONSOLE_ENVIRONMENT} --public-base-url ${IDS_OPERATOR_CONSOLE_PUBLIC_BASE_URL} --root-path ${IDS_OPERATOR_CONSOLE_ROOT_PATH} --forwarded-allow-ips ${IDS_OPERATOR_CONSOLE_FORWARDED_ALLOW_IPS} --secret-key-file ${IDS_OPERATOR_CONSOLE_SECRET_KEY_FILE}
++ExecStart=/usr/bin/bash -lc 'exec /usr/bin/python3 -m ids.console.server --host "$IDS_OPERATOR_CONSOLE_HOST" --port "$IDS_OPERATOR_CONSOLE_PORT" --log-level "$IDS_OPERATOR_CONSOLE_LOG_LEVEL"'
+ Restart=on-failure
+ RestartSec=5s
+ StateDirectory=ids-operator-console
+diff --git a/docs/current/operations/ids_same_host_stack_operations.md b/docs/current/operations/ids_same_host_stack_operations.md
+index 42219bb..a55fe63 100644
+--- a/docs/current/operations/ids_same_host_stack_operations.md
++++ b/docs/current/operations/ids_same_host_stack_operations.md
+@@ -16,10 +16,10 @@ It coordinates the existing component owners. It does not replace them.
+ 
+ Component ownership remains:
+ 
+-- model activation: `ids.ops.model_bundle_lifecycle` with `scripts/ids_model_bundle_manage.py` as the compatibility entrypoint
+-- live sensor runtime: `ids.runtime.live_sensor` with `deploy/systemd/ids-live-sensor.service` plus `scripts/ids_live_sensor_preflight.py` as the compatibility entrypoint
+-- operator console runtime and restore: `ids.console.web`, `ids.console.ops`, and `ids.ops.operator_console_manage` with `scripts/ids_operator_console_manage.py` as the compatibility entrypoint
+-- notification worker runtime: `ids.console.notification_runtime` with `deploy/systemd/ids-operator-console-notify.service` plus `scripts/ids_operator_console_manage.py`
++- model activation: `ids.ops.model_bundle_lifecycle` with `ids-model-bundle-manage` as the canonical operator command (`scripts/ids_model_bundle_manage.py` remains compatibility-only)
++- live sensor runtime: `ids.runtime.live_sensor` with `deploy/systemd/ids-live-sensor.service` plus `ids-live-sensor-preflight` as the canonical preflight command (`scripts/ids_live_sensor_preflight.py` remains compatibility-only)
++- operator console runtime and restore: `ids.console.web`, `ids.console.ops`, and `ids.ops.operator_console_manage` with `ids-operator-console-manage` as the canonical operator command (`scripts/ids_operator_console_manage.py` remains compatibility-only)
++- notification worker runtime: `ids.console.notification_runtime` with `deploy/systemd/ids-operator-console-notify.service` plus `ids-operator-console-manage`
+ - same-host stack console asset defaults: `ids/console/templates` and `ids/console/static`; `scripts/ids_operator_console/*` remains an explicit compatibility override, not the canonical default
+ 
+ ## Required Host Paths
+@@ -40,8 +40,8 @@ Deploy references already shipped in-tree:
+ 
+ ## Canonical Stack Commands
+ 
+-The canonical stack implementation lives in `ids.ops.same_host_stack_manage`; `scripts/ids_same_host_stack_manage.py` remains the compatibility entrypoint.
+-That wrapper supports direct file execution from the repo checkout and from installed paths because it bootstraps the repository root before importing the canonical module.
++The canonical stack implementation lives in `ids.ops.same_host_stack_manage`, surfaced as the installed command `ids-stack`.
++`scripts/ids_same_host_stack_manage.py` remains a compatibility entrypoint for direct file execution.
+ 
+ Supported commands:
+ 
+@@ -68,7 +68,7 @@ Supported commands:
+ Example:
+ 
+ ```bash
+-python /opt/ids_ml_new/scripts/ids_same_host_stack_manage.py \
++ids-stack \
+   --repo-root /opt/ids_ml_new \
+   --python-binary /usr/bin/python3 \
+   --operator-env-file /etc/ids-operator-console/ids-operator-console.env \
+@@ -96,7 +96,7 @@ The same-host stack contract carries the live-sensor extractor command prefix ex
+ Use stack `preflight` as the canonical same-host deploy gate:
+ 
+ ```bash
+-python /opt/ids_ml_new/scripts/ids_same_host_stack_manage.py \
++ids-stack \
+   --repo-root /opt/ids_ml_new \
+   --operator-env-file /etc/ids-operator-console/ids-operator-console.env \
+   --activation-path /var/lib/ids-live-sensor/active_bundle.json \
+@@ -106,13 +106,13 @@ python /opt/ids_ml_new/scripts/ids_same_host_stack_manage.py \
+ Use stack `status` for whole-stack runtime health and `smoke` for the runtime plus console smoke path:
+ 
+ ```bash
+-python /opt/ids_ml_new/scripts/ids_same_host_stack_manage.py \
++ids-stack \
+   --repo-root /opt/ids_ml_new \
+   --operator-env-file /etc/ids-operator-console/ids-operator-console.env \
+   --activation-path /var/lib/ids-live-sensor/active_bundle.json \
+   --json status
+ 
+-python /opt/ids_ml_new/scripts/ids_same_host_stack_manage.py \
++ids-stack \
+   --repo-root /opt/ids_ml_new \
+   --operator-env-file /etc/ids-operator-console/ids-operator-console.env \
+   --activation-path /var/lib/ids-live-sensor/active_bundle.json \
+@@ -135,7 +135,7 @@ Default stack output stays redacted for notification metadata and returns degrad
+ Use stack `recover` after reboot or subsystem failure. This is supervisor-first and preserves component ownership.
+ 
+ ```bash
+-python /opt/ids_ml_new/scripts/ids_same_host_stack_manage.py \
++ids-stack \
+   --repo-root /opt/ids_ml_new \
+   --operator-env-file /etc/ids-operator-console/ids-operator-console.env \
+   --activation-path /var/lib/ids-live-sensor/active_bundle.json \
+@@ -159,7 +159,7 @@ The stack layer stays verification-first. It does not add a new restore mutation
+ Use the existing component owners for restore mutations:
+ 
+ ```bash
+-python /opt/ids_ml_new/scripts/ids_operator_console_manage.py \
++ids-operator-console-manage \
+   --database-path /var/lib/ids-operator-console/operator_console.db \
+   --json restore \
+   --backup-dir /var/backups/ids-operator-console/backup-YYYYMMDDTHHMMSSffffffZ \
+@@ -181,7 +181,7 @@ Live sensor JSONL outputs and logs remain preserve-when-practical operator evide
+ After component-owned backup artifacts are present, use stack `restore-inventory`:
+ 
+ ```bash
+-python /opt/ids_ml_new/scripts/ids_same_host_stack_manage.py \
++ids-stack \
+   --repo-root /opt/ids_ml_new \
+   --operator-env-file /etc/ids-operator-console/ids-operator-console.env \
+   --activation-path /var/lib/ids-live-sensor/active_bundle.json \
+@@ -196,7 +196,7 @@ This verifies inventory only. It does not restore anything.
+ After the console restore command succeeds and secrets are rebound on the host, use stack `post-restore-check`:
+ 
+ ```bash
+-python /opt/ids_ml_new/scripts/ids_same_host_stack_manage.py \
++ids-stack \
+   --repo-root /opt/ids_ml_new \
+   --operator-env-file /etc/ids-operator-console/ids-operator-console.env \
+   --activation-path /var/lib/ids-live-sensor/active_bundle.json \
+@@ -236,15 +236,15 @@ Interpretation:
+ Operator follow-up commands remain component-specific:
+ 
+ ```bash
+-python /opt/ids_ml_new/scripts/ids_operator_console_manage.py \
++ids-operator-console-manage \
+   --database-path /var/lib/ids-operator-console/operator_console.db \
+   --json notify-status
+ 
+-python /opt/ids_ml_new/scripts/ids_operator_console_manage.py \
++ids-operator-console-manage \
+   --database-path /var/lib/ids-operator-console/operator_console.db \
+   --json notify-redrive --limit 100
+ 
+-python /opt/ids_ml_new/scripts/ids_model_bundle_manage.py \
++ids-model-bundle-manage \
+   --activation-path /var/lib/ids-live-sensor/active_bundle.json \
+   --json verify \
+   --bundle-root /opt/ids_ml_new/artifacts/final_model/candidate_bundle
+diff --git a/docs/current/runtime/final_model_bundle.md b/docs/current/runtime/final_model_bundle.md
+index 60661ba..dd58deb 100644
+--- a/docs/current/runtime/final_model_bundle.md
++++ b/docs/current/runtime/final_model_bundle.md
+@@ -4,17 +4,13 @@
+ 
+ Model cu?i cùng không còn là t?p h?p file r?i r?c trong `artifacts`, mà là m?t bundle có contract versioned d? runtime, preflight, và operator workflow cùng d?c theo m?t chu?n duy nh?t.
+ 
+-Script dóng gói:
++Canonical command surfaces:
+ 
+-- [package_final_model.py](F:/Work/IDS_ML_New/scripts/package_final_model.py)
++- `ids-package-final-model` (`ml_pipeline.packaging.package_final_model`)
++- `ids-inference` (`ids.runtime.inference`)
++- `ids-model-bundle-manage` (`ids.ops.model_bundle_manage`)
+ 
+-Script inference và dry-run:
+-
+-- [ids_inference.py](F:/Work/IDS_ML_New/scripts/ids_inference.py)
+-
+-Script qu?n lý promotion lifecycle:
+-
+-- [ids_model_bundle_manage.py](F:/Work/IDS_ML_New/scripts/ids_model_bundle_manage.py)
++Compatibility wrappers under `scripts/*` remain supported, but operator-facing runbooks use the canonical installed commands above.
+ 
+ ## Bundle n?m ? dâu
+ 
+@@ -84,7 +80,7 @@ Tài li?u mô t? model cu?i du?i d?ng ng?n g?n, d? tra c?u.
+ ## Cách d?ng l?i bundle
+ 
+ ```powershell
+-python F:\Work\IDS_ML_New\scripts\package_final_model.py
++ids-package-final-model
+ ```
+ 
+ Script này s? emit `model_bundle.json` theo contract versioned hi?n t?i.
+@@ -94,7 +90,7 @@ Script này s? emit `model_bundle.json` theo contract versioned hi?n t?i.
+ ### 1. Verify candidate bundle
+ 
+ ```powershell
+-python F:\Work\IDS_ML_New\scripts\ids_model_bundle_manage.py `
++ids-model-bundle-manage `
+   --activation-path F:\Work\IDS_ML_New\artifacts\runtime\active_bundle.json `
+   --json verify `
+   --bundle-root F:\Work\IDS_ML_New\artifacts\final_model\catboost_full_data_v1
+@@ -105,7 +101,7 @@ L?nh này ch? ki?m tra compatibility contract c?a candidate bundle. Nó
+ ### 2. Dry-run inference trên cùng host
+ 
+ ```powershell
+-python F:\Work\IDS_ML_New\scripts\ids_inference.py `
++ids-inference `
+   --bundle-root F:\Work\IDS_ML_New\artifacts\final_model\catboost_full_data_v1 `
+   --input-path F:\Work\IDS_ML_New\artifacts\cic_iot_diad_2024_binary\clean\test.parquet `
+   --output-path F:\Work\IDS_ML_New\artifacts\demo\test_predictions_from_bundle.parquet `
+@@ -117,7 +113,7 @@ python F:\Work\IDS_ML_New\scripts\ids_inference.py `
+ ### 3. Promote bundle dã verify
+ 
+ ```powershell
+-python F:\Work\IDS_ML_New\scripts\ids_model_bundle_manage.py `
++ids-model-bundle-manage `
+   --activation-path /var/lib/ids-live-sensor/active_bundle.json `
+   --json promote `
+   --bundle-root /opt/ids_ml_new/artifacts/final_model/catboost_full_data_v1
+@@ -128,7 +124,7 @@ Promotion s? ghi l?i bundle active m?i b?ng atomic replace. N?u dã c
+ ### 4. Rollback v? known-good tru?c dó
+ 
+ ```powershell
+-python F:\Work\IDS_ML_New\scripts\ids_model_bundle_manage.py `
++ids-model-bundle-manage `
+   --activation-path /var/lib/ids-live-sensor/active_bundle.json `
+   --json rollback
+ ```
+@@ -139,7 +135,7 @@ Rollback cung dùng cùng activation contract và cùng co ch? atomic replac
+ 
+ Bundle là ngu?n c?u hình chu?n cho l?p realtime pre-model pipeline:
+ 
+-- [ids_realtime_pipeline.py](F:/Work/IDS_ML_New/scripts/ids_realtime_pipeline.py)
++- `ids-realtime-pipeline` (`ids.runtime.realtime_pipeline`)
+ - [ids_realtime_pipeline_architecture.md](F:/Work/IDS_ML_New/docs/current/runtime/ids_realtime_pipeline_architecture.md)
+ 
+ Trong pipeline hi?n t?i:
+diff --git a/docs/current/runtime/ids_live_sensor_operations.md b/docs/current/runtime/ids_live_sensor_operations.md
+index aa1f64b..36a5f08 100644
+--- a/docs/current/runtime/ids_live_sensor_operations.md
++++ b/docs/current/runtime/ids_live_sensor_operations.md
+@@ -22,7 +22,7 @@ Before the daemon starts, the deployment must verify:
+ - the configured NIC name is correct
+ - the spool and log directories are writable
+ 
+-The sample service unit uses [ids_live_sensor_preflight.py](F:/Work/IDS_ML_New/scripts/ids_live_sensor_preflight.py) as an explicit preflight command so the service fails fast if any of those requirements are missing.
++The sample service unit uses canonical `ids.ops.live_sensor_preflight` execution (installed command `ids-live-sensor-preflight`) as an explicit preflight command so the service fails fast if any of those requirements are missing. `scripts/ids_live_sensor_preflight.py` remains compatibility-only.
+ 
+ ## Recommended paths
+ 
+@@ -99,7 +99,7 @@ The preflight check should fail if any of the following are missing:
+ - a writable spool directory
+ - a writable log directory
+ 
+-If you need more elaborate setup logic, keep it in an explicit helper script such as [ids_live_sensor_preflight.py](F:/Work/IDS_ML_New/scripts/ids_live_sensor_preflight.py). Do not bury setup assumptions inside the main daemon code.
++If you need more elaborate setup logic, keep it in an explicit helper command such as `ids-live-sensor-preflight`. Do not bury setup assumptions inside the main daemon code.
+ 
+ ## Promotion and rollback runbook
+ 
+@@ -110,7 +110,7 @@ Recommended same-host flow:
+ 1. Verify the candidate bundle contract:
+ 
+ ```bash
+-python /opt/ids_ml_new/scripts/ids_model_bundle_manage.py \
++ids-model-bundle-manage \
+   --activation-path /var/lib/ids-live-sensor/active_bundle.json \
+   --json verify \
+   --bundle-root /opt/ids_ml_new/artifacts/final_model/candidate_bundle
+@@ -119,7 +119,7 @@ python /opt/ids_ml_new/scripts/ids_model_bundle_manage.py \
+ 2. Run a same-host dry-run on representative data before cutover:
+ 
+ ```bash
+-python /opt/ids_ml_new/scripts/ids_inference.py \
++ids-inference \
+   --bundle-root /opt/ids_ml_new/artifacts/final_model/candidate_bundle \
+   --input-path /opt/ids_ml_new/artifacts/cic_iot_diad_2024_binary/clean/test.parquet \
+   --output-path /tmp/candidate_bundle_predictions.parquet \
+@@ -129,7 +129,7 @@ python /opt/ids_ml_new/scripts/ids_inference.py \
+ 3. Promote the verified bundle:
+ 
+ ```bash
+-python /opt/ids_ml_new/scripts/ids_model_bundle_manage.py \
++ids-model-bundle-manage \
+   --activation-path /var/lib/ids-live-sensor/active_bundle.json \
+   --json promote \
+   --bundle-root /opt/ids_ml_new/artifacts/final_model/candidate_bundle
+@@ -152,7 +152,7 @@ If `verify` fails or `promote` raises a contract error, the previous activation
+ Rollback is explicit:
+ 
+ ```bash
+-python /opt/ids_ml_new/scripts/ids_model_bundle_manage.py \
++ids-model-bundle-manage \
+   --activation-path /var/lib/ids-live-sensor/active_bundle.json \
+   --json rollback
+ ```
+@@ -166,7 +166,7 @@ Backup and restore procedures must preserve `/var/lib/ids-live-sensor/active_bun
+ After a restore drill:
+ 
+ - do not assume the restored activation record is valid just because the file exists
+-- rerun [ids_live_sensor_preflight.py](F:/Work/IDS_ML_New/scripts/ids_live_sensor_preflight.py) or restart the systemd unit so preflight resolves and re-validates the active bundle contract
++- rerun `ids-live-sensor-preflight` (or the compatibility wrapper `scripts/ids_live_sensor_preflight.py`) or restart the systemd unit so preflight resolves and re-validates the active bundle contract
+ - only treat the sensor as ready after preflight/runtime can resolve the restored active bundle successfully
+ 
+ ## Deferred features
+diff --git a/ids/core/path_defaults.py b/ids/core/path_defaults.py
+new file mode 100644
+index 0000000..ccccff5
+--- /dev/null
++++ b/ids/core/path_defaults.py
+@@ -0,0 +1,87 @@
++from __future__ import annotations
++
++import os
++from pathlib import Path
++
++
++DEFAULT_REPO_ROOT_ENV_VAR = "IDS_REPO_ROOT"
++DEFAULT_REPO_ROOT = Path("/opt/ids_ml_new")
++DEFAULT_RUNTIME_ACTIVATION_PATH = Path("/var/lib/ids-live-sensor/active_bundle.json")
++
++
++def _clean_env(value: str | None) -> str | None:
++    if value is None:
++        return None
++    normalized = value.strip()
++    return normalized or None
++
++
++def resolve_repo_root(*, env_var: str = DEFAULT_REPO_ROOT_ENV_VAR) -> Path:
++    env_value = _clean_env(os.environ.get(env_var))
++    if env_value is not None:
++        return Path(env_value).expanduser().resolve()
++    return Path(__file__).resolve().parents[2]
++
++
++def resolve_repo_path(*parts: str, repo_root: Path | None = None) -> Path:
++    root = repo_root or resolve_repo_root()
++    return root.joinpath(*parts).resolve()
++
++
++DEFAULT_RUNTIME_COMPAT_BUNDLE_ROOT = resolve_repo_path(
++    "artifacts",
++    "final_model",
++    "catboost_full_data_v1",
++)
++DEFAULT_RUNTIME_COMPAT_MODEL_PATH = DEFAULT_RUNTIME_COMPAT_BUNDLE_ROOT / "model.cbm"
++DEFAULT_RUNTIME_COMPAT_FEATURE_COLUMNS_PATH = (
++    DEFAULT_RUNTIME_COMPAT_BUNDLE_ROOT / "feature_columns.json"
++)
++
++DEFAULT_PACKAGING_SOURCE_ROOT = resolve_repo_path(
++    "artifacts",
++    "kaggle",
++    "outputs",
++    "catboost_full_data_attempt",
++    "catboost_full_data_attempt_results",
++)
++DEFAULT_PACKAGING_MODEL_PATH = (
++    DEFAULT_PACKAGING_SOURCE_ROOT / "catboost_full_data_attempt.cbm"
++)
++DEFAULT_PACKAGING_FEATURE_COLUMNS_PATH = resolve_repo_path(
++    "artifacts",
++    "cic_iot_diad_2024_binary",
++    "manifests",
++    "feature_columns.json",
++)
++DEFAULT_PACKAGING_SUMMARY_PATH = DEFAULT_PACKAGING_SOURCE_ROOT / "reports" / "summary.csv"
++DEFAULT_PACKAGING_TRAINING_SUMMARY_PATH = (
++    DEFAULT_PACKAGING_SOURCE_ROOT / "reports" / "training_summary.json"
++)
++DEFAULT_PACKAGING_THRESHOLD_SELECTION_PATH = resolve_repo_path(
++    "artifacts",
++    "posttrain_analysis",
++    "scaling_finalists",
++    "reports",
++    "catboost_full_threshold_selection.json",
++)
++DEFAULT_PACKAGING_BUNDLE_ROOT = DEFAULT_RUNTIME_COMPAT_BUNDLE_ROOT
++
++
++__all__ = [
++    "DEFAULT_PACKAGING_BUNDLE_ROOT",
++    "DEFAULT_PACKAGING_FEATURE_COLUMNS_PATH",
++    "DEFAULT_PACKAGING_MODEL_PATH",
++    "DEFAULT_PACKAGING_SOURCE_ROOT",
++    "DEFAULT_PACKAGING_SUMMARY_PATH",
++    "DEFAULT_PACKAGING_THRESHOLD_SELECTION_PATH",
++    "DEFAULT_PACKAGING_TRAINING_SUMMARY_PATH",
++    "DEFAULT_REPO_ROOT",
++    "DEFAULT_REPO_ROOT_ENV_VAR",
++    "DEFAULT_RUNTIME_ACTIVATION_PATH",
++    "DEFAULT_RUNTIME_COMPAT_BUNDLE_ROOT",
++    "DEFAULT_RUNTIME_COMPAT_FEATURE_COLUMNS_PATH",
++    "DEFAULT_RUNTIME_COMPAT_MODEL_PATH",
++    "resolve_repo_path",
++    "resolve_repo_root",
++]
+diff --git a/ids/ops/same_host_stack_manage.py b/ids/ops/same_host_stack_manage.py
+index 41ac44d..7f196e6 100644
+--- a/ids/ops/same_host_stack_manage.py
++++ b/ids/ops/same_host_stack_manage.py
+@@ -122,6 +122,11 @@ def _build_parser() -> argparse.ArgumentParser:
+ 
+ def build_config_from_args(args: argparse.Namespace) -> SameHostStackConfig:
+     repo_root = Path(args.repo_root).resolve()
++    default_model_manage_entrypoint = (repo_root / "ids" / "ops" / "model_bundle_manage.py").resolve()
++    default_operator_manage_entrypoint = (
++        repo_root / "ids" / "ops" / "operator_console_manage.py"
++    ).resolve()
++    default_operator_server_entrypoint = (repo_root / "ids" / "console" / "server.py").resolve()
+     return SameHostStackConfig(
+         repo_root=repo_root,
+         python_binary=Path(args.python_binary).resolve(),
+@@ -129,17 +134,17 @@ def build_config_from_args(args: argparse.Namespace) -> SameHostStackConfig:
+         model_manage_entrypoint=(
+             Path(args.model_manage_entrypoint).resolve()
+             if args.model_manage_entrypoint
+-            else (repo_root / "scripts" / "ids_model_bundle_manage.py").resolve()
++            else default_model_manage_entrypoint
+         ),
+         operator_manage_entrypoint=(
+             Path(args.operator_manage_entrypoint).resolve()
+             if args.operator_manage_entrypoint
+-            else (repo_root / "scripts" / "ids_operator_console_manage.py").resolve()
++            else default_operator_manage_entrypoint
+         ),
+         operator_server_entrypoint=(
+             Path(args.operator_server_entrypoint).resolve()
+             if args.operator_server_entrypoint
+-            else (repo_root / "scripts" / "ids_operator_console_server.py").resolve()
++            else default_operator_server_entrypoint
+         ),
+         activation_path=Path(args.activation_path).resolve(),
+         live_sensor_interface=str(args.interface).strip(),
+diff --git a/ids/runtime/adapter/record_adapter.py b/ids/runtime/adapter/record_adapter.py
+index 97e0a3e..0afbeaf 100644
+--- a/ids/runtime/adapter/record_adapter.py
++++ b/ids/runtime/adapter/record_adapter.py
+@@ -10,12 +10,11 @@ from pathlib import Path
+ from typing import Any, Iterable, Iterator, Mapping, Sequence, TextIO
+ 
+ from ids.core import feature_contract as feature_contract_module
++from ids.core.path_defaults import DEFAULT_RUNTIME_COMPAT_FEATURE_COLUMNS_PATH
+ 
+ PRIMARY_PROFILE_ID = "cicflowmeter_primary_v1"
+ SECONDARY_PROFILE_ID = "cicflowmeter_secondary_v1"
+-DEFAULT_FEATURE_COLUMNS_PATH = Path(
+-    r"F:\Work\IDS_ML_New\artifacts\final_model\catboost_full_data_v1\feature_columns.json"
+-)
++DEFAULT_FEATURE_COLUMNS_PATH = DEFAULT_RUNTIME_COMPAT_FEATURE_COLUMNS_PATH
+ MAX_JSONL_LINE_LENGTH = 1_048_576
+ 
+ ADAPTER_FIXED_METADATA_KEYS = (
+diff --git a/ids/runtime/inference.py b/ids/runtime/inference.py
+index aa0c042..038016e 100644
+--- a/ids/runtime/inference.py
++++ b/ids/runtime/inference.py
+@@ -15,15 +15,16 @@ from ids.core.model_bundle import (
+     load_model_bundle_manifest,
+ )
+ from ids.core.model_bundle_activation import ActiveBundleResolutionError, resolve_active_model_bundle
++from ids.core.path_defaults import (
++    DEFAULT_RUNTIME_ACTIVATION_PATH,
++    DEFAULT_RUNTIME_COMPAT_FEATURE_COLUMNS_PATH,
++    DEFAULT_RUNTIME_COMPAT_MODEL_PATH,
++)
+ 
+ 
+-DEFAULT_MODEL_PATH = Path(
+-    r"F:\Work\IDS_ML_New\artifacts\kaggle\outputs\catboost_full_data_attempt"
+-    r"\catboost_full_data_attempt_results\catboost_full_data_attempt.cbm"
+-)
+-DEFAULT_FEATURE_COLUMNS_PATH = Path(
+-    r"F:\Work\IDS_ML_New\artifacts\cic_iot_diad_2024_binary\manifests\feature_columns.json"
+-)
++DEFAULT_MODEL_PATH = DEFAULT_RUNTIME_COMPAT_MODEL_PATH
++DEFAULT_FEATURE_COLUMNS_PATH = DEFAULT_RUNTIME_COMPAT_FEATURE_COLUMNS_PATH
++DEFAULT_ACTIVATION_PATH = DEFAULT_RUNTIME_ACTIVATION_PATH
+ DEFAULT_THRESHOLD = 0.5
+ 
+ 
+@@ -169,6 +170,10 @@ def build_model_config(
+         return IDSModelConfig.from_bundle(bundle_root)
+     if config_path is not None:
+         return IDSModelConfig.from_config_path(config_path)
++    if all(value is None for value in (model_path, feature_columns_path, threshold)):
++        default_activation_path = DEFAULT_ACTIVATION_PATH.resolve()
++        if default_activation_path.is_file():
++            return IDSModelConfig.from_activation_path(default_activation_path)
+     return IDSModelConfig(
+         model_path=(model_path or DEFAULT_MODEL_PATH).resolve(),
+         feature_columns_path=(feature_columns_path or DEFAULT_FEATURE_COLUMNS_PATH).resolve(),
+@@ -206,10 +211,33 @@ def parse_args() -> argparse.Namespace:
+     parser.add_argument("--output-path", type=Path)
+     parser.add_argument("--bundle-root", type=Path, default=None)
+     parser.add_argument("--config-path", type=Path, default=None)
+-    parser.add_argument("--activation-path", type=Path, default=None)
+-    parser.add_argument("--model-path", type=Path, default=None)
+-    parser.add_argument("--feature-columns-path", type=Path, default=None)
+-    parser.add_argument("--threshold", type=float, default=None)
++    parser.add_argument(
++        "--activation-path",
++        type=Path,
++        default=None,
++        help=(
++            "Canonical production contract input. "
++            "Resolved from active_bundle.json and cannot be mixed with raw model/schema/threshold overrides."
++        ),
++    )
++    parser.add_argument(
++        "--model-path",
++        type=Path,
++        default=None,
++        help="Compatibility/dev-only raw model override (non-production).",
++    )
++    parser.add_argument(
++        "--feature-columns-path",
++        type=Path,
++        default=None,
++        help="Compatibility/dev-only raw feature schema override (non-production).",
++    )
++    parser.add_argument(
++        "--threshold",
++        type=float,
++        default=None,
++        help="Compatibility/dev-only raw threshold override (non-production).",
++    )
+     parser.add_argument("--limit", type=int, default=None)
+     parser.add_argument(
+         "--drop-input-columns",
+diff --git a/ids/runtime/realtime_pipeline.py b/ids/runtime/realtime_pipeline.py
+index dfdacdf..ae134fa 100644
+--- a/ids/runtime/realtime_pipeline.py
++++ b/ids/runtime/realtime_pipeline.py
+@@ -15,8 +15,6 @@ import pandas as pd
+ from ids.core.feature_contract import FlowFeatureContract, QuarantinedFlowRecord
+ from ids.runtime.inference import (
+     DEFAULT_FEATURE_COLUMNS_PATH,
+-    DEFAULT_MODEL_PATH,
+-    DEFAULT_THRESHOLD,
+     IDSInferencer,
+     build_inferencer,
+ )
+@@ -344,13 +342,14 @@ def parse_args() -> argparse.Namespace:
+     parser.add_argument("--quarantine-output-path", type=Path, default=None)
+     parser.add_argument("--bundle-root", type=Path, default=None)
+     parser.add_argument("--config-path", type=Path, default=None)
+-    parser.add_argument("--model-path", type=Path, default=DEFAULT_MODEL_PATH)
++    parser.add_argument("--activation-path", type=Path, default=None)
++    parser.add_argument("--model-path", type=Path, default=None)
+     parser.add_argument(
+         "--feature-columns-path",
+         type=Path,
+-        default=DEFAULT_FEATURE_COLUMNS_PATH,
++        default=None,
+     )
+-    parser.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD)
++    parser.add_argument("--threshold", type=float, default=None)
+     parser.add_argument("--max-batch-size", type=int, default=DEFAULT_MAX_BATCH_SIZE)
+     parser.add_argument(
+         "--flush-interval-seconds",
+@@ -368,14 +367,27 @@ def main() -> None:
+         alerts_output_path=args.alerts_output_path,
+         quarantine_output_path=args.quarantine_output_path,
+     )
+-    contract = FlowFeatureContract.from_feature_file(args.feature_columns_path)
+     inferencer = build_inferencer(
+         bundle_root=args.bundle_root,
+         config_path=args.config_path,
++        activation_path=args.activation_path,
+         model_path=args.model_path,
+         feature_columns_path=args.feature_columns_path,
+         threshold=args.threshold,
+     )
++    resolved_feature_columns_path = args.feature_columns_path
++    if resolved_feature_columns_path is None:
++        inferencer_config = getattr(inferencer, "config", None)
++        inferencer_feature_columns_path = getattr(
++            inferencer_config,
++            "feature_columns_path",
++            None,
++        )
++        if inferencer_feature_columns_path is not None:
++            resolved_feature_columns_path = Path(inferencer_feature_columns_path)
++        else:
++            resolved_feature_columns_path = DEFAULT_FEATURE_COLUMNS_PATH
++    contract = FlowFeatureContract.from_feature_file(resolved_feature_columns_path)
+     runner = RealtimePipelineRunner(
+         contract=contract,
+         inferencer=inferencer,
+diff --git a/ml_pipeline/packaging/package_final_model.py b/ml_pipeline/packaging/package_final_model.py
+index 6b161f4..c5137de 100644
+--- a/ml_pipeline/packaging/package_final_model.py
++++ b/ml_pipeline/packaging/package_final_model.py
+@@ -13,28 +13,22 @@ from ids.core.model_bundle import (
+     build_feature_schema_metadata,
+     build_inference_contract_metadata,
+ )
++from ids.core.path_defaults import (
++    DEFAULT_PACKAGING_BUNDLE_ROOT,
++    DEFAULT_PACKAGING_FEATURE_COLUMNS_PATH,
++    DEFAULT_PACKAGING_MODEL_PATH,
++    DEFAULT_PACKAGING_SUMMARY_PATH,
++    DEFAULT_PACKAGING_THRESHOLD_SELECTION_PATH,
++    DEFAULT_PACKAGING_TRAINING_SUMMARY_PATH,
++)
+ 
+ 
+-DEFAULT_MODEL_PATH = Path(
+-    r"F:\Work\IDS_ML_New\artifacts\kaggle\outputs\catboost_full_data_attempt"
+-    r"\catboost_full_data_attempt_results\catboost_full_data_attempt.cbm"
+-)
+-DEFAULT_FEATURE_COLUMNS_PATH = Path(
+-    r"F:\Work\IDS_ML_New\artifacts\cic_iot_diad_2024_binary\manifests\feature_columns.json"
+-)
+-DEFAULT_SUMMARY_PATH = Path(
+-    r"F:\Work\IDS_ML_New\artifacts\kaggle\outputs\catboost_full_data_attempt"
+-    r"\catboost_full_data_attempt_results\reports\summary.csv"
+-)
+-DEFAULT_TRAINING_SUMMARY_PATH = Path(
+-    r"F:\Work\IDS_ML_New\artifacts\kaggle\outputs\catboost_full_data_attempt"
+-    r"\catboost_full_data_attempt_results\reports\training_summary.json"
+-)
+-DEFAULT_THRESHOLD_SELECTION_PATH = Path(
+-    r"F:\Work\IDS_ML_New\artifacts\posttrain_analysis\scaling_finalists\reports"
+-    r"\catboost_full_threshold_selection.json"
+-)
+-DEFAULT_BUNDLE_ROOT = Path(r"F:\Work\IDS_ML_New\artifacts\final_model\catboost_full_data_v1")
++DEFAULT_MODEL_PATH = DEFAULT_PACKAGING_MODEL_PATH
++DEFAULT_FEATURE_COLUMNS_PATH = DEFAULT_PACKAGING_FEATURE_COLUMNS_PATH
++DEFAULT_SUMMARY_PATH = DEFAULT_PACKAGING_SUMMARY_PATH
++DEFAULT_TRAINING_SUMMARY_PATH = DEFAULT_PACKAGING_TRAINING_SUMMARY_PATH
++DEFAULT_THRESHOLD_SELECTION_PATH = DEFAULT_PACKAGING_THRESHOLD_SELECTION_PATH
++DEFAULT_BUNDLE_ROOT = DEFAULT_PACKAGING_BUNDLE_ROOT
+ 
+ 
+ def read_json(path: Path) -> dict[str, Any]:
+@@ -89,9 +83,9 @@ def build_model_card(bundle_root: Path, metadata: dict[str, Any]) -> str:
+ 
+ ## Source references
+ 
+-- final decision: [final_model_decision.md](F:/Work/IDS_ML_New/docs/final_model_decision.md)
+-- scaling experiment: [scaling_experiment_results.md](F:/Work/IDS_ML_New/docs/scaling_experiment_results.md)
+-- threshold analysis: [scaling_threshold_analysis.md](F:/Work/IDS_ML_New/docs/scaling_threshold_analysis.md)
++- final decision: `docs/final_model_decision.md`
++- scaling experiment: `docs/scaling_experiment_results.md`
++- threshold analysis: `docs/scaling_threshold_analysis.md`
+ """
+ 
+ 
+diff --git a/tests/docs/test_docs_path_smoke.py b/tests/docs/test_docs_path_smoke.py
+index 75af611..4ddf0fa 100644
+--- a/tests/docs/test_docs_path_smoke.py
++++ b/tests/docs/test_docs_path_smoke.py
+@@ -60,3 +60,26 @@ def test_documented_mirrored_pytest_commands_are_live() -> None:
+ 
+     completed = run_command(PYTEST_COMMAND)
+     assert_command_smoke(completed, "documented mirrored pytest command")
++
++
++def test_packaged_operator_docs_keep_canonical_command_surface() -> None:
++    stack_doc = (REPO_ROOT / "docs" / "current" / "operations" / "ids_same_host_stack_operations.md").read_text(
++        encoding="utf-8"
++    )
++    live_sensor_doc = (REPO_ROOT / "docs" / "current" / "runtime" / "ids_live_sensor_operations.md").read_text(
++        encoding="utf-8"
++    )
++    bundle_doc = (REPO_ROOT / "docs" / "current" / "runtime" / "final_model_bundle.md").read_text(
++        encoding="utf-8"
++    )
++
++    assert "ids-stack" in stack_doc
++    assert "compatibility entrypoint" in stack_doc
++    assert "scripts/ids_same_host_stack_manage.py" in stack_doc
++
++    assert "ids-live-sensor-preflight" in live_sensor_doc
++    assert "ids-model-bundle-manage" in live_sensor_doc
++    assert "ids-inference" in live_sensor_doc
++
++    assert "ids-package-final-model" in bundle_doc
++    assert "ids-model-bundle-manage" in bundle_doc
+diff --git a/tests/ops/test_ids_model_bundle_manage.py b/tests/ops/test_ids_model_bundle_manage.py
+index e737d6e..0cd457c 100644
+--- a/tests/ops/test_ids_model_bundle_manage.py
++++ b/tests/ops/test_ids_model_bundle_manage.py
+@@ -2,10 +2,16 @@ from __future__ import annotations
+ 
+ import json
+ from pathlib import Path
++import sys
+ 
+ import pytest
+ 
+-from wrapper_smoke_support import assert_help_smoke, run_python_module_help, run_python_script_help
++from wrapper_smoke_support import (
++    assert_help_smoke,
++    run_command,
++    run_python_module_help,
++    run_python_script_help,
++)
+ 
+ import ids.ops.model_bundle_manage as manage  # noqa: E402
+ from ids.core.model_bundle import (  # noqa: E402
+@@ -210,3 +216,9 @@ def test_script_wrapper_help_runs_through_direct_file_entrypoint() -> None:
+     help_run = run_python_script_help("scripts/ids_model_bundle_manage.py")
+     assert_help_smoke(help_run, "scripts/ids_model_bundle_manage.py")
+     assert "usage:" in help_run.stdout.lower()
++
++
++def test_canonical_module_help_surface_is_available() -> None:
++    help_run = run_command([sys.executable, "-m", "ids.ops.model_bundle_manage", "--help"])
++    assert_help_smoke(help_run, "ids.ops.model_bundle_manage")
++    assert "usage:" in help_run.stdout.lower()
+diff --git a/tests/ops/test_ids_operator_console_preflight.py b/tests/ops/test_ids_operator_console_preflight.py
+index a5d401a..f9d0319 100644
+--- a/tests/ops/test_ids_operator_console_preflight.py
++++ b/tests/ops/test_ids_operator_console_preflight.py
+@@ -104,13 +104,22 @@ def test_deploy_artifacts_are_wired_to_proxy_and_secret_contract() -> None:
+     assert "IDS_OPERATOR_CONSOLE_SECRET_KEY_FILE" in service_text
+     assert "--public-base-url ${IDS_OPERATOR_CONSOLE_PUBLIC_BASE_URL}" in service_text
+     assert "--secret-key-file ${IDS_OPERATOR_CONSOLE_SECRET_KEY_FILE}" in service_text
+-    assert "--manage-entrypoint /opt/ids_ml_new/scripts/ids_operator_console_manage.py" in service_text
++    assert "--manage-entrypoint /opt/ids_ml_new/ids/ops/operator_console_manage.py" in service_text
++    assert "--app-entrypoint /opt/ids_ml_new/ids/console/server.py" in service_text
++    assert "IDS_OPERATOR_CONSOLE_TEMPLATES_DIR=/opt/ids_ml_new/ids/console/templates" in service_text
++    assert "IDS_OPERATOR_CONSOLE_STATIC_DIR=/opt/ids_ml_new/ids/console/static" in service_text
++    assert "python3 -m ids.ops.operator_console_preflight" in service_text
++    assert "python3 -m ids.console.server" in service_text
+     assert "IDS_OPERATOR_CONSOLE_TELEGRAM_BOT_TOKEN_FILE" in service_text
+ 
+-    assert "ids_operator_console_manage.py --database-path \"$IDS_OPERATOR_CONSOLE_DATABASE_PATH\" notify-worker" in notify_service_text
++    assert "-m ids.ops.operator_console_manage --database-path \"$IDS_OPERATOR_CONSOLE_DATABASE_PATH\" notify-worker" in notify_service_text
+     assert "--iterations 1" not in notify_service_text
+     assert "notify-worker --poll-interval-seconds 30" in notify_service_text
+-    assert "--manage-entrypoint /opt/ids_ml_new/scripts/ids_operator_console_manage.py" in notify_service_text
++    assert "--manage-entrypoint /opt/ids_ml_new/ids/ops/operator_console_manage.py" in notify_service_text
++    assert "--app-entrypoint /opt/ids_ml_new/ids/console/server.py" in notify_service_text
++    assert "IDS_OPERATOR_CONSOLE_TEMPLATES_DIR=/opt/ids_ml_new/ids/console/templates" in notify_service_text
++    assert "IDS_OPERATOR_CONSOLE_STATIC_DIR=/opt/ids_ml_new/ids/console/static" in notify_service_text
++    assert "python3 -m ids.ops.operator_console_preflight" in notify_service_text
+     assert "IDS_OPERATOR_CONSOLE_TELEGRAM_BOT_TOKEN_FILE" in notify_service_text
+     assert "IDS_OPERATOR_CONSOLE_TELEGRAM_CHAT_ID" in notify_service_text
+ 
+diff --git a/tests/ops/test_ids_repo_installable_bootstrap_proof.py b/tests/ops/test_ids_repo_installable_bootstrap_proof.py
+new file mode 100644
+index 0000000..cbe1d39
+--- /dev/null
++++ b/tests/ops/test_ids_repo_installable_bootstrap_proof.py
+@@ -0,0 +1,222 @@
++from __future__ import annotations
++
++from dataclasses import replace
++import json
++from pathlib import Path
++import subprocess
++import sys
++import tomllib
++
++import ids.ops.same_host_stack as stack  # noqa: E402
++from ids.core.model_bundle import (  # noqa: E402
++    build_feature_schema_metadata,
++    build_inference_contract_metadata,
++)
++
++
++REPO_ROOT = Path(__file__).resolve().parents[2]
++
++
++def _write_bundle_contract(bundle_root: Path) -> Path:
++    bundle_root.mkdir(parents=True, exist_ok=True)
++    feature_columns_path = bundle_root / "feature_columns.json"
++    feature_columns_path.write_text(
++        json.dumps({"feature_columns": ["f1", "f2"]}),
++        encoding="utf-8",
++    )
++    (bundle_root / "model.cbm").write_text("model", encoding="utf-8")
++    (bundle_root / "model_bundle.json").write_text(
++        json.dumps(
++            {
++                "manifest_version": 2,
++                "bundle_name": "bundle-proof",
++                "created_at": "2026-03-29T00:00:00+07:00",
++                "model_key": "catboost_full_data",
++                "model_family": "CatBoostClassifier",
++                "model_artifact": "model.cbm",
++                "feature_columns_file": "feature_columns.json",
++                "threshold": 0.5,
++                "positive_label": "Attack",
++                "negative_label": "Benign",
++                "feature_count": 2,
++                "train_rows": 123,
++                "metrics_file": "metrics.json",
++                "training_summary_file": "training_summary.json",
++                "compatibility": {
++                    "feature_schema": build_feature_schema_metadata(feature_columns_path),
++                    "inference_contract": build_inference_contract_metadata(
++                        positive_label="Attack",
++                        negative_label="Benign",
++                        threshold=0.5,
++                    ),
++                },
++            }
++        ),
++        encoding="utf-8",
++    )
++    return bundle_root
++
++
++def _build_stack_config(tmp_path: Path) -> stack.SameHostStackConfig:
++    repo_root = REPO_ROOT.resolve()
++    operator_runtime = tmp_path / "runtime"
++    operator_logs = tmp_path / "logs"
++    operator_runtime.mkdir(parents=True, exist_ok=True)
++    operator_logs.mkdir(parents=True, exist_ok=True)
++
++    secret_key_file = tmp_path / "secrets" / "console.secret"
++    secret_key_file.parent.mkdir(parents=True, exist_ok=True)
++    secret_key_file.write_text("production-secret\n", encoding="utf-8")
++    admin_password_file = tmp_path / "secrets" / "admin.password"
++    admin_password_file.write_text("correct-password\n", encoding="utf-8")
++
++    operator_env_file = tmp_path / "etc" / "ids-operator-console.env"
++    operator_env_file.parent.mkdir(parents=True, exist_ok=True)
++    operator_env_file.write_text(
++        "\n".join(
++            [
++                f"IDS_OPERATOR_CONSOLE_DATABASE_PATH={operator_runtime / 'operator_console.db'}",
++                f"IDS_OPERATOR_CONSOLE_SUMMARY_INPUT_PATH={operator_logs / 'ids_live_sensor_summary.jsonl'}",
++                f"IDS_OPERATOR_CONSOLE_SECRET_KEY_FILE={secret_key_file}",
++            ]
++        )
++        + "\n",
++        encoding="utf-8",
++    )
++
++    return stack.SameHostStackConfig(
++        repo_root=repo_root,
++        python_binary=Path(sys.executable).resolve(),
++        operator_env_file=operator_env_file.resolve(),
++        model_manage_entrypoint=(repo_root / "ids" / "ops" / "model_bundle_manage.py").resolve(),
++        operator_manage_entrypoint=(repo_root / "ids" / "ops" / "operator_console_manage.py").resolve(),
++        operator_server_entrypoint=(repo_root / "ids" / "console" / "server.py").resolve(),
++        activation_path=(tmp_path / "runtime" / "active_bundle.json").resolve(),
++        live_sensor_interface="eth0",
++        dumpcap_binary=Path(sys.executable).resolve(),
++        extractor_command_prefix=(str(Path(sys.executable).resolve()),),
++        spool_dir=(tmp_path / "runtime" / "sensor").resolve(),
++        alerts_output_path=(tmp_path / "logs" / "ids_live_alerts.jsonl").resolve(),
++        quarantine_output_path=(tmp_path / "logs" / "ids_live_quarantine.jsonl").resolve(),
++        summary_output_path=(tmp_path / "logs" / "ids_live_sensor_summary.jsonl").resolve(),
++        candidate_bundle_root=(tmp_path / "bundles" / "candidate").resolve(),
++        admin_username="admin",
++        admin_password_file=admin_password_file.resolve(),
++    )
++
++
++def _run_python_command(argv: list[str]) -> str:
++    completed = subprocess.run(
++        argv,
++        cwd=REPO_ROOT,
++        capture_output=True,
++        text=True,
++        check=False,
++    )
++    if completed.returncode != 0:
++        raise RuntimeError(
++            f"command failed ({completed.returncode}): {' '.join(argv)}\n"
++            f"stdout:\n{completed.stdout}\n"
++            f"stderr:\n{completed.stderr}"
++        )
++    return completed.stdout.strip()
++
++
++def test_repo_installable_bootstrap_proof_lifecycle_and_activation_contract(
++    tmp_path: Path,
++    monkeypatch,
++) -> None:
++    config = _build_stack_config(tmp_path)
++    _write_bundle_contract(Path(config.candidate_bundle_root))
++
++    executed: list[list[str]] = []
++
++    def fake_runner(argv: list[str] | tuple[str, ...]) -> str:
++        command = [str(part) for part in argv]
++        executed.append(command)
++        if len(command) >= 2 and command[1].endswith("model_bundle_manage.py"):
++            module_command = [command[0], "-m", "ids.ops.model_bundle_manage", *command[2:]]
++            return _run_python_command(module_command)
++        if len(command) >= 2 and command[1].endswith("operator_console_manage.py"):
++            if "migrate" in command:
++                return json.dumps({"ok": True, "action": "migrate"})
++            if "bootstrap-admin" in command:
++                return json.dumps({"ok": True, "action": "bootstrap-admin"})
++        if command[:2] == ["systemctl", "start"]:
++            return ""
++        raise AssertionError(f"unexpected command: {command}")
++
++    monkeypatch.setattr(
++        stack,
++        "validate_stack_preflight",
++        lambda _config: {"ready": True, "command": "preflight"},
++    )
++    monkeypatch.setattr(
++        stack,
++        "build_stack_status_payload",
++        lambda *_args, **_kwargs: {
++            "ready": True,
++            "command": "status",
++            "components": {"reverse_proxy_edge_seam": {"payload": {"configured": False}}},
++        },
++    )
++    monkeypatch.setattr(
++        stack,
++        "build_stack_smoke_payload",
++        lambda *_args, **_kwargs: {
++            "ready": True,
++            "command": "smoke",
++            "components": {"reverse_proxy_edge_seam": {"payload": {"configured": False}}},
++        },
++    )
++    monkeypatch.setattr(
++        stack,
++        "_build_notification_path_component",
++        lambda _config: {"ok": True, "state": "disabled", "detail": None, "payload": {"enabled": False}},
++    )
++
++    payload = stack.run_stack_bootstrap(config, command_runner=fake_runner)
++
++    assert payload["bootstrap_ready"] is True
++    assert [step["step"] for step in payload["steps"]] == [
++        "prepare_host_layout",
++        "verify_candidate_bundle",
++        "promote_candidate_bundle",
++        "migrate_operator_console",
++        "bootstrap_operator_admin",
++        "stack_preflight",
++        "start_operator_console_service",
++        "start_live_sensor_service",
++        "stack_status",
++        "stack_smoke",
++    ]
++
++    verify_command = executed[0]
++    promote_command = executed[1]
++    assert verify_command[1].replace("\\", "/").endswith("ids/ops/model_bundle_manage.py")
++    assert promote_command[1].replace("\\", "/").endswith("ids/ops/model_bundle_manage.py")
++    assert "--activation-path" in verify_command and "--bundle-root" in verify_command
++    assert "--activation-path" in promote_command and "--bundle-root" in promote_command
++
++    activation_payload = stack.build_bundle_status_payload(Path(config.activation_path))
++    assert activation_payload["runtime_ready"] is True
++    assert activation_payload["active_bundle_name"] == "bundle-proof"
++
++
++def test_repo_installable_bootstrap_proof_canonical_command_surface() -> None:
++    pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
++    scripts = pyproject["project"]["scripts"]
++    assert scripts["ids-stack"] == "ids.ops.same_host_stack_manage:main"
++    assert scripts["ids-model-bundle-manage"] == "ids.ops.model_bundle_manage:main"
++
++    stack_doc = (REPO_ROOT / "docs" / "current" / "operations" / "ids_same_host_stack_operations.md").read_text(
++        encoding="utf-8"
++    )
++    assert "ids-stack" in stack_doc
++    assert "compatibility entrypoint" in stack_doc
++
++    live_sensor_service = (REPO_ROOT / "deploy" / "systemd" / "ids-live-sensor.service").read_text(
++        encoding="utf-8"
++    )
++    assert "python3 -m ids.ops.live_sensor_preflight" in live_sensor_service
++    assert "python3 -m ids.runtime.live_sensor" in live_sensor_service
+diff --git a/tests/ops/test_ids_repo_installable_surface.py b/tests/ops/test_ids_repo_installable_surface.py
+new file mode 100644
+index 0000000..f19131a
+--- /dev/null
++++ b/tests/ops/test_ids_repo_installable_surface.py
+@@ -0,0 +1,104 @@
++from __future__ import annotations
++
++import json
++import subprocess
++import sys
++import tomllib
++from pathlib import Path
++
++
++REPO_ROOT = Path(__file__).resolve().parents[2]
++
++
++def _run(argv: list[str], *, cwd: Path = REPO_ROOT) -> subprocess.CompletedProcess[str]:
++    return subprocess.run(
++        argv,
++        cwd=cwd,
++        capture_output=True,
++        text=True,
++        check=False,
++    )
++
++
++def _venv_python(tmp_path: Path) -> Path:
++    venv_dir = tmp_path / "venv"
++    create = _run([sys.executable, "-m", "venv", str(venv_dir)], cwd=tmp_path)
++    assert create.returncode == 0, create.stderr
++
++    windows_python = venv_dir / "Scripts" / "python.exe"
++    posix_python = venv_dir / "bin" / "python"
++    python_path = windows_python if windows_python.exists() else posix_python
++    assert python_path.exists(), f"venv python not found under: {venv_dir}"
++    return python_path
++
++
++def _scripts_dir(venv_python: Path) -> Path:
++    result = _run(
++        [str(venv_python), "-c", "import sysconfig; print(sysconfig.get_path('scripts'))"],
++    )
++    assert result.returncode == 0, result.stderr
++    return Path(result.stdout.strip()).resolve()
++
++
++def _resolve_console_script(scripts_dir: Path, command_name: str) -> Path:
++    for suffix in ("", ".exe", ".cmd", ".bat"):
++        candidate = scripts_dir / f"{command_name}{suffix}"
++        if candidate.exists():
++            return candidate
++    raise AssertionError(f"console script not found for {command_name} under {scripts_dir}")
++
++
++def test_pyproject_console_scripts_map_to_canonical_modules() -> None:
++    pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
++    scripts = pyproject["project"]["scripts"]
++
++    assert scripts["ids-stack"] == "ids.ops.same_host_stack_manage:main"
++    assert scripts["ids-model-bundle-manage"] == "ids.ops.model_bundle_manage:main"
++    assert scripts["ids-live-sensor"] == "ids.runtime.live_sensor:main"
++    assert scripts["ids-operator-console-server"] == "ids.console.server:main"
++    assert scripts["ids-package-final-model"] == "ml_pipeline.packaging.package_final_model:main"
++    assert all(not target.startswith("scripts.") for target in scripts.values())
++
++
++def test_editable_install_surface_exposes_entrypoints_and_console_assets(tmp_path: Path) -> None:
++    venv_python = _venv_python(tmp_path)
++    install = _run(
++        [str(venv_python), "-m", "pip", "install", "--no-deps", "-e", str(REPO_ROOT)],
++        cwd=tmp_path,
++    )
++    assert install.returncode == 0, install.stderr
++
++    scripts_dir = _scripts_dir(venv_python)
++    ids_stack = _resolve_console_script(scripts_dir, "ids-stack")
++    ids_bundle_manage = _resolve_console_script(scripts_dir, "ids-model-bundle-manage")
++    assert ids_stack.exists()
++    assert ids_bundle_manage.exists()
++
++    inspect = _run(
++        [
++            str(venv_python),
++            "-c",
++            (
++                "import json, importlib.metadata as md; "
++                "from importlib.resources import files; "
++                "dist=md.distribution('ids-ml-new'); "
++                "eps={ep.name: ep.value for ep in dist.entry_points if ep.group=='console_scripts'}; "
++                "print(json.dumps({"
++                "'ids-stack': eps.get('ids-stack'), "
++                "'ids-model-bundle-manage': eps.get('ids-model-bundle-manage'), "
++                "'ids-live-sensor': eps.get('ids-live-sensor'), "
++                "'templates_dir': files('ids.console').joinpath('templates').is_dir(), "
++                "'static_dir': files('ids.console').joinpath('static').is_dir()"
++                "}))"
++            ),
++        ],
++        cwd=tmp_path,
++    )
++    assert inspect.returncode == 0, inspect.stderr
++    payload = json.loads(inspect.stdout)
++
++    assert payload["ids-stack"] == "ids.ops.same_host_stack_manage:main"
++    assert payload["ids-model-bundle-manage"] == "ids.ops.model_bundle_manage:main"
++    assert payload["ids-live-sensor"] == "ids.runtime.live_sensor:main"
++    assert payload["templates_dir"] is True
++    assert payload["static_dir"] is True
+diff --git a/tests/ops/test_ids_same_host_stack_manage.py b/tests/ops/test_ids_same_host_stack_manage.py
+index 3588a59..17b157a 100644
+--- a/tests/ops/test_ids_same_host_stack_manage.py
++++ b/tests/ops/test_ids_same_host_stack_manage.py
+@@ -101,6 +101,22 @@ def _build_config(
+     )
+ 
+ 
++def test_build_config_from_args_defaults_to_canonical_ids_entrypoints(tmp_path: Path) -> None:
++    repo_root = (tmp_path / "repo-root").resolve()
++    args = manage._build_parser().parse_args(["--repo-root", str(repo_root), "preflight"])
++
++    config = manage.build_config_from_args(args)
++
++    assert config.model_manage_entrypoint == (repo_root / "ids" / "ops" / "model_bundle_manage.py")
++    assert config.operator_manage_entrypoint == (
++        repo_root / "ids" / "ops" / "operator_console_manage.py"
++    )
++    assert config.operator_server_entrypoint == (repo_root / "ids" / "console" / "server.py")
++    assert "scripts" not in str(config.model_manage_entrypoint)
++    assert "scripts" not in str(config.operator_manage_entrypoint)
++    assert "scripts" not in str(config.operator_server_entrypoint)
++
++
+ def _write_backup_artifacts(
+     backup_dir: Path,
+     *,
+diff --git a/tests/runtime/test_ids_inference.py b/tests/runtime/test_ids_inference.py
+index f81c856..ec1d36c 100644
+--- a/tests/runtime/test_ids_inference.py
++++ b/tests/runtime/test_ids_inference.py
+@@ -214,6 +214,31 @@ def test_build_model_config_supports_activation_path(tmp_path: Path) -> None:
+     assert config.threshold == 0.4
+ 
+ 
++def test_build_model_config_prefers_default_activation_path_when_present(
++    tmp_path: Path,
++    monkeypatch: pytest.MonkeyPatch,
++) -> None:
++    bundle_root = tmp_path / "bundle"
++    bundle_root.mkdir()
++    (bundle_root / "model.cbm").write_text("placeholder", encoding="utf-8")
++    write_bundle_manifest(bundle_root, threshold=0.65)
++    activation_path = tmp_path / DEFAULT_ACTIVATION_RECORD_NAME
++    write_activation_record(
++        activation_path,
++        build_activation_record_payload(
++            active_bundle_root=bundle_root,
++            active_bundle_name="bundle-under-test",
++            activated_at="2026-03-29T00:00:00+07:00",
++        ),
++    )
++    monkeypatch.setattr("ids.runtime.inference.DEFAULT_ACTIVATION_PATH", activation_path)
++
++    config = build_model_config()
++
++    assert config.bundle_root == bundle_root.resolve()
++    assert config.threshold == 0.65
++
++
+ def test_build_model_config_rejects_external_overrides_when_bundle_used(tmp_path: Path) -> None:
+     bundle_root = tmp_path / "bundle"
+     bundle_root.mkdir()
+diff --git a/tests/runtime/test_ids_realtime_pipeline.py b/tests/runtime/test_ids_realtime_pipeline.py
+index 8ab56d6..b2012f9 100644
+--- a/tests/runtime/test_ids_realtime_pipeline.py
++++ b/tests/runtime/test_ids_realtime_pipeline.py
+@@ -360,6 +360,72 @@ def test_main_supports_file_input_path(
+     assert len(quarantines) == 2
+ 
+ 
++def test_main_forwards_activation_path_to_inferencer_when_provided(
++    monkeypatch: pytest.MonkeyPatch,
++    tmp_path: Path,
++    capsys: pytest.CaptureFixture[str],
++) -> None:
++    alerts_path = tmp_path / "alerts.jsonl"
++    quarantine_path = tmp_path / "quarantine.jsonl"
++    activation_path = tmp_path / "active_bundle.json"
++    activation_path.write_text("{}", encoding="utf-8")
++    captured_kwargs: dict[str, object] = {}
++
++    class DummyInferencerWithConfig(DummyInferencer):
++        def __init__(self) -> None:
++            super().__init__()
++            self.config = type(
++                "Config",
++                (),
++                {"feature_columns_path": demo_fixture_path()},
++            )()
++
++    def _build_inferencer(**kwargs: object) -> DummyInferencerWithConfig:
++        captured_kwargs.update(kwargs)
++        return DummyInferencerWithConfig()
++
++    monkeypatch.setattr("ids.runtime.realtime_pipeline.build_inferencer", _build_inferencer)
++    monkeypatch.setattr(
++        "ids.runtime.realtime_pipeline.FlowFeatureContract.from_feature_file",
++        classmethod(lambda cls, path, alias_map=None: make_contract()),
++    )
++    monkeypatch.setattr(
++        sys,
++        "stdin",
++        io.StringIO(
++            json.dumps(
++                {
++                    "SrcPort": 1000,
++                    "DstPort": 2000,
++                    "Protocol": 6,
++                    "FlowDuration": 95,
++                    "trace_id": "stdin-1",
++                }
++            )
++            + "\n"
++        ),
++    )
++    monkeypatch.setattr(
++        sys,
++        "argv",
++        [
++            "ids_realtime_pipeline.py",
++            "--activation-path",
++            str(activation_path),
++            "--alerts-output-path",
++            str(alerts_path),
++            "--quarantine-output-path",
++            str(quarantine_path),
++        ],
++    )
++
++    main()
++
++    summary = json.loads(capsys.readouterr().out)
++    assert summary["input_mode"] == "stdin"
++    assert captured_kwargs["activation_path"] == activation_path
++
++
+ def test_main_supports_stdin_fallback(
+     monkeypatch: pytest.MonkeyPatch,
+     tmp_path: Path,
+
+# --- untracked file: pyproject.toml ---
+
+diff --git a/pyproject.toml b/pyproject.toml
+new file mode 100644
+index 0000000..cc955dc
+--- /dev/null
++++ b/pyproject.toml
+@@ -0,0 +1,37 @@
++[build-system]
++requires = ["setuptools>=69", "wheel"]
++build-backend = "setuptools.build_meta"
++
++[project]
++name = "ids-ml-new"
++version = "0.1.0"
++description = "Repo-installable IDS same-host runtime and ML stack."
++readme = "README.md"
++requires-python = ">=3.11"
++dynamic = ["dependencies"]
++
++[project.scripts]
++ids-inference = "ids.runtime.inference:main"
++ids-realtime-pipeline = "ids.runtime.realtime_pipeline:main"
++ids-live-sensor = "ids.runtime.live_sensor:main"
++ids-live-sensor-health = "ids.runtime.live_sensor_health:main"
++ids-live-sensor-preflight = "ids.ops.live_sensor_preflight:main"
++ids-model-bundle-manage = "ids.ops.model_bundle_manage:main"
++ids-operator-console-server = "ids.console.server:main"
++ids-operator-console-preflight = "ids.ops.operator_console_preflight:main"
++ids-operator-console-manage = "ids.ops.operator_console_manage:main"
++ids-stack = "ids.ops.same_host_stack_manage:main"
++ids-package-final-model = "ml_pipeline.packaging.package_final_model:main"
++
++[tool.setuptools]
++include-package-data = true
++
++[tool.setuptools.dynamic]
++dependencies = { file = ["requirements.txt"] }
++
++[tool.setuptools.packages.find]
++where = ["."]
++include = ["ids*", "ml_pipeline*"]
++
++[tool.setuptools.package-data]
++"ids.console" = ["templates/**/*.html", "static/*.css", "static/*.js"]
+
+# --- untracked file: ids/core/path_defaults.py ---
+
+diff --git a/ids/core/path_defaults.py b/ids/core/path_defaults.py
+new file mode 100644
+index 0000000..ccccff5
+--- /dev/null
++++ b/ids/core/path_defaults.py
+@@ -0,0 +1,87 @@
++from __future__ import annotations
++
++import os
++from pathlib import Path
++
++
++DEFAULT_REPO_ROOT_ENV_VAR = "IDS_REPO_ROOT"
++DEFAULT_REPO_ROOT = Path("/opt/ids_ml_new")
++DEFAULT_RUNTIME_ACTIVATION_PATH = Path("/var/lib/ids-live-sensor/active_bundle.json")
++
++
++def _clean_env(value: str | None) -> str | None:
++    if value is None:
++        return None
++    normalized = value.strip()
++    return normalized or None
++
++
++def resolve_repo_root(*, env_var: str = DEFAULT_REPO_ROOT_ENV_VAR) -> Path:
++    env_value = _clean_env(os.environ.get(env_var))
++    if env_value is not None:
++        return Path(env_value).expanduser().resolve()
++    return Path(__file__).resolve().parents[2]
++
++
++def resolve_repo_path(*parts: str, repo_root: Path | None = None) -> Path:
++    root = repo_root or resolve_repo_root()
++    return root.joinpath(*parts).resolve()
++
++
++DEFAULT_RUNTIME_COMPAT_BUNDLE_ROOT = resolve_repo_path(
++    "artifacts",
++    "final_model",
++    "catboost_full_data_v1",
++)
++DEFAULT_RUNTIME_COMPAT_MODEL_PATH = DEFAULT_RUNTIME_COMPAT_BUNDLE_ROOT / "model.cbm"
++DEFAULT_RUNTIME_COMPAT_FEATURE_COLUMNS_PATH = (
++    DEFAULT_RUNTIME_COMPAT_BUNDLE_ROOT / "feature_columns.json"
++)
++
++DEFAULT_PACKAGING_SOURCE_ROOT = resolve_repo_path(
++    "artifacts",
++    "kaggle",
++    "outputs",
++    "catboost_full_data_attempt",
++    "catboost_full_data_attempt_results",
++)
++DEFAULT_PACKAGING_MODEL_PATH = (
++    DEFAULT_PACKAGING_SOURCE_ROOT / "catboost_full_data_attempt.cbm"
++)
++DEFAULT_PACKAGING_FEATURE_COLUMNS_PATH = resolve_repo_path(
++    "artifacts",
++    "cic_iot_diad_2024_binary",
++    "manifests",
++    "feature_columns.json",
++)
++DEFAULT_PACKAGING_SUMMARY_PATH = DEFAULT_PACKAGING_SOURCE_ROOT / "reports" / "summary.csv"
++DEFAULT_PACKAGING_TRAINING_SUMMARY_PATH = (
++    DEFAULT_PACKAGING_SOURCE_ROOT / "reports" / "training_summary.json"
++)
++DEFAULT_PACKAGING_THRESHOLD_SELECTION_PATH = resolve_repo_path(
++    "artifacts",
++    "posttrain_analysis",
++    "scaling_finalists",
++    "reports",
++    "catboost_full_threshold_selection.json",
++)
++DEFAULT_PACKAGING_BUNDLE_ROOT = DEFAULT_RUNTIME_COMPAT_BUNDLE_ROOT
++
++
++__all__ = [
++    "DEFAULT_PACKAGING_BUNDLE_ROOT",
++    "DEFAULT_PACKAGING_FEATURE_COLUMNS_PATH",
++    "DEFAULT_PACKAGING_MODEL_PATH",
++    "DEFAULT_PACKAGING_SOURCE_ROOT",
++    "DEFAULT_PACKAGING_SUMMARY_PATH",
++    "DEFAULT_PACKAGING_THRESHOLD_SELECTION_PATH",
++    "DEFAULT_PACKAGING_TRAINING_SUMMARY_PATH",
++    "DEFAULT_REPO_ROOT",
++    "DEFAULT_REPO_ROOT_ENV_VAR",
++    "DEFAULT_RUNTIME_ACTIVATION_PATH",
++    "DEFAULT_RUNTIME_COMPAT_BUNDLE_ROOT",
++    "DEFAULT_RUNTIME_COMPAT_FEATURE_COLUMNS_PATH",
++    "DEFAULT_RUNTIME_COMPAT_MODEL_PATH",
++    "resolve_repo_path",
++    "resolve_repo_root",
++]
+
+# --- untracked file: ids/console/server.py ---
+
+diff --git a/ids/console/server.py b/ids/console/server.py
+new file mode 100644
+index 0000000..66eb84e
+--- /dev/null
++++ b/ids/console/server.py
+@@ -0,0 +1,68 @@
++from __future__ import annotations
++
++import argparse
++from dataclasses import replace
++from typing import Sequence
++
++import uvicorn
++from fastapi import FastAPI
++
++from ids.console import OperatorConsoleConfig, load_operator_console_config
++from ids.console.web import create_operator_console_web_app
++
++
++def build_operator_console_app(config: OperatorConsoleConfig) -> FastAPI:
++    return create_operator_console_web_app(config)
++
++
++def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
++    parser = argparse.ArgumentParser(description="Run the IDS Operator Console service.")
++    parser.add_argument("--host", help="Override bind host from environment config.")
++    parser.add_argument("--port", type=int, help="Override bind port from environment config.")
++    parser.add_argument("--log-level", help="Override log level from environment config.")
++    parser.add_argument(
++        "--reload",
++        action="store_true",
++        help="Enable uvicorn reload mode (development only).",
++    )
++    return parser.parse_args(argv)
++
++
++def _apply_cli_overrides(config: OperatorConsoleConfig, args: argparse.Namespace) -> OperatorConsoleConfig:
++    updates: dict[str, object] = {}
++    if args.host is not None:
++        updates["host"] = args.host
++    if args.port is not None:
++        updates["port"] = args.port
++    if args.log_level is not None:
++        updates["log_level"] = args.log_level
++    if args.reload:
++        updates["reload"] = True
++    if not updates:
++        return config
++    return replace(config, **updates)
++
++
++def run_server(app: FastAPI, *, config: OperatorConsoleConfig) -> None:
++    uvicorn.run(
++        app,
++        host=config.host,
++        port=config.port,
++        log_level=config.log_level,
++        reload=config.reload,
++        proxy_headers=True,
++        forwarded_allow_ips=config.forwarded_allow_ips,
++        root_path=config.root_path,
++    )
++
++
++def main(argv: Sequence[str] | None = None) -> int:
++    args = _parse_args(argv)
++    config = _apply_cli_overrides(load_operator_console_config(), args)
++    app = build_operator_console_app(config)
++    run_server(app, config=config)
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())

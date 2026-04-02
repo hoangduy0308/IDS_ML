@@ -1,0 +1,443 @@
+diff --git a/ids/ops/same_host_stack.py b/ids/ops/same_host_stack.py
+index 4a24ecb..68bf623 100644
+--- a/ids/ops/same_host_stack.py
++++ b/ids/ops/same_host_stack.py
+@@ -135,12 +135,33 @@ def _require_existing_directory(path: Path, *, name: str) -> Path:
+ def _build_module_command(python_binary: Path, module_name: str, *args: str) -> list[str]:
+     return [
+         str(Path(python_binary).resolve()),
++        "-I",
+         "-m",
+         _clean_module_name(module_name, name="module_name", allow_blank=False),
+         *args,
+     ]
+ 
+ 
++def _build_isolated_python_env() -> dict[str, str]:
++    return {key: value for key, value in os.environ.items() if not key.startswith("PYTHON")}
++
++
++def _build_command_runtime_kwargs(argv: Sequence[str]) -> dict[str, Any]:
++    resolved_argv = [str(part) for part in argv]
++    if (
++        len(resolved_argv) >= 4
++        and Path(resolved_argv[0]).is_absolute()
++        and resolved_argv[1] == "-I"
++        and resolved_argv[2] == "-m"
++    ):
++        python_binary = Path(resolved_argv[0]).resolve()
++        return {
++            "cwd": python_binary.parent,
++            "env": _build_isolated_python_env(),
++        }
++    return {}
++
++
+ def _load_json_object(path: Path, *, label: str) -> dict[str, Any]:
+     try:
+         payload = json.loads(path.read_text(encoding="utf-8"))
+@@ -1330,11 +1351,13 @@ def run_command(argv: Sequence[str]) -> str:
+         resolved_executable = shutil.which(executable)
+         if resolved_executable is not None:
+             resolved_argv[0] = resolved_executable
++    runtime_kwargs = _build_command_runtime_kwargs(resolved_argv)
+     completed = subprocess.run(
+         resolved_argv,
+         capture_output=True,
+         check=False,
+         text=True,
++        **runtime_kwargs,
+     )
+     if completed.returncode != 0:
+         raise RuntimeError(
+diff --git a/scripts/ids_operator_console_server.py b/scripts/ids_operator_console_server.py
+index d3e996a..1dc1acf 100644
+--- a/scripts/ids_operator_console_server.py
++++ b/scripts/ids_operator_console_server.py
+@@ -6,6 +6,9 @@ from pathlib import Path
+ import sys
+ from typing import Sequence
+ 
++import uvicorn
++from fastapi import FastAPI
++
+ if __package__ in (None, ""):
+     REPO_ROOT = Path(__file__).resolve().parents[1]
+     if str(REPO_ROOT) not in sys.path:
+@@ -55,7 +58,21 @@ def _apply_cli_overrides(config: OperatorConsoleConfig, args: argparse.Namespace
+     return replace(config, **updates)
+ 
+ 
+-def run_server(*, config: OperatorConsoleConfig) -> None:
++def run_server(app: FastAPI | None = None, *, config: OperatorConsoleConfig) -> None:
++    # Preserve the historical wrapper signature for import-based callers while
++    # still routing reload mode through the canonical import-string factory path.
++    if app is not None and not config.reload:
++        uvicorn.run(
++            app,
++            host=config.host,
++            port=config.port,
++            log_level=config.log_level,
++            reload=False,
++            proxy_headers=True,
++            forwarded_allow_ips=config.forwarded_allow_ips,
++            root_path=config.root_path,
++        )
++        return
+     canonical_server.run_server(config=config)
+ 
+ 
+diff --git a/tests/console/test_ids_operator_console_config.py b/tests/console/test_ids_operator_console_config.py
+index ba6bb53..476c25f 100644
+--- a/tests/console/test_ids_operator_console_config.py
++++ b/tests/console/test_ids_operator_console_config.py
+@@ -2,6 +2,7 @@ from __future__ import annotations
+ 
+ from pathlib import Path
+ 
++from fastapi import FastAPI
+ import pytest
+ from starlette.testclient import TestClient
+ 
+@@ -220,3 +221,80 @@ def test_run_server_forwards_full_uvicorn_runtime_contract(
+         "forwarded_allow_ips": config.forwarded_allow_ips,
+         "root_path": config.root_path,
+     }
++
++
++def test_wrapper_run_server_accepts_legacy_app_argument(
++    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
++) -> None:
++    repo_root = tmp_path / "repo"
++    repo_root.mkdir()
++    db_path = repo_root / "runtime" / "operator_console.db"
++    _bootstrap_runtime_store(db_path)
++
++    env = {
++        "IDS_OPERATOR_CONSOLE_SECRET_KEY": "test-secret",
++        "IDS_OPERATOR_CONSOLE_DATABASE_PATH": str(db_path),
++        "IDS_OPERATOR_CONSOLE_HOST": "0.0.0.0",
++        "IDS_OPERATOR_CONSOLE_PORT": "9900",
++        "IDS_OPERATOR_CONSOLE_LOG_LEVEL": "warning",
++        "IDS_OPERATOR_CONSOLE_FORWARDED_ALLOW_IPS": "127.0.0.1,10.0.0.10",
++        "IDS_OPERATOR_CONSOLE_ROOT_PATH": "/internal",
++    }
++    config = load_operator_console_config(environ=env, repo_root=repo_root)
++
++    captured: dict[str, object] = {}
++
++    def fake_uvicorn_run(app: object, **kwargs: object) -> None:
++        captured["app"] = app
++        captured["kwargs"] = kwargs
++
++    monkeypatch.setattr(server.uvicorn, "run", fake_uvicorn_run)
++
++    app = FastAPI()
++    server.run_server(app, config=config)
++
++    assert captured["app"] is app
++    assert captured["kwargs"] == {
++        "host": config.host,
++        "port": config.port,
++        "log_level": config.log_level,
++        "reload": False,
++        "proxy_headers": True,
++        "forwarded_allow_ips": config.forwarded_allow_ips,
++        "root_path": config.root_path,
++    }
++
++
++def test_wrapper_run_server_uses_canonical_reload_path_when_legacy_app_is_supplied(
++    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
++) -> None:
++    repo_root = tmp_path / "repo"
++    repo_root.mkdir()
++    db_path = repo_root / "runtime" / "operator_console.db"
++    _bootstrap_runtime_store(db_path)
++
++    env = {
++        "IDS_OPERATOR_CONSOLE_SECRET_KEY": "test-secret",
++        "IDS_OPERATOR_CONSOLE_DATABASE_PATH": str(db_path),
++        "IDS_OPERATOR_CONSOLE_RELOAD": "true",
++    }
++    config = load_operator_console_config(environ=env, repo_root=repo_root)
++
++    captured: dict[str, object] = {}
++
++    monkeypatch.setattr(
++        server.uvicorn,
++        "run",
++        lambda *_args, **_kwargs: (_ for _ in ()).throw(
++            AssertionError("legacy wrapper path must not call uvicorn.run directly in reload mode")
++        ),
++    )
++    monkeypatch.setattr(
++        canonical_server,
++        "run_server",
++        lambda *, config: captured.setdefault("config", config),
++    )
++
++    server.run_server(FastAPI(), config=config)
++
++    assert captured["config"] == config
+diff --git a/tests/ops/test_ids_same_host_stack_manage.py b/tests/ops/test_ids_same_host_stack_manage.py
+index 3640df8..5ecd122 100644
+--- a/tests/ops/test_ids_same_host_stack_manage.py
++++ b/tests/ops/test_ids_same_host_stack_manage.py
+@@ -669,6 +669,7 @@ def test_run_stack_bootstrap_bootstrap_or_preflight_executes_canonical_order(
+     assert executed == [
+         [
+             str(config.python_binary.resolve()),
++            "-I",
+             "-m",
+             config.model_manage_module,
+             "--activation-path",
+@@ -680,6 +681,7 @@ def test_run_stack_bootstrap_bootstrap_or_preflight_executes_canonical_order(
+         ],
+         [
+             str(config.python_binary.resolve()),
++            "-I",
+             "-m",
+             config.model_manage_module,
+             "--activation-path",
+@@ -691,6 +693,7 @@ def test_run_stack_bootstrap_bootstrap_or_preflight_executes_canonical_order(
+         ],
+         [
+             str(config.python_binary.resolve()),
++            "-I",
+             "-m",
+             config.operator_manage_module,
+             "--database-path",
+@@ -701,6 +704,7 @@ def test_run_stack_bootstrap_bootstrap_or_preflight_executes_canonical_order(
+         ],
+         [
+             str(config.python_binary.resolve()),
++            "-I",
+             "-m",
+             config.operator_manage_module,
+             "--database-path",
+@@ -824,6 +828,7 @@ def test_run_stack_bootstrap_bootstrap_or_preflight_reports_degraded_post_start_
+     assert executed == [
+         [
+             str(config.python_binary.resolve()),
++            "-I",
+             "-m",
+             config.model_manage_module,
+             "--activation-path",
+@@ -835,6 +840,7 @@ def test_run_stack_bootstrap_bootstrap_or_preflight_reports_degraded_post_start_
+         ],
+         [
+             str(config.python_binary.resolve()),
++            "-I",
+             "-m",
+             config.model_manage_module,
+             "--activation-path",
+@@ -846,6 +852,7 @@ def test_run_stack_bootstrap_bootstrap_or_preflight_reports_degraded_post_start_
+         ],
+         [
+             str(config.python_binary.resolve()),
++            "-I",
+             "-m",
+             config.operator_manage_module,
+             "--database-path",
+@@ -856,6 +863,7 @@ def test_run_stack_bootstrap_bootstrap_or_preflight_reports_degraded_post_start_
+         ],
+         [
+             str(config.python_binary.resolve()),
++            "-I",
+             "-m",
+             config.operator_manage_module,
+             "--database-path",
+@@ -874,6 +882,101 @@ def test_run_stack_bootstrap_bootstrap_or_preflight_reports_degraded_post_start_
+     assert payload["diagnosis"]["smoke"]["command"] == "smoke"
+ 
+ 
++def test_run_stack_bootstrap_executes_module_commands_under_validated_isolated_contract(
++    tmp_path: Path,
++    monkeypatch: pytest.MonkeyPatch,
++) -> None:
++    config = _build_config(tmp_path)
++    validated_operator_config = stack.load_stack_operator_config(config)
++    systemctl_path = (tmp_path / "bin" / "systemctl").resolve()
++    systemctl_path.parent.mkdir(parents=True, exist_ok=True)
++    systemctl_path.write_text("", encoding="utf-8")
++
++    monkeypatch.setenv("PYTHONPATH", str((tmp_path / "hostile-pythonpath").resolve()))
++    monkeypatch.setenv("PYTHONHOME", str((tmp_path / "hostile-pythonhome").resolve()))
++    monkeypatch.setattr(
++        stack,
++        "_validate_stack_preflight_with_operator_config",
++        lambda *_args, **_kwargs: (
++            {
++                "ready": True,
++                "bootstrap_gate_ready": True,
++                "command": "preflight",
++                "status": "ok",
++            },
++            validated_operator_config,
++        ),
++    )
++    monkeypatch.setattr(
++        stack,
++        "build_stack_status_payload",
++        lambda *_args, **_kwargs: {"ready": True, "command": "status", "components": {}},
++    )
++    monkeypatch.setattr(
++        stack,
++        "build_stack_smoke_payload",
++        lambda *_args, **_kwargs: {"ready": True, "command": "smoke", "components": {}},
++    )
++    monkeypatch.setattr(
++        stack.shutil,
++        "which",
++        lambda executable: str(systemctl_path) if executable == "systemctl" else None,
++    )
++
++    subprocess_calls: list[dict[str, object]] = []
++
++    def fake_subprocess_run(
++        argv: list[str],
++        *,
++        capture_output: bool,
++        check: bool,
++        text: bool,
++        cwd: Path | None = None,
++        env: dict[str, str] | None = None,
++    ) -> subprocess.CompletedProcess[str]:
++        command = [str(part) for part in argv]
++        subprocess_calls.append(
++            {
++                "argv": command,
++                "cwd": cwd,
++                "env": env,
++            }
++        )
++        assert capture_output is True
++        assert check is False
++        assert text is True
++        if len(command) >= 4 and command[1:3] == ["-I", "-m"]:
++            assert cwd == config.python_binary.resolve().parent
++            assert env is not None
++            assert "PYTHONPATH" not in env
++            assert "PYTHONHOME" not in env
++            if "verify" in command:
++                return subprocess.CompletedProcess(command, 0, '{"action":"verify","status":"ok"}', "")
++            if "promote" in command:
++                return subprocess.CompletedProcess(command, 0, '{"action":"promote","status":"ok"}', "")
++            if "migrate" in command:
++                return subprocess.CompletedProcess(command, 0, '{"action":"migrate","status":"ok"}', "")
++            if "bootstrap-admin" in command:
++                return subprocess.CompletedProcess(
++                    command,
++                    0,
++                    '{"action":"bootstrap-admin","status":"ok"}',
++                    "",
++                )
++        return subprocess.CompletedProcess(command, 0, "", "")
++
++    monkeypatch.setattr(stack.subprocess, "run", fake_subprocess_run)
++
++    payload = stack.run_stack_bootstrap(config)
++
++    assert payload["bootstrap_ready"] is True
++    module_calls = [call for call in subprocess_calls if call["argv"][1:3] == ["-I", "-m"]]
++    assert len(module_calls) == 4
++    assert all(call["cwd"] == config.python_binary.resolve().parent for call in module_calls)
++    assert all("PYTHONPATH" not in (call["env"] or {}) for call in module_calls)
++    assert all("PYTHONHOME" not in (call["env"] or {}) for call in module_calls)
++
++
+ def test_manage_main_bootstrap_or_preflight_prints_json_payload(
+     tmp_path: Path,
+     monkeypatch: pytest.MonkeyPatch,
+@@ -1244,6 +1347,90 @@ def test_run_command_bootstrap_or_preflight_redacts_inline_password_on_failure()
+     assert "***REDACTED***" in message
+ 
+ 
++def test_run_command_resolves_path_based_executable_before_invocation(
++    tmp_path: Path,
++    monkeypatch: pytest.MonkeyPatch,
++) -> None:
++    resolved_executable = (tmp_path / "bin" / "tool").resolve()
++    captured: dict[str, object] = {}
++
++    monkeypatch.setattr(
++        stack.shutil,
++        "which",
++        lambda executable: str(resolved_executable) if executable == "tool" else None,
++    )
++
++    def fake_subprocess_run(
++        argv: list[str],
++        *,
++        capture_output: bool,
++        check: bool,
++        text: bool,
++        cwd: Path | None = None,
++        env: dict[str, str] | None = None,
++    ) -> subprocess.CompletedProcess[str]:
++        captured["argv"] = [str(part) for part in argv]
++        captured["cwd"] = cwd
++        captured["env"] = env
++        assert capture_output is True
++        assert check is False
++        assert text is True
++        return subprocess.CompletedProcess(argv, 0, "ok\n", "")
++
++    monkeypatch.setattr(stack.subprocess, "run", fake_subprocess_run)
++
++    stdout = stack.run_command(["tool", "--flag"])
++
++    assert stdout == "ok"
++    assert captured["argv"] == [str(resolved_executable), "--flag"]
++    assert captured["cwd"] is None
++    assert captured["env"] is None
++
++
++def test_run_command_path_resolution_failure_keeps_redacted_diagnostics(
++    tmp_path: Path,
++    monkeypatch: pytest.MonkeyPatch,
++) -> None:
++    resolved_executable = (tmp_path / "bin" / "tool").resolve()
++    captured: dict[str, object] = {}
++
++    monkeypatch.setattr(
++        stack.shutil,
++        "which",
++        lambda executable: str(resolved_executable) if executable == "tool" else None,
++    )
++
++    def fake_subprocess_run(
++        argv: list[str],
++        *,
++        capture_output: bool,
++        check: bool,
++        text: bool,
++        cwd: Path | None = None,
++        env: dict[str, str] | None = None,
++    ) -> subprocess.CompletedProcess[str]:
++        captured["argv"] = [str(part) for part in argv]
++        captured["cwd"] = cwd
++        captured["env"] = env
++        assert capture_output is True
++        assert check is False
++        assert text is True
++        return subprocess.CompletedProcess(argv, 7, "", "lookup failed")
++
++    monkeypatch.setattr(stack.subprocess, "run", fake_subprocess_run)
++
++    with pytest.raises(RuntimeError) as exc_info:
++        stack.run_command(["tool", "--password", "secret-value"])
++
++    assert captured["argv"] == [str(resolved_executable), "--password", "secret-value"]
++    assert captured["cwd"] is None
++    assert captured["env"] is None
++    message = str(exc_info.value)
++    assert "tool --password ***REDACTED***" in message
++    assert "secret-value" not in message
++    assert "lookup failed" in message
++
++
+ def test_same_host_path_helpers_reject_relative_inputs(tmp_path: Path) -> None:
+     relative_file = Path("relative-file.txt")
+     relative_dir = Path("relative-dir")
