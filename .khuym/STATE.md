@@ -1,38 +1,31 @@
 STATUS: swarming-complete
-FEATURE: ids-repo-installable-full-stack-packaging
+FEATURE: ids_ml_new-8sg2-review-followup
 SKILL: swarming
-PHASE: reviewing-ready
+PHASE: swarm-complete
+EPIC_ID: ids_ml_new-8sg2
+LAST_UPDATED: 2026-04-02T22:15:00+07:00
 
-EPIC:
-- Replan epic: `ids_ml_new-urzq`
-- Source review root: `ids_ml_new-axd0`
+PURPOSE:
+- Execute the approved review-follow-up swarm for the remaining open beads under epic ids_ml_new-8sg2.
+- Preserve canonical ids/* behavior while tightening the compatibility-wrapper and bootstrap trust-gate contracts.
 
-ARTIFACTS_WRITTEN:
-- `history/ids-repo-installable-full-stack-packaging/discovery.md`
-  - appended `Planning Addendum: Review-Followup Replan`
-- `history/ids-repo-installable-full-stack-packaging/approach.md`
-  - appended `Replan Addendum After Blocked Validation`
+ARCHITECTURE_CONTEXT:
+- The repo is a same-host IDS stack: model-bundle activation and live-sensor runtime feed the operator console.
+- Canonical product/runtime behavior lives under ids/*; scripts/* entrypoints are compatibility-only wrappers.
+- The current open work spans two independent surfaces:
+- ops/bootstrap trust gating in ids/ops/same_host_stack.py + tests/ops/test_ids_same_host_stack_manage.py
+- console wrapper/runtime contract coverage in scripts/ids_operator_console_server.py + tests/console/test_ids_operator_console_config.py, with ids_ml_new-2ypm blocked behind ids_ml_new-ms26
 
-REPLANNED_BEAD_SET:
-- `ids_ml_new-x1p9` install metadata + canonical entrypoint surface
-- `ids_ml_new-d5ae` ML packaging topology + package defaults
-- `ids_ml_new-qq0f` deploy/docs interpreter contract convergence
-- `ids_ml_new-z0pb` runtime-scoped path-default boundary + runtime adopters
-- `ids_ml_new-bt3x` explicit realtime inferencer/schema seam
-- `ids_ml_new-m8h0` trust-boundary hardening + final installed bootstrap proof
-- `ids_ml_new-zpih` proof-helper dedupe
+READY_BEADS:
+- none
 
-REPLANNED_DEPENDENCY_SPINE:
-- `ids_ml_new-x1p9 -> ids_ml_new-d5ae -> ids_ml_new-qq0f -> ids_ml_new-z0pb -> ids_ml_new-bt3x -> ids_ml_new-m8h0 -> ids_ml_new-zpih`
+BLOCKED_BEADS:
+- none
 
-NOTES:
-- The original validation blocker was structural, not architectural discovery.
-- Replan added one explicit install-surface owner bead and moved final proof ownership explicitly onto `ids_ml_new-m8h0`.
-- The replanned wave validated cleanly as a linear spine rooted at `ids_ml_new-x1p9`.
-- During validation, `beads.db` was found malformed and rebuilt cleanly from a repaired `.beads/issues.jsonl`; `br sync --status` then returned `dirty_count=0`, `jsonl_newer=false`, `db_newer=false`.
-- `br show ids_ml_new-x1p9` and `br show ids_ml_new-urzq` now resolve to the intended task/epic after the repair.
-- Swarm completed after a final rescue pass on `ids_ml_new-zpih` in the main session because the rescue worker hit a usage cap before it could claim the last P3 bead.
-- Final triage for `ids_ml_new-urzq` reports `open_count=0`, `actionable_count=0`, `in_progress_count=0`.
+ACTIVE_WORKERS:
+- none
 
 NEXT:
-- Invoke `khuym:reviewing`.
+- Swarm complete for epic ids_ml_new-8sg2
+- Next skill: khuym:reviewing
+- Final coordinator verification: python -m pytest tests/console/test_ids_operator_console_config.py tests/ops/test_ids_same_host_stack_manage.py -q -> 69 passed
