@@ -157,7 +157,7 @@ def test_alert_detail_and_sensor_aware_json_endpoints(tmp_path: Path) -> None:
     _login(client)
 
     alerts_page = client.get("/alerts")
-    assert alerts_page.status_code == 501
+    assert alerts_page.status_code == 200
 
     operations_page = client.get("/operations")
     assert operations_page.status_code == 501
@@ -166,7 +166,7 @@ def test_alert_detail_and_sensor_aware_json_endpoints(tmp_path: Path) -> None:
     assert reports_page.status_code == 501
 
     detail = client.get(f"/alerts/{alert_id}")
-    assert detail.status_code == 501
+    assert detail.status_code == 200
 
     snapshot = client.get("/api/v1/console/snapshot")
     assert snapshot.status_code == 200

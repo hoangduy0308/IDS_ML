@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+
+{% block title %}Alert {{ alert.source_event_id }} — VIGIL IDS{% endblock %}
+
+{% block content %}
+{# ── Breadcrumb + header ──────────────────────────────────────────────────── #}
+<div class="flex items-center justify-between mb-6">
+  <div class="flex items-center gap-2" style="font-size:14px">
+    <a href="/alerts" style="color:var(--muted-foreground)">Alerts</a>
+    <span style="color:var(--muted-foreground)">/</span>
+    <span style="color:var(--foreground);font-weight:600;font-family:var(--font-primary)">{{ alert.source_event_id }}</span>
+  </div>
+  <span class="text-muted" style="font-size:12px;font-family:var(--font-primary)">{{ generated_at }}</span>
+</div>
+
+{# ── Two-column layout ────────────────────────────────────────────────────── #}
+<div class="flex gap-4" style="align-items:flex-start">
+
+  {# ── Left: Alert identifiers + Notes ─────────────────────────────────── #}
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:16px">
+
+    {# Alert summary card #}
+    <div class="card">
+      <div class="flex items-center gap-3 mb-4">
+        {# Severity indicator #}
+        {% set sev = alert.severity | lower %}
+        {% if sev == "critical" %}
+          <span style="display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:50%;background:var(--color-error);color:var(--color-error-foreground);font-size:18px">!</span>
+        {% elif sev == "high" %}
+          <span style="display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:50%;background:var(--color-warning);color:var(--color-warning-foreground);font-size:18px">!</span>
+        {% else %}
+          <span style="display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:50%;background:var(--muted);color:var(--muted-foreground);font-size:14px">i</span>
+        {% endif %}
+
+        <div>
+          <div style="font-size:16px;font-weight:600;font-family:var(--font-primary)">{{ alert.source_event_id }}</div>
+          <div class="flex items-center gap-2" style="margin-top:4px">
+            {% if sev == "critical" %}
+              <span class="badge badge--error">critical</span>
+            {% elif sev == "high" %}
+              <span class="badge badge--warning">high</span>
+            {% elif sev == "medium" %}
+              <span class="badge badge--info">medium</span>
+            {% else %}
+              <span class="badge badge--muted">{{ sev }}</span>
+            {% endif %}
+            {% if alert.get("suppressed") %}
+              <span class="badge badge--muted">suppressed</span>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      {# Network identifiers grid #}
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <div class="form-label">Source IP</div>
+          <div style="font-family:var(--font-primary);font-size:13px;margin-top:4px">{{ alert.src_ip or "—" }}</div>
+        </div>
+        <div>
+          <div class="form-label">Destination IP</div>
+          <div style="font-family:var(--font-primary);font-size:13px;margin-top:4px">{{ alert.dst_ip or "—" }}</div>
+        </div>
+        <div>
+          <div class="form-label">Src Port</div>
+          <div style="font-family:var(--font-primary);font-size:13px;margin-top:4px">{{ alert.src_port or "—" }}</div>
+        </div>
+        <div>
+          <div class="form-label">Dst Port</div>
+          <div style="font-family:var(--font-primary);font-size:13px;margin-top:4px">{{ alert.dst_port or "—" }}</div>
+        </div>
+        <div>
+          <div class="form-label">Protocol</div>
+          <div style="font-family:var(--font-primary);font-size:13px;margin-top:4px">{{ (alert.protocol or "—") | upper }}</div>
+        </div>
+        <div>
+          <div class="form-label">Fingerprint</div>
+          <div style="font-family:var(--font-primary);font-size:13px;margin-top:4px;color:var(--muted-foreground)">{{ alert.fingerprint or "—" }}</div>
+        </div>
+        <div>
+          <div class="form-label">Event Time</div>
+          <div style="font-family:var(--font-primary);font-size:13px;margin-top:4px;color:var(--muted-foreground)">{{ (alert.event_ts or "")[:19] | replace("T", " ") }}</div>
+        </div>
+        <div>
+          <div class="form-label">Alert ID</div>
+          <div style="font-family:var(--font-primary);font-size:13px;margin-top:4px;color:var(--muted-foreground)">#{{ alert.id }}</div>
+        </div>
+      </div>
+    </div>
+
+    {# Investigation notes section #}
+    <div class="card">
+      <div class="card__header">
+        <div class="card__title">Investigation Notes</div>
+      </div>
+
+      {# Existing notes timeline #}
+      {% if notes %}
+      <div style="margin-bottom:16px">
+        {% for note in notes %}
+        <div style="padding:12px 0;border-top:1px solid var(--border)">
+          <div class="flex items-center justify-between" style="margin-bottom:6px">
+            <span style="font-size:12px;font-weight:600;color:var(--foreground)">{{ note.author or "admin" }}</span>
+            <span style="font-size:11px;color:var(--muted-foreground);font-family:var(--font-primary)">{{ (note.created_at or "")[:19] | replace("T", " ") }}</span>
+          </div>
+          <div style="font-size:13px;color:var(--foreground);line-height:1.6">{{ note.note_text }}</div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div style="padding:16px 0;text-align:center;color:var(--muted-foreground);font-size:13px;border-top:1px solid var(--border)">
+        No notes yet
+      </div>
+      {% endif %}
+
+      {# Add note form #}
+      <form action="/alerts/{{ alert.id }}/notes" method="post" style="margin-top:16px;border-top:1px solid var(--border);padding-top:16px">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="form-group">
+          <label class="form-label" for="note-text">Add a note</label>
+          <textarea
+            id="note-text"
+            name="note_text"
+            class="form-input"
+            placeholder="Enter note..."
+            rows="3"
+            style="resize:vertical"
+          ></textarea>
+        </div>
+        <div style="margin-top:8px">
+          <button type="submit" class="btn btn-primary">Add Note</button>
+        </div>
+      </form>
+    </div>
+
+  </div>
+
+  {# ── Right: Status history + Triage form ──────────────────────────────── #}
+  <div style="width:300px;flex-shrink:0;display:flex;flex-direction:column;gap:16px">
+
+    {# Current triage status #}
+    <div class="card">
+      <div class="card__header">
+        <div class="card__title">Current Status</div>
+      </div>
+      {% set ts = alert.triage_status | lower %}
+      <div style="margin-bottom:16px">
+        {% if ts == "new" %}
+          <span class="badge badge--warning">new</span>
+        {% elif ts == "acknowledged" %}
+          <span class="badge badge--info">acknowledged</span>
+        {% elif ts == "investigating" %}
+          <span class="badge badge--info">investigating</span>
+        {% elif ts == "resolved" %}
+          <span class="badge badge--success">resolved</span>
+        {% elif ts == "false_positive" %}
+          <span class="badge badge--muted">false positive</span>
+        {% else %}
+          <span class="badge badge--muted">{{ ts }}</span>
+        {% endif %}
+      </div>
+
+      {# Triage update form #}
+      <form action="/alerts/{{ alert.id }}/status" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="form-group">
+          <label class="form-label" for="new-status">Update status</label>
+          <select id="new-status" name="new_status" class="form-input">
+            {% for state in triage_states %}
+            <option value="{{ state }}" {% if state == ts %}selected{% endif %}>
+              {{ triage_labels.get(state, state) }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div style="margin-top:8px">
+          <button type="submit" class="btn btn-primary" style="width:100%">Update Status</button>
+        </div>
+      </form>
+    </div>
+
+    {# Status history timeline #}
+    <div class="card">
+      <div class="card__header">
+        <div class="card__title">Status History</div>
+      </div>
+      {% if status_history %}
+      {% for entry in status_history %}
+      <div style="padding:10px 0;border-top:1px solid var(--border)">
+        <div class="flex items-center justify-between" style="margin-bottom:4px">
+          <span style="font-size:12px;font-weight:600;font-family:var(--font-primary);color:var(--foreground)">
+            {{ entry.to_status | replace("_", " ") }}
+          </span>
+          <span style="font-size:11px;color:var(--muted-foreground);font-family:var(--font-primary)">
+            {{ (entry.changed_at or "")[:10] }}
+          </span>
+        </div>
+        <div style="font-size:11px;color:var(--muted-foreground)">by {{ entry.changed_by or "system" }}</div>
+      </div>
+      {% endfor %}
+      {% else %}
+      <div style="padding:12px 0;text-align:center;color:var(--muted-foreground);font-size:12px;border-top:1px solid var(--border)">
+        No status changes recorded
+      </div>
+      {% endif %}
+    </div>
+
+  </div>
+
+</div>
+{% endblock %}

@@ -11,7 +11,10 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from .alerts import (
     ALERT_TRIAGE_STATES,
+    add_investigation_note,
+    get_alert_timeline,
     list_alerts_for_triage,
+    transition_alert_status,
 )
 from .auth import (
     current_admin,
@@ -260,38 +263,107 @@ def create_operator_console_web_app(
         )
 
     @app.get("/alerts", response_class=HTMLResponse)
-    def alerts_page(request: Request) -> Response:
+    def alerts_page(
+        request: Request,
+        status_filter: str | None = Query(None, alias="status"),
+    ) -> Response:
         redirect = require_authenticated_redirect(request, login_path="/login")
         if redirect is not None:
             return redirect
-        raise HTTPException(status_code=501, detail="Not yet implemented")
+        runtime_store = _open_store()
+        try:
+            alerts = list_alerts_for_triage(
+                runtime_store,
+                limit=200,
+                triage_status=status_filter,
+                include_suppressed=True,
+            )
+        finally:
+            if store is None:
+                runtime_store.close()
+        return render_template(
+            request,
+            "alerts.html",
+            alerts=alerts,
+            status_filter=status_filter,
+        )
 
     @app.get("/alerts/{alert_id}", response_class=HTMLResponse)
     def alert_detail(request: Request, alert_id: int) -> Response:
         redirect = require_authenticated_redirect(request, login_path="/login")
         if redirect is not None:
             return redirect
-        raise HTTPException(status_code=501, detail="Not yet implemented")
+        runtime_store = _open_store()
+        try:
+            all_alerts = list_alerts_for_triage(
+                runtime_store,
+                limit=10000,
+                include_suppressed=True,
+            )
+            alert = next((a for a in all_alerts if a["id"] == alert_id), None)
+            if alert is None:
+                raise HTTPException(status_code=404, detail="Alert not found")
+            timeline = get_alert_timeline(runtime_store, alert_id=alert_id)
+        finally:
+            if store is None:
+                runtime_store.close()
+        return render_template(
+            request,
+            "alert_detail.html",
+            alert=alert,
+            notes=timeline["notes"],
+            status_history=timeline["status_history"],
+        )
 
     @app.post("/alerts/{alert_id}/notes")
     async def alert_add_note(
         request: Request,
         alert_id: int,
         csrf_token: str = Form(""),
+        note_text: str = Form(""),
     ) -> Response:
         validate_csrf_form(request, {"csrf_token": csrf_token})
-        require_authenticated_api(request)
-        raise HTTPException(status_code=501, detail="Not yet implemented")
+        admin = require_authenticated_api(request)
+        runtime_store = _open_store()
+        try:
+            add_investigation_note(
+                runtime_store,
+                alert_id=alert_id,
+                note_text=note_text,
+                author=admin.username if admin else "unknown",
+            )
+        finally:
+            if store is None:
+                runtime_store.close()
+        return RedirectResponse(
+            url=f"/alerts/{alert_id}",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
 
     @app.post("/alerts/{alert_id}/status")
     async def alert_update_status(
         request: Request,
         alert_id: int,
         csrf_token: str = Form(""),
+        new_status: str = Form(""),
     ) -> Response:
         validate_csrf_form(request, {"csrf_token": csrf_token})
-        require_authenticated_api(request)
-        raise HTTPException(status_code=501, detail="Not yet implemented")
+        admin = require_authenticated_api(request)
+        runtime_store = _open_store()
+        try:
+            transition_alert_status(
+                runtime_store,
+                alert_id=alert_id,
+                to_status=new_status,
+                changed_by=admin.username if admin else "unknown",
+            )
+        finally:
+            if store is None:
+                runtime_store.close()
+        return RedirectResponse(
+            url=f"/alerts/{alert_id}",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
 
     @app.get("/operations", response_class=HTMLResponse)
     def operations_page(request: Request) -> Response:

@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+
+{% block title %}Alerts — VIGIL IDS{% endblock %}
+
+{% block content %}
+{# ── Page header ─────────────────────────────────────────────────────────── #}
+<div class="flex items-center justify-between mb-6">
+  <h1 class="topbar__title">Alerts</h1>
+  <span class="text-muted" style="font-size:12px;font-family:var(--font-primary)">{{ generated_at }}</span>
+</div>
+
+{# ── Status filter bar ───────────────────────────────────────────────────── #}
+<div class="flex items-center gap-2 mb-4" style="flex-wrap:wrap">
+  <span class="form-label" style="margin-bottom:0">Status</span>
+  {% set filter_options = [
+    ("", "All"),
+    ("new", "New"),
+    ("acknowledged", "Acknowledged"),
+    ("investigating", "Investigating"),
+    ("resolved", "Resolved"),
+    ("false_positive", "False Positive"),
+  ] %}
+  {% for val, label in filter_options %}
+  <a
+    href="/alerts{% if val %}?status={{ val }}{% endif %}"
+    class="btn {% if status_filter == val or (not status_filter and not val) %}btn-primary{% else %}btn-secondary{% endif %}"
+    style="padding:5px 12px;font-size:12px"
+  >{{ label }}</a>
+  {% endfor %}
+  <span class="text-muted" style="font-size:12px;margin-left:auto;font-family:var(--font-primary)">{{ alerts | length }} result{% if alerts | length != 1 %}s{% endif %}</span>
+</div>
+
+{# ── Alert table ─────────────────────────────────────────────────────────── #}
+<div class="card" style="padding:0;overflow:hidden">
+  {% if alerts %}
+  <div class="table-wrap">
+    <table class="data-table data-table--mono">
+      <thead>
+        <tr>
+          <th style="width:28px"></th>
+          <th>Event ID</th>
+          <th>Severity</th>
+          <th>Src IP</th>
+          <th>Dst IP</th>
+          <th>Protocol</th>
+          <th>Status</th>
+          <th>Time</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for alert in alerts %}
+        {% set is_suppressed = alert.get("suppressed", False) %}
+        <tr style="{% if is_suppressed %}opacity:0.55{% endif %}">
+          {# Severity dot indicator #}
+          <td style="padding:10px 8px 10px 12px">
+            {% set sev = alert.severity | lower %}
+            {% if sev == "critical" %}
+              <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--color-error-foreground)" title="Critical"></span>
+            {% elif sev == "high" %}
+              <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--color-warning-foreground)" title="High"></span>
+            {% elif sev == "medium" %}
+              <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--color-info-foreground)" title="Medium"></span>
+            {% else %}
+              <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--muted-foreground)" title="{{ sev }}"></span>
+            {% endif %}
+          </td>
+
+          <td>
+            <a href="/alerts/{{ alert.id }}" style="color:var(--primary)">{{ alert.source_event_id }}</a>
+            {% if is_suppressed %}
+              <span class="badge badge--muted" style="margin-left:6px;font-size:10px">suppressed</span>
+            {% endif %}
+          </td>
+
+          <td>
+            {% if sev == "critical" %}
+              <span class="badge badge--error">critical</span>
+            {% elif sev == "high" %}
+              <span class="badge badge--warning">high</span>
+            {% elif sev == "medium" %}
+              <span class="badge badge--info">medium</span>
+            {% else %}
+              <span class="badge badge--muted">{{ sev }}</span>
+            {% endif %}
+          </td>
+
+          <td style="color:var(--muted-foreground)">{{ alert.src_ip or "—" }}</td>
+          <td style="color:var(--muted-foreground)">{{ alert.dst_ip or "—" }}</td>
+          <td style="color:var(--muted-foreground)">{{ (alert.protocol or "—") | upper }}</td>
+
+          <td>
+            {% set ts = alert.triage_status | lower %}
+            {% if ts == "new" %}
+              <span class="badge badge--warning">new</span>
+            {% elif ts == "acknowledged" %}
+              <span class="badge badge--info">acknowledged</span>
+            {% elif ts == "investigating" %}
+              <span class="badge badge--info">investigating</span>
+            {% elif ts == "resolved" %}
+              <span class="badge badge--success">resolved</span>
+            {% elif ts == "false_positive" %}
+              <span class="badge badge--muted">false positive</span>
+            {% else %}
+              <span class="badge badge--muted">{{ ts }}</span>
+            {% endif %}
+          </td>
+
+          <td style="color:var(--muted-foreground)">{{ (alert.event_ts or "")[:19] | replace("T", " ") }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {# Footer row #}
+  <div class="flex items-center justify-between" style="padding:12px 16px;border-top:1px solid var(--border)">
+    <span style="font-size:12px;color:var(--muted-foreground);font-family:var(--font-primary)">
+      Showing {{ alerts | length }} alert{% if alerts | length != 1 %}s{% endif %}
+      {% if status_filter %} · filtered: {{ triage_labels.get(status_filter, status_filter) }}{% endif %}
+    </span>
+    {% if status_filter %}
+    <a href="/alerts" class="btn btn-secondary" style="padding:4px 10px;font-size:12px">Clear filter</a>
+    {% endif %}
+  </div>
+
+  {% else %}
+  <div style="padding:48px 20px;text-align:center">
+    <div style="font-size:14px;color:var(--muted-foreground);margin-bottom:8px">No alerts in queue</div>
+    {% if status_filter %}
+    <div style="font-size:12px;color:var(--muted-foreground)">
+      No alerts with status "{{ triage_labels.get(status_filter, status_filter) }}" found.
+      <a href="/alerts" style="color:var(--primary)">Clear filter</a>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
