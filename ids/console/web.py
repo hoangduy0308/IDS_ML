@@ -445,7 +445,8 @@ def create_operator_console_web_app(
         redirect = require_authenticated_redirect(request, login_path="/login")
         if redirect is not None:
             return redirect
-        raise HTTPException(status_code=501, detail="Not yet implemented")
+        readiness = build_readiness_payload(config, include_sensitive=True)
+        return render_template(request, "system_health.html", readiness=readiness)
 
     # ── JSON API routes (unchanged from Phase 0) ─────────────────────────────
 

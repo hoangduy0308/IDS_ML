@@ -212,8 +212,17 @@ def test_phase3_routes_return_501_not_404(tmp_path: Path) -> None:
     suppression_rules = client.get("/suppression-rules")
     assert suppression_rules.status_code == 501
 
+
+def test_system_health_returns_200_not_501(tmp_path: Path) -> None:
+    """GET /system-health must return 200 now that it is implemented (Phase 3 Story 3.1)."""
+    client, _, _ = _build_test_app(tmp_path)
+    _login(client)
+
     system_health = client.get("/system-health")
-    assert system_health.status_code == 501
+    assert system_health.status_code == 200, (
+        f"Expected 200 but got {system_health.status_code} — "
+        "/system-health must render (not 501) after Phase 3 Story 3.1"
+    )
 
 
 def test_readyz_keeps_core_ready_when_notification_component_is_degraded(tmp_path: Path) -> None:

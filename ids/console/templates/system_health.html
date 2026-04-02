@@ -1,0 +1,250 @@
+{% extends "base.html" %}
+
+{% block title %}System Health — VIGIL IDS{% endblock %}
+
+{% block content %}
+{# ── Page header ─────────────────────────────────────────────────────────── #}
+<div class="flex items-center justify-between mb-6">
+  <h1 class="topbar__title">System Health</h1>
+  <span class="text-muted" style="font-size:12px;font-family:var(--font-primary)">{{ generated_at }}</span>
+</div>
+
+{# ── Overall status banner ────────────────────────────────────────────────── #}
+{% set system_ready = readiness.get("ready", False) %}
+{% set system_status = readiness.get("status", "unknown") %}
+{% set comps = readiness.get("components", {}) %}
+
+<div class="card mb-6" style="padding:20px">
+  <div class="flex items-center gap-4">
+    {% if system_ready %}
+      <div style="width:12px;height:12px;border-radius:50%;background:var(--color-success-foreground);flex-shrink:0"></div>
+      <div>
+        <div style="font-size:18px;font-weight:700;color:var(--foreground);line-height:1.2">System Operational</div>
+        <div style="font-size:13px;color:var(--muted-foreground);margin-top:2px">All critical components ready</div>
+      </div>
+      <span class="badge badge--success" style="margin-left:auto">{{ system_status }}</span>
+    {% else %}
+      <div style="width:12px;height:12px;border-radius:50%;background:var(--color-error-foreground);flex-shrink:0"></div>
+      <div>
+        <div style="font-size:18px;font-weight:700;color:var(--foreground);line-height:1.2">System Degraded</div>
+        <div style="font-size:13px;color:var(--muted-foreground);margin-top:2px">One or more components need attention</div>
+      </div>
+      <span class="badge badge--error" style="margin-left:auto">{{ system_status }}</span>
+    {% endif %}
+  </div>
+</div>
+
+{# ── Two-column layout: component detail cards ───────────────────────────── #}
+<div class="flex gap-4" style="align-items:flex-start">
+
+  {# ── Left column: component breakdown ──────────────────────────────────── #}
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:16px">
+
+    {# Config component #}
+    {% set config_comp = comps.get("config", {}) %}
+    <div class="card" style="padding:0;overflow:hidden">
+      <div class="flex items-center justify-between" style="padding:14px 20px;border-bottom:1px solid var(--border)">
+        <span class="card__title">Configuration</span>
+        {% if config_comp.get("ok", False) %}
+          <span class="badge badge--success">OK</span>
+        {% else %}
+          <span class="badge badge--error">degraded</span>
+        {% endif %}
+      </div>
+      <div style="padding:16px 20px;display:flex;flex-direction:column;gap:10px">
+        <div class="flex items-center justify-between">
+          <span style="font-size:13px;color:var(--muted-foreground)">Secret source</span>
+          <span style="font-size:13px;font-family:var(--font-primary);color:var(--foreground)">{{ config_comp.get("secret_source", "—") }}</span>
+        </div>
+        <div class="flex items-center justify-between">
+          <span style="font-size:13px;color:var(--muted-foreground)">Cookie same-site</span>
+          <span style="font-size:13px;font-family:var(--font-primary);color:var(--foreground)">{{ config_comp.get("session_cookie_same_site", "—") }}</span>
+        </div>
+        <div class="flex items-center justify-between">
+          <span style="font-size:13px;color:var(--muted-foreground)">HTTPS only</span>
+          {% if config_comp.get("session_cookie_https_only") %}
+            <span class="badge badge--success">yes</span>
+          {% else %}
+            <span class="badge badge--muted">no</span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    {# Schema component #}
+    {% set schema_comp = comps.get("schema", {}) %}
+    <div class="card" style="padding:0;overflow:hidden">
+      <div class="flex items-center justify-between" style="padding:14px 20px;border-bottom:1px solid var(--border)">
+        <span class="card__title">Database Schema</span>
+        {% if schema_comp.get("ok", False) %}
+          <span class="badge badge--success">OK</span>
+        {% else %}
+          <span class="badge badge--error">degraded</span>
+        {% endif %}
+      </div>
+      <div style="padding:16px 20px;display:flex;flex-direction:column;gap:10px">
+        <div class="flex items-center justify-between">
+          <span style="font-size:13px;color:var(--muted-foreground)">State</span>
+          {% set schema_state = schema_comp.get("state", "unknown") %}
+          {% if schema_state == "current" %}
+            <span class="badge badge--success">{{ schema_state }}</span>
+          {% elif schema_state == "unknown" %}
+            <span class="badge badge--muted">{{ schema_state }}</span>
+          {% else %}
+            <span class="badge badge--warning">{{ schema_state }}</span>
+          {% endif %}
+        </div>
+        <div class="flex items-center justify-between">
+          <span style="font-size:13px;color:var(--muted-foreground)">Version</span>
+          <span style="font-size:13px;font-family:var(--font-primary);color:var(--foreground)">v{{ schema_comp.get("version", "?") }}</span>
+        </div>
+        {% if schema_comp.get("detail") %}
+        <div class="flex items-center justify-between">
+          <span style="font-size:13px;color:var(--muted-foreground)">Detail</span>
+          <span style="font-size:12px;color:var(--muted-foreground);max-width:240px;text-align:right">{{ schema_comp.get("detail") }}</span>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    {# Data paths component #}
+    {% set data_paths_comp = comps.get("data_paths", {}) %}
+    {% set streams = data_paths_comp.get("streams", {}) %}
+    <div class="card" style="padding:0;overflow:hidden">
+      <div class="flex items-center justify-between" style="padding:14px 20px;border-bottom:1px solid var(--border)">
+        <span class="card__title">Data Paths</span>
+        {% if data_paths_comp.get("ok", False) %}
+          <span class="badge badge--success">OK</span>
+        {% else %}
+          <span class="badge badge--warning">check paths</span>
+        {% endif %}
+      </div>
+      <div style="padding:0">
+        {% for stream_name, stream_info in streams.items() %}
+        <div class="flex items-center justify-between" style="padding:10px 20px;border-bottom:1px solid var(--border)">
+          <span style="font-size:13px;color:var(--muted-foreground)">{{ stream_name }}</span>
+          <div class="flex items-center gap-2">
+            {% if stream_info.get("readable") %}
+              <span class="badge badge--success">readable</span>
+            {% elif stream_info.get("parent_exists") %}
+              <span class="badge badge--warning">dir exists</span>
+            {% else %}
+              <span class="badge badge--error">missing</span>
+            {% endif %}
+          </div>
+        </div>
+        {% else %}
+        <div style="padding:16px 20px;color:var(--muted-foreground);font-size:13px">No stream paths configured</div>
+        {% endfor %}
+      </div>
+    </div>
+
+  </div>
+
+  {# ── Right column: admin, bundle, notification ──────────────────────────── #}
+  <div style="width:300px;flex-shrink:0;display:flex;flex-direction:column;gap:16px">
+
+    {# Admin bootstrap component #}
+    {% set admin_comp = comps.get("admin_bootstrap", {}) %}
+    <div class="card">
+      <div class="card__header" style="border-bottom:1px solid var(--border);padding-bottom:12px;margin-bottom:12px">
+        <div class="flex items-center justify-between">
+          <div class="card__title">Admin Bootstrap</div>
+          {% if admin_comp.get("ok", False) %}
+            <span class="badge badge--success">OK</span>
+          {% else %}
+            <span class="badge badge--error">no admins</span>
+          {% endif %}
+        </div>
+      </div>
+      <div class="flex items-center justify-between">
+        <span style="font-size:13px;color:var(--muted-foreground)">Admin accounts</span>
+        <span style="font-size:22px;font-weight:700;font-family:var(--font-primary);color:var(--foreground)">{{ admin_comp.get("admin_count", 0) }}</span>
+      </div>
+    </div>
+
+    {# Active bundle component #}
+    {% set bundle_comp = comps.get("active_bundle", {}) %}
+    {% set bundle_state = bundle_comp.get("state") %}
+    <div class="card">
+      <div class="card__header" style="border-bottom:1px solid var(--border);padding-bottom:12px;margin-bottom:12px">
+        <div class="flex items-center justify-between">
+          <div class="card__title">Active Bundle</div>
+          {% if bundle_comp.get("ok", False) %}
+            <span class="badge badge--success">OK</span>
+          {% else %}
+            <span class="badge badge--muted">none</span>
+          {% endif %}
+        </div>
+      </div>
+      {% if bundle_state %}
+        <div class="flex items-center justify-between" style="margin-bottom:8px">
+          <span style="font-size:13px;color:var(--muted-foreground)">Name</span>
+          <span style="font-size:13px;font-weight:600;font-family:var(--font-primary);color:var(--foreground)">{{ bundle_state.get("active_bundle_name", "—") }}</span>
+        </div>
+        {% set compat = bundle_state.get("compatibility_status", "unknown") %}
+        <div class="flex items-center justify-between" style="margin-bottom:8px">
+          <span style="font-size:13px;color:var(--muted-foreground)">Compatibility</span>
+          {% if compat == "compatible" %}
+            <span class="badge badge--success">{{ compat }}</span>
+          {% else %}
+            <span class="badge badge--warning">{{ compat }}</span>
+          {% endif %}
+        </div>
+        {% if bundle_state.get("activated_at") %}
+        <div class="flex items-center justify-between">
+          <span style="font-size:13px;color:var(--muted-foreground)">Activated</span>
+          <span style="font-size:12px;color:var(--muted-foreground);font-family:var(--font-primary)">{{ bundle_state.get("activated_at", "")[:19] | replace("T", " ") }}</span>
+        </div>
+        {% endif %}
+      {% else %}
+        <div style="font-size:13px;color:var(--muted-foreground)">No bundle loaded</div>
+      {% endif %}
+    </div>
+
+    {# Notification component #}
+    {% set notif_comp = comps.get("notification", {}) %}
+    <div class="card">
+      <div class="card__header" style="border-bottom:1px solid var(--border);padding-bottom:12px;margin-bottom:12px">
+        <div class="flex items-center justify-between">
+          <div class="card__title">Notifications</div>
+          {% if notif_comp.get("ok", False) %}
+            <span class="badge badge--success">OK</span>
+          {% else %}
+            <span class="badge badge--error">degraded</span>
+          {% endif %}
+        </div>
+      </div>
+      <div class="flex items-center justify-between" style="margin-bottom:8px">
+        <span style="font-size:13px;color:var(--muted-foreground)">Channel</span>
+        <span style="font-size:13px;color:var(--foreground)">{{ notif_comp.get("channel", "—") }}</span>
+      </div>
+      <div class="flex items-center justify-between" style="margin-bottom:8px">
+        <span style="font-size:13px;color:var(--muted-foreground)">State</span>
+        {% set notif_state = notif_comp.get("state", "unknown") %}
+        {% if notif_state == "ok" %}
+          <span class="badge badge--success">{{ notif_state }}</span>
+        {% elif notif_state == "disabled" %}
+          <span class="badge badge--muted">{{ notif_state }}</span>
+        {% else %}
+          <span class="badge badge--error">{{ notif_state }}</span>
+        {% endif %}
+      </div>
+      {% if notif_comp.get("enabled") %}
+      <div class="flex items-center justify-between" style="margin-bottom:8px">
+        <span style="font-size:13px;color:var(--muted-foreground)">Backlog</span>
+        <span style="font-size:13px;font-family:var(--font-primary);color:var(--foreground)">{{ notif_comp.get("backlog", 0) }}</span>
+      </div>
+      {% endif %}
+      {% if notif_comp.get("last_error") %}
+      <div style="margin-top:8px;padding:8px;background:var(--bg-muted);border-radius:4px;border:1px solid var(--border)">
+        <div style="font-size:11px;font-weight:600;color:var(--color-error-foreground);text-transform:uppercase;margin-bottom:4px">Last Error</div>
+        <div style="font-size:12px;color:var(--muted-foreground);font-family:var(--font-primary)">{{ notif_comp.get("last_error", {}).get("status", "error") }}</div>
+      </div>
+      {% endif %}
+    </div>
+
+  </div>
+
+</div>
+{% endblock %}
