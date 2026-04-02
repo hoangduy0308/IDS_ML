@@ -419,16 +419,38 @@ def create_operator_console_web_app(
         redirect = require_authenticated_redirect(request, login_path="/login")
         if redirect is not None:
             return redirect
-        raise HTTPException(status_code=501, detail="Not yet implemented")
+        runtime_store = _open_store()
+        try:
+            rules = runtime_store.list_active_suppression_rules(sensor_id=DEFAULT_SENSOR_ID)
+        finally:
+            if store is None:
+                runtime_store.close()
+        return render_template(request, "suppression_rules.html", rules=rules)
 
     @app.post("/suppression-rules")
     async def suppression_rules_create(
         request: Request,
         csrf_token: str = Form(""),
+        rule_name: str = Form(""),
+        match_field: str = Form(""),
+        match_value: str = Form(""),
+        applies_to: str = Form("model_alert"),
     ) -> Response:
         validate_csrf_form(request, {"csrf_token": csrf_token})
         require_authenticated_api(request)
-        raise HTTPException(status_code=501, detail="Not yet implemented")
+        runtime_store = _open_store()
+        try:
+            runtime_store.create_suppression_rule(
+                rule_name=rule_name,
+                match_field=match_field,
+                match_value=match_value,
+                applies_to=applies_to,
+                sensor_id=DEFAULT_SENSOR_ID,
+            )
+        finally:
+            if store is None:
+                runtime_store.close()
+        return RedirectResponse(url="/suppression-rules", status_code=status.HTTP_303_SEE_OTHER)
 
     @app.post("/suppression-rules/{rule_id}/deactivate")
     async def suppression_rule_deactivate(
@@ -438,7 +460,15 @@ def create_operator_console_web_app(
     ) -> Response:
         validate_csrf_form(request, {"csrf_token": csrf_token})
         require_authenticated_api(request)
-        raise HTTPException(status_code=501, detail="Not yet implemented")
+        runtime_store = _open_store()
+        try:
+            deactivated = runtime_store.deactivate_suppression_rule(rule_id=rule_id)
+        finally:
+            if store is None:
+                runtime_store.close()
+        if not deactivated:
+            raise HTTPException(status_code=404, detail="Rule not found")
+        return RedirectResponse(url="/suppression-rules", status_code=status.HTTP_303_SEE_OTHER)
 
     @app.get("/system-health", response_class=HTMLResponse)
     def system_health_page(request: Request) -> Response:

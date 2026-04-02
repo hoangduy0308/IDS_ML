@@ -201,16 +201,25 @@ def test_production_login_sets_secure_session_cookie(tmp_path: Path) -> None:
     assert "samesite=lax" in set_cookie
 
 
-def test_phase3_routes_return_501_not_404(tmp_path: Path) -> None:
-    """Phase 3 routes must be registered (not 404) and return 501 until implemented."""
+def test_phase3_live_logs_returns_501_not_404(tmp_path: Path) -> None:
+    """GET /live-logs must be registered (not 404) and return 501 until implemented."""
     client, _, _ = _build_test_app(tmp_path)
     _login(client)
 
     live_logs = client.get("/live-logs")
     assert live_logs.status_code == 501
 
+
+def test_suppression_rules_returns_200_not_501(tmp_path: Path) -> None:
+    """GET /suppression-rules must return 200 now that it is implemented (Phase 3 Story 3.2)."""
+    client, _, _ = _build_test_app(tmp_path)
+    _login(client)
+
     suppression_rules = client.get("/suppression-rules")
-    assert suppression_rules.status_code == 501
+    assert suppression_rules.status_code == 200, (
+        f"Expected 200 but got {suppression_rules.status_code} — "
+        "/suppression-rules must render (not 501) after Phase 3 Story 3.2"
+    )
 
 
 def test_system_health_returns_200_not_501(tmp_path: Path) -> None:

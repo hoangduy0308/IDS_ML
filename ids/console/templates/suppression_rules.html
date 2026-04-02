@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+
+{% block title %}Suppression Rules — VIGIL IDS{% endblock %}
+
+{% block content %}
+{# ── Page header ─────────────────────────────────────────────────────────── #}
+<div class="flex items-center justify-between mb-6">
+  <h1 class="topbar__title">Suppression Rules</h1>
+  <span class="text-muted" style="font-size:12px;font-family:var(--font-primary)">{{ generated_at }}</span>
+</div>
+
+{# ── Two-column layout: active rules table + add rule form ───────────────── #}
+<div class="flex gap-4" style="align-items:flex-start">
+
+  {# ── Left: Active rules table ─────────────────────────────────────────── #}
+  <div style="flex:1;min-width:0">
+    <div class="card" style="padding:0;overflow:hidden">
+      <div class="flex items-center justify-between" style="padding:16px 20px;border-bottom:1px solid var(--border)">
+        <span class="card__title">Active Rules</span>
+        <span class="text-muted" style="font-size:11px;font-family:var(--font-primary)">{{ rules | length }} rule{% if rules | length != 1 %}s{% endif %}</span>
+      </div>
+
+      {% if rules %}
+      <div class="table-wrap">
+        <table class="data-table data-table--mono">
+          <thead>
+            <tr>
+              <th>Rule Name</th>
+              <th>Match Field</th>
+              <th>Match Value</th>
+              <th>Applies To</th>
+              <th>Created</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for rule in rules %}
+            <tr>
+              <td style="color:var(--foreground);font-weight:500">{{ rule.rule_name }}</td>
+              <td>
+                <span class="badge badge--muted">{{ rule.match_field }}</span>
+              </td>
+              <td style="color:var(--foreground);font-family:var(--font-primary)">{{ rule.match_value }}</td>
+              <td>
+                <span class="badge badge--info">{{ rule.applies_to }}</span>
+              </td>
+              <td style="color:var(--muted-foreground)">{{ (rule.created_at or "")[:19] | replace("T", " ") }}</td>
+              <td style="text-align:right">
+                <form method="post" action="/suppression-rules/{{ rule.id }}/deactivate" style="display:inline">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit" class="btn btn--danger btn--sm" style="font-size:11px;padding:3px 8px">
+                    Deactivate
+                  </button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div style="padding:48px 20px;text-align:center">
+        <div style="font-size:14px;color:var(--muted-foreground);margin-bottom:8px">No active suppression rules</div>
+        <div style="font-size:12px;color:var(--muted-foreground)">Add a rule below to suppress matching alerts from the active queue.</div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ── Right: Add rule form ─────────────────────────────────────────────── #}
+  <div style="width:320px;flex-shrink:0">
+    <div class="card">
+      <div class="card__header" style="border-bottom:1px solid var(--border);padding-bottom:12px;margin-bottom:16px">
+        <div class="card__title">Add Suppression Rule</div>
+        <div class="card__subtitle">New rule takes effect immediately</div>
+      </div>
+
+      <form method="post" action="/suppression-rules">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <div style="margin-bottom:14px">
+          <label style="display:block;font-size:12px;font-weight:600;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px" for="rule_name">
+            Rule Name
+          </label>
+          <input
+            id="rule_name"
+            type="text"
+            name="rule_name"
+            placeholder="e.g. Block known scanner"
+            required
+            style="width:100%;box-sizing:border-box;padding:8px 10px;background:var(--bg-muted);border:1px solid var(--border);border-radius:4px;color:var(--foreground);font-size:13px;font-family:var(--font-primary);outline:none"
+          >
+        </div>
+
+        <div style="margin-bottom:14px">
+          <label style="display:block;font-size:12px;font-weight:600;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px" for="match_field">
+            Match Field
+          </label>
+          <input
+            id="match_field"
+            type="text"
+            name="match_field"
+            placeholder="e.g. src_ip"
+            required
+            style="width:100%;box-sizing:border-box;padding:8px 10px;background:var(--bg-muted);border:1px solid var(--border);border-radius:4px;color:var(--foreground);font-size:13px;font-family:var(--font-primary);outline:none"
+          >
+        </div>
+
+        <div style="margin-bottom:14px">
+          <label style="display:block;font-size:12px;font-weight:600;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px" for="match_value">
+            Match Value
+          </label>
+          <input
+            id="match_value"
+            type="text"
+            name="match_value"
+            placeholder="e.g. 10.99.0.5"
+            required
+            style="width:100%;box-sizing:border-box;padding:8px 10px;background:var(--bg-muted);border:1px solid var(--border);border-radius:4px;color:var(--foreground);font-size:13px;font-family:var(--font-primary);outline:none"
+          >
+        </div>
+
+        <div style="margin-bottom:20px">
+          <label style="display:block;font-size:12px;font-weight:600;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px" for="applies_to">
+            Applies To
+          </label>
+          <select
+            id="applies_to"
+            name="applies_to"
+            style="width:100%;box-sizing:border-box;padding:8px 10px;background:var(--bg-muted);border:1px solid var(--border);border-radius:4px;color:var(--foreground);font-size:13px;font-family:var(--font-primary);outline:none"
+          >
+            <option value="model_alert" selected>model_alert</option>
+            <option value="anomaly">anomaly</option>
+          </select>
+        </div>
+
+        <button type="submit" class="btn btn--primary" style="width:100%;padding:9px;font-size:13px;font-weight:600">
+          Add Rule
+        </button>
+      </form>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
