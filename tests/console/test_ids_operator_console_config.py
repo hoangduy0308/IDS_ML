@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from fastapi import FastAPI
 import pytest
 from starlette.testclient import TestClient
 
@@ -128,6 +129,9 @@ def test_build_operator_console_app_wires_health_and_console_routes(tmp_path: Pa
     assert any(route.path == "/dashboard" for route in app.routes)
     assert any(route.path == "/anomalies" for route in app.routes)
     assert any(route.path == "/api/v1/console/snapshot" for route in app.routes)
+    assert any(route.path == "/live-logs" for route in app.routes)
+    assert any(route.path == "/suppression-rules" for route in app.routes)
+    assert any(route.path == "/system-health" for route in app.routes)
 
     health_response = client.get("/healthz")
     assert health_response.status_code == 200
@@ -220,3 +224,80 @@ def test_run_server_forwards_full_uvicorn_runtime_contract(
         "forwarded_allow_ips": config.forwarded_allow_ips,
         "root_path": config.root_path,
     }
+
+
+def test_wrapper_run_server_accepts_legacy_app_argument(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    db_path = repo_root / "runtime" / "operator_console.db"
+    _bootstrap_runtime_store(db_path)
+
+    env = {
+        "IDS_OPERATOR_CONSOLE_SECRET_KEY": "test-secret",
+        "IDS_OPERATOR_CONSOLE_DATABASE_PATH": str(db_path),
+        "IDS_OPERATOR_CONSOLE_HOST": "0.0.0.0",
+        "IDS_OPERATOR_CONSOLE_PORT": "9900",
+        "IDS_OPERATOR_CONSOLE_LOG_LEVEL": "warning",
+        "IDS_OPERATOR_CONSOLE_FORWARDED_ALLOW_IPS": "127.0.0.1,10.0.0.10",
+        "IDS_OPERATOR_CONSOLE_ROOT_PATH": "/internal",
+    }
+    config = load_operator_console_config(environ=env, repo_root=repo_root)
+
+    captured: dict[str, object] = {}
+
+    def fake_uvicorn_run(app: object, **kwargs: object) -> None:
+        captured["app"] = app
+        captured["kwargs"] = kwargs
+
+    monkeypatch.setattr(server.uvicorn, "run", fake_uvicorn_run)
+
+    app = FastAPI()
+    server.run_server(app, config=config)
+
+    assert captured["app"] is app
+    assert captured["kwargs"] == {
+        "host": config.host,
+        "port": config.port,
+        "log_level": config.log_level,
+        "reload": False,
+        "proxy_headers": True,
+        "forwarded_allow_ips": config.forwarded_allow_ips,
+        "root_path": config.root_path,
+    }
+
+
+def test_wrapper_run_server_uses_canonical_reload_path_when_legacy_app_is_supplied(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    db_path = repo_root / "runtime" / "operator_console.db"
+    _bootstrap_runtime_store(db_path)
+
+    env = {
+        "IDS_OPERATOR_CONSOLE_SECRET_KEY": "test-secret",
+        "IDS_OPERATOR_CONSOLE_DATABASE_PATH": str(db_path),
+        "IDS_OPERATOR_CONSOLE_RELOAD": "true",
+    }
+    config = load_operator_console_config(environ=env, repo_root=repo_root)
+
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        server.uvicorn,
+        "run",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("legacy wrapper path must not call uvicorn.run directly in reload mode")
+        ),
+    )
+    monkeypatch.setattr(
+        canonical_server,
+        "run_server",
+        lambda *, config: captured.setdefault("config", config),
+    )
+
+    server.run_server(FastAPI(), config=config)
+
+    assert captured["config"] == config

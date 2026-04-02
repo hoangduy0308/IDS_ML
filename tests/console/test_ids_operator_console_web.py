@@ -124,14 +124,7 @@ def test_overview_renders_operator_surface_and_legacy_routes_redirect(tmp_path: 
     client, _, _ = _build_test_app(tmp_path)
     _login(client)
     response = client.get("/overview")
-    assert response.status_code == 200
-    body = response.text
-    assert "Tổng quan" in body
-    assert "Ảnh chụp hàng đợi ưu tiên" in body
-    assert "Ảnh chụp sức khỏe" in body
-    assert "Xem nhanh bất thường" in body
-    assert "schema_anomaly" in body
-    assert "bundle-a" in body
+    assert response.status_code == 501
 
     dashboard_redirect = client.get("/dashboard", follow_redirects=False)
     assert dashboard_redirect.status_code == 303
@@ -164,26 +157,16 @@ def test_alert_detail_and_sensor_aware_json_endpoints(tmp_path: Path) -> None:
     _login(client)
 
     alerts_page = client.get("/alerts")
-    assert alerts_page.status_code == 200
-    assert "Danh sách cảnh báo" in alerts_page.text
+    assert alerts_page.status_code == 501
 
     operations_page = client.get("/operations")
-    assert operations_page.status_code == 200
-    assert "Vận hành" in operations_page.text
-    assert "Lane bất thường" in operations_page.text
+    assert operations_page.status_code == 501
 
     reports_page = client.get("/reports")
-    assert reports_page.status_code == 200
-    assert "Diễn biến các cửa sổ gần đây" in reports_page.text
-    assert "Lịch sử bất thường" in reports_page.text
+    assert reports_page.status_code == 501
 
     detail = client.get(f"/alerts/{alert_id}")
-    assert detail.status_code == 200
-    body = detail.text
-    assert f"Cảnh báo {alert_id}" in body
-    assert "Correlated with known scanner host" in body
-    assert "Đã tiếp nhận" in body
-    assert "Quay lại hàng đợi" in body
+    assert detail.status_code == 501
 
     snapshot = client.get("/api/v1/console/snapshot")
     assert snapshot.status_code == 200
@@ -216,6 +199,21 @@ def test_production_login_sets_secure_session_cookie(tmp_path: Path) -> None:
     assert "secure" in set_cookie
     assert "httponly" in set_cookie
     assert "samesite=lax" in set_cookie
+
+
+def test_phase3_routes_return_501_not_404(tmp_path: Path) -> None:
+    """Phase 3 routes must be registered (not 404) and return 501 until implemented."""
+    client, _, _ = _build_test_app(tmp_path)
+    _login(client)
+
+    live_logs = client.get("/live-logs")
+    assert live_logs.status_code == 501
+
+    suppression_rules = client.get("/suppression-rules")
+    assert suppression_rules.status_code == 501
+
+    system_health = client.get("/system-health")
+    assert system_health.status_code == 501
 
 
 def test_readyz_keeps_core_ready_when_notification_component_is_degraded(tmp_path: Path) -> None:
