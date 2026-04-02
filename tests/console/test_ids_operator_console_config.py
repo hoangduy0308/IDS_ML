@@ -179,7 +179,9 @@ def test_main_loads_config_and_invokes_run_server(monkeypatch: pytest.MonkeyPatc
     assert cfg.reload is True
 
 
-def test_run_server_uses_factory_import_string(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_run_server_forwards_full_uvicorn_runtime_contract(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
     db_path = repo_root / "runtime" / "operator_console.db"
@@ -188,7 +190,12 @@ def test_run_server_uses_factory_import_string(monkeypatch: pytest.MonkeyPatch, 
     env = {
         "IDS_OPERATOR_CONSOLE_SECRET_KEY": "test-secret",
         "IDS_OPERATOR_CONSOLE_DATABASE_PATH": str(db_path),
+        "IDS_OPERATOR_CONSOLE_HOST": "0.0.0.0",
+        "IDS_OPERATOR_CONSOLE_PORT": "9900",
+        "IDS_OPERATOR_CONSOLE_LOG_LEVEL": "warning",
         "IDS_OPERATOR_CONSOLE_RELOAD": "true",
+        "IDS_OPERATOR_CONSOLE_FORWARDED_ALLOW_IPS": "127.0.0.1,10.0.0.10",
+        "IDS_OPERATOR_CONSOLE_ROOT_PATH": "/internal",
     }
     config = load_operator_console_config(environ=env, repo_root=repo_root)
 
@@ -202,9 +209,14 @@ def test_run_server_uses_factory_import_string(monkeypatch: pytest.MonkeyPatch, 
 
     server.run_server(config=config)
 
-    assert captured["app"] == "ids.console.server:create_operator_console_app"
-    kwargs = captured["kwargs"]
-    assert kwargs["factory"] is True
-    assert kwargs["reload"] is True
-    assert kwargs["host"] == config.host
-    assert kwargs["port"] == config.port
+    assert captured["app"] == canonical_server.OPERATOR_CONSOLE_APP_IMPORT
+    assert captured["kwargs"] == {
+        "host": config.host,
+        "port": config.port,
+        "log_level": config.log_level,
+        "reload": config.reload,
+        "factory": True,
+        "proxy_headers": True,
+        "forwarded_allow_ips": config.forwarded_allow_ips,
+        "root_path": config.root_path,
+    }
