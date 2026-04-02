@@ -6,20 +6,25 @@ from pathlib import Path
 import sys
 from typing import Sequence
 
-import uvicorn
-from fastapi import FastAPI
-
 if __package__ in (None, ""):
     REPO_ROOT = Path(__file__).resolve().parents[1]
     if str(REPO_ROOT) not in sys.path:
         sys.path.insert(0, str(REPO_ROOT))
 
-from ids.console import OperatorConsoleConfig, load_operator_console_config
-from ids.console.web import create_operator_console_web_app
+from ids.console import OperatorConsoleConfig, load_operator_console_config as _load_operator_console_config  # noqa: E402
+import ids.console.server as canonical_server  # noqa: E402
 
+OPERATOR_CONSOLE_APP_IMPORT = canonical_server.OPERATOR_CONSOLE_APP_IMPORT
+build_operator_console_app = canonical_server.build_operator_console_app
+create_operator_console_app = canonical_server.create_operator_console_app
 
-def build_operator_console_app(config: OperatorConsoleConfig) -> FastAPI:
-    return create_operator_console_web_app(config)
+__all__ = [
+    "OPERATOR_CONSOLE_APP_IMPORT",
+    "build_operator_console_app",
+    "create_operator_console_app",
+    "run_server",
+    "main",
+]
 
 
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -30,7 +35,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--reload",
         action="store_true",
-        help="Enable uvicorn reload mode (development only).",
+        help="Enable uvicorn reload mode via the factory import string (development only).",
     )
     return parser.parse_args(argv)
 
@@ -50,24 +55,14 @@ def _apply_cli_overrides(config: OperatorConsoleConfig, args: argparse.Namespace
     return replace(config, **updates)
 
 
-def run_server(app: FastAPI, *, config: OperatorConsoleConfig) -> None:
-    uvicorn.run(
-        app,
-        host=config.host,
-        port=config.port,
-        log_level=config.log_level,
-        reload=config.reload,
-        proxy_headers=True,
-        forwarded_allow_ips=config.forwarded_allow_ips,
-        root_path=config.root_path,
-    )
+def run_server(*, config: OperatorConsoleConfig) -> None:
+    canonical_server.run_server(config=config)
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
-    config = _apply_cli_overrides(load_operator_console_config(), args)
-    app = build_operator_console_app(config)
-    run_server(app, config=config)
+    config = _apply_cli_overrides(_load_operator_console_config(), args)
+    run_server(config=config)
     return 0
 
 

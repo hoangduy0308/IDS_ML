@@ -9,6 +9,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 from ids.console import load_operator_console_config, migrate_operator_store  # noqa: E402
 from ids.console.auth import ensure_admin_user  # noqa: E402
 from ids.console.db import open_existing_operator_store  # noqa: E402
+import ids.console.server as canonical_server  # noqa: E402
 import scripts.ids_operator_console_server as server  # noqa: E402
 
 
@@ -19,6 +20,19 @@ def _bootstrap_runtime_store(database_path: Path) -> None:
         ensure_admin_user(store, username="admin", password="correct-password")
     finally:
         store.close()
+
+
+def test_console_server_wrapper_pins_supported_public_facade() -> None:
+    assert server.__all__ == [
+        "OPERATOR_CONSOLE_APP_IMPORT",
+        "build_operator_console_app",
+        "create_operator_console_app",
+        "run_server",
+        "main",
+    ]
+    assert server.OPERATOR_CONSOLE_APP_IMPORT == canonical_server.OPERATOR_CONSOLE_APP_IMPORT
+    assert server.build_operator_console_app is canonical_server.build_operator_console_app
+    assert server.create_operator_console_app is canonical_server.create_operator_console_app
 
 
 def test_load_operator_console_config_resolves_repo_relative_defaults(tmp_path: Path) -> None:
@@ -150,8 +164,7 @@ def test_main_loads_config_and_invokes_run_server(monkeypatch: pytest.MonkeyPatc
 
     captured: dict[str, object] = {}
 
-    def fake_run_server(app: object, *, config: object) -> None:
-        captured["app"] = app
+    def fake_run_server(*, config: object) -> None:
         captured["config"] = config
 
     monkeypatch.setattr(server, "run_server", fake_run_server)
@@ -159,9 +172,39 @@ def test_main_loads_config_and_invokes_run_server(monkeypatch: pytest.MonkeyPatc
     exit_code = server.main(["--host", "0.0.0.0", "--port", "9900", "--log-level", "warning", "--reload"])
 
     assert exit_code == 0
-    assert "app" in captured
     cfg = captured["config"]
     assert cfg.host == "0.0.0.0"
     assert cfg.port == 9900
     assert cfg.log_level == "warning"
     assert cfg.reload is True
+
+
+def test_run_server_uses_factory_import_string(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    db_path = repo_root / "runtime" / "operator_console.db"
+    _bootstrap_runtime_store(db_path)
+
+    env = {
+        "IDS_OPERATOR_CONSOLE_SECRET_KEY": "test-secret",
+        "IDS_OPERATOR_CONSOLE_DATABASE_PATH": str(db_path),
+        "IDS_OPERATOR_CONSOLE_RELOAD": "true",
+    }
+    config = load_operator_console_config(environ=env, repo_root=repo_root)
+
+    captured: dict[str, object] = {}
+
+    def fake_uvicorn_run(app: object, **kwargs: object) -> None:
+        captured["app"] = app
+        captured["kwargs"] = kwargs
+
+    monkeypatch.setattr(canonical_server.uvicorn, "run", fake_uvicorn_run)
+
+    server.run_server(config=config)
+
+    assert captured["app"] == "ids.console.server:create_operator_console_app"
+    kwargs = captured["kwargs"]
+    assert kwargs["factory"] is True
+    assert kwargs["reload"] is True
+    assert kwargs["host"] == config.host
+    assert kwargs["port"] == config.port
