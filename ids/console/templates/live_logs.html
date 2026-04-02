@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+
+{% block title %}Live Logs — VIGIL IDS{% endblock %}
+
+{% block content %}
+{# ── Page header ─────────────────────────────────────────────────────────── #}
+<div class="flex items-center justify-between mb-6">
+  <div class="flex items-center gap-3">
+    <h1 class="topbar__title">Live Logs</h1>
+    <span class="badge badge--success" style="font-size:11px">
+      <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:currentColor;margin-right:4px;vertical-align:middle"></span>
+      polling every 7s
+    </span>
+  </div>
+  <span class="text-muted" style="font-size:12px;font-family:var(--font-primary)">{{ generated_at }}</span>
+</div>
+
+{# ── Stats row ────────────────────────────────────────────────────────────── #}
+<div class="grid grid-cols-4 gap-4 mb-6">
+  <div class="card" style="padding:16px">
+    <div style="font-size:11px;font-weight:600;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px">Alerts</div>
+    <div style="font-size:28px;font-weight:700;font-family:var(--font-primary);color:var(--foreground);line-height:1">{{ alerts | length }}</div>
+    <div style="font-size:11px;color:var(--muted-foreground);margin-top:4px">recent ≤50</div>
+  </div>
+  <div class="card" style="padding:16px">
+    <div style="font-size:11px;font-weight:600;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px">Anomalies</div>
+    <div style="font-size:28px;font-weight:700;font-family:var(--font-primary);color:var(--foreground);line-height:1">{{ anomalies | length }}</div>
+    <div style="font-size:11px;color:var(--muted-foreground);margin-top:4px">recent ≤50</div>
+  </div>
+  <div class="card" style="padding:16px">
+    <div style="font-size:11px;font-weight:600;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px">Total Events</div>
+    <div style="font-size:28px;font-weight:700;font-family:var(--font-primary);color:var(--foreground);line-height:1">{{ (alerts | length) + (anomalies | length) }}</div>
+    <div style="font-size:11px;color:var(--muted-foreground);margin-top:4px">alerts + anomalies</div>
+  </div>
+  <div class="card" style="padding:16px">
+    <div style="font-size:11px;font-weight:600;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px">Poll Interval</div>
+    <div style="font-size:28px;font-weight:700;font-family:var(--font-primary);color:var(--foreground);line-height:1">7s</div>
+    <div style="font-size:11px;color:var(--muted-foreground);margin-top:4px">auto-refresh</div>
+  </div>
+</div>
+
+{# ── Live feed terminal ───────────────────────────────────────────────────── #}
+<div class="card" style="padding:0;overflow:hidden">
+  <div class="flex items-center justify-between" style="padding:14px 20px;border-bottom:1px solid var(--border)">
+    <span class="card__title">Event Feed</span>
+    <span class="text-muted" style="font-size:11px;font-family:var(--font-primary)">newest first · auto-refresh enabled</span>
+  </div>
+
+  <div
+    id="live-logs-feed"
+    data-live-logs-poll="7000"
+    style="background:var(--bg-muted);min-height:300px;max-height:600px;overflow-y:auto;font-family:var(--font-primary);font-size:12px;line-height:1.6"
+  >
+    {# ── Initial server-rendered rows ────────────────────────────────────── #}
+    {% set alert_rows = [] %}
+    {% for alert in alerts %}
+      {% set _ = alert_rows.append({
+        "ts": alert.event_ts or "",
+        "kind": "alert",
+        "id": alert.source_event_id,
+        "severity": alert.severity or "unknown",
+        "detail": (alert.src_ip or "") ~ " → " ~ (alert.dst_ip or ""),
+        "suppressed": alert.get("is_suppressed", False)
+      }) %}
+    {% endfor %}
+
+    {% set anom_rows = [] %}
+    {% for anom in anomalies %}
+      {% set _ = anom_rows.append({
+        "ts": anom.event_ts or "",
+        "kind": "anomaly",
+        "id": anom.source_event_id,
+        "severity": "info",
+        "detail": (anom.anomaly_type or "unknown") ~ ": " ~ (anom.reason or ""),
+        "suppressed": False
+      }) %}
+    {% endfor %}
+
+    {% if not alerts and not anomalies %}
+    <div style="padding:48px 20px;text-align:center;color:var(--muted-foreground)">
+      <div style="font-size:13px;margin-bottom:6px">No events yet</div>
+      <div style="font-size:11px">Events will appear here as the sensor processes data. Page refreshes every 7 seconds.</div>
+    </div>
+    {% else %}
+
+    {# Render alerts #}
+    {% for alert in alerts %}
+    <div class="live-log-row" style="display:flex;align-items:flex-start;padding:8px 20px;border-bottom:1px solid var(--border);gap:12px">
+      <span style="color:var(--muted-foreground);flex-shrink:0;min-width:140px">{{ (alert.event_ts or "")[:19] | replace("T", " ") }}</span>
+      {% set sev = alert.severity or "unknown" %}
+      {% if sev == "critical" %}
+        <span class="badge badge--error" style="flex-shrink:0">{{ sev }}</span>
+      {% elif sev == "high" %}
+        <span class="badge badge--warning" style="flex-shrink:0">{{ sev }}</span>
+      {% else %}
+        <span class="badge badge--muted" style="flex-shrink:0">{{ sev }}</span>
+      {% endif %}
+      <span class="badge badge--info" style="flex-shrink:0">alert</span>
+      <span style="color:var(--foreground);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+        {{ alert.source_event_id }}
+        {% if alert.src_ip %} · {{ alert.src_ip }} → {{ alert.dst_ip or "?" }}{% endif %}
+      </span>
+      {% if alert.get("is_suppressed") %}
+        <span class="badge badge--muted" style="flex-shrink:0">suppressed</span>
+      {% endif %}
+    </div>
+    {% endfor %}
+
+    {# Render anomalies #}
+    {% for anom in anomalies %}
+    <div class="live-log-row" style="display:flex;align-items:flex-start;padding:8px 20px;border-bottom:1px solid var(--border);gap:12px">
+      <span style="color:var(--muted-foreground);flex-shrink:0;min-width:140px">{{ (anom.event_ts or "")[:19] | replace("T", " ") }}</span>
+      <span class="badge badge--muted" style="flex-shrink:0">info</span>
+      <span class="badge badge--warning" style="flex-shrink:0">anomaly</span>
+      <span style="color:var(--foreground);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+        {{ anom.source_event_id }}
+        {% if anom.anomaly_type %} · {{ anom.anomaly_type }}{% endif %}
+        {% if anom.reason %}: {{ anom.reason }}{% endif %}
+      </span>
+    </div>
+    {% endfor %}
+
+    {% endif %}
+  </div>
+
+  <div style="padding:10px 20px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+    <span style="font-size:11px;color:var(--muted-foreground)">
+      {{ alerts | length }} alert{% if alerts | length != 1 %}s{% endif %},
+      {{ anomalies | length }} anomal{% if anomalies | length != 1 %}ies{% else %}y{% endif %}
+      · server-rendered at {{ generated_at }}
+    </span>
+    <span style="font-size:11px;color:var(--muted-foreground)">auto-refreshing via /api/v1/alerts + /api/v1/anomalies</span>
+  </div>
+</div>
+{% endblock %}

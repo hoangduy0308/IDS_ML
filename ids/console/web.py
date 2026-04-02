@@ -412,7 +412,14 @@ def create_operator_console_web_app(
         redirect = require_authenticated_redirect(request, login_path="/login")
         if redirect is not None:
             return redirect
-        raise HTTPException(status_code=501, detail="Not yet implemented")
+        runtime_store = _open_store()
+        try:
+            alerts = list_alerts_for_triage(runtime_store, limit=50, include_suppressed=True)
+            anomalies = runtime_store.list_anomalies(limit=50)
+        finally:
+            if store is None:
+                runtime_store.close()
+        return render_template(request, "live_logs.html", alerts=alerts, anomalies=anomalies)
 
     @app.get("/suppression-rules", response_class=HTMLResponse)
     def suppression_rules_page(request: Request) -> Response:
