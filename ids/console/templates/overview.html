@@ -1,0 +1,249 @@
+{% extends "base.html" %}
+
+{% block title %}Overview — VIGIL IDS{% endblock %}
+
+{% block content %}
+{# ── Page header ─────────────────────────────────────────────────────────── #}
+<div class="flex items-center justify-between mb-6">
+  <h1 class="topbar__title">Overview</h1>
+  <span class="text-muted" style="font-size:12px;font-family:var(--font-primary)">{{ generated_at }}</span>
+</div>
+
+{# ── Stat cards row ──────────────────────────────────────────────────────── #}
+{% set comps = readiness.get("components", {}) %}
+{% set admin_ok = comps.get("admin_bootstrap", {}).get("ok", False) %}
+{% set schema_ok = comps.get("schema", {}).get("ok", False) %}
+{% set bundle = comps.get("active_bundle", {}).get("state") %}
+{% set notif = comps.get("notification", {}) %}
+{% set system_ready = readiness.get("ready", False) %}
+
+<div class="grid grid-cols-4 gap-4 mb-6">
+
+  {# Stat: Total alerts in preview #}
+  <div class="card" style="padding:20px">
+    <div style="font-size:11px;font-weight:600;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Total Alerts</div>
+    <div style="font-size:32px;font-weight:700;font-family:var(--font-primary);color:var(--foreground);line-height:1">{{ alert_preview | length }}</div>
+    <div style="font-size:11px;color:var(--muted-foreground);margin-top:6px">Preview (≤8 newest)</div>
+  </div>
+
+  {# Stat: Active anomalies #}
+  <div class="card" style="padding:20px">
+    <div style="font-size:11px;font-weight:600;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Active Anomalies</div>
+    <div style="font-size:32px;font-weight:700;font-family:var(--font-primary);color:var(--foreground);line-height:1">{{ anomaly_preview | length }}</div>
+    <div style="font-size:11px;color:var(--muted-foreground);margin-top:6px">Preview (≤8 newest)</div>
+  </div>
+
+  {# Stat: Readiness % #}
+  <div class="card" style="padding:20px">
+    <div style="font-size:11px;font-weight:600;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">System Readiness</div>
+    {% set ok_count = [admin_ok, schema_ok, comps.get("config", {}).get("ok", False), comps.get("data_paths", {}).get("ok", False)] | select | list | length %}
+    {% set pct = (ok_count / 4 * 100) | int %}
+    <div style="font-size:32px;font-weight:700;font-family:var(--font-primary);color:{% if pct == 100 %}var(--color-success-foreground){% elif pct >= 75 %}var(--color-warning-foreground){% else %}var(--color-error-foreground){% endif %};line-height:1">{{ pct }}<span style="font-size:18px">%</span></div>
+    <div style="font-size:11px;color:var(--muted-foreground);margin-top:6px">{{ ok_count }}/4 components OK</div>
+  </div>
+
+  {# Stat: System status badge #}
+  <div class="card" style="padding:20px">
+    <div style="font-size:11px;font-weight:600;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">System Status</div>
+    {% if system_ready %}
+      <div style="font-size:22px;font-weight:700;color:var(--color-success-foreground);line-height:1.2;margin-bottom:6px">Ready</div>
+      <span class="badge badge--success">operational</span>
+    {% else %}
+      <div style="font-size:22px;font-weight:700;color:var(--color-error-foreground);line-height:1.2;margin-bottom:6px">Degraded</div>
+      <span class="badge badge--error">check components</span>
+    {% endif %}
+  </div>
+
+</div>
+
+{# ── Two-column lower area ────────────────────────────────────────────────── #}
+<div class="flex gap-4" style="align-items:flex-start">
+
+  {# ── Left: Alert + Anomaly previews ──────────────────────────────────── #}
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:16px">
+
+    {# Alert preview table #}
+    <div class="card" style="padding:0;overflow:hidden">
+      <div class="flex items-center justify-between" style="padding:16px 20px;border-bottom:1px solid var(--border)">
+        <span class="card__title">Recent Alerts</span>
+        <div class="flex items-center gap-2">
+          <span class="text-muted" style="font-size:11px;font-family:var(--font-primary)">≤8 newest</span>
+          <a href="/alerts" class="btn btn-secondary" style="padding:4px 10px;font-size:12px">All alerts →</a>
+        </div>
+      </div>
+
+      {% if alert_preview %}
+      <div class="table-wrap">
+        <table class="data-table data-table--mono">
+          <thead>
+            <tr>
+              <th>Event ID</th>
+              <th>Severity</th>
+              <th>Src IP</th>
+              <th>Dst IP</th>
+              <th>Status</th>
+              <th>Time</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for alert in alert_preview %}
+            <tr>
+              <td>
+                <a href="/alerts/{{ alert.id }}" style="color:var(--primary)">{{ alert.source_event_id }}</a>
+              </td>
+              <td>
+                {% set sev = alert.severity | lower %}
+                {% if sev == "critical" %}
+                  <span class="badge badge--error">critical</span>
+                {% elif sev == "high" %}
+                  <span class="badge badge--warning">high</span>
+                {% elif sev == "medium" %}
+                  <span class="badge badge--info">medium</span>
+                {% else %}
+                  <span class="badge badge--muted">{{ sev }}</span>
+                {% endif %}
+              </td>
+              <td>{{ alert.src_ip or "—" }}</td>
+              <td>{{ alert.dst_ip or "—" }}</td>
+              <td>
+                {% set ts = alert.triage_status | lower %}
+                {% if ts == "new" %}
+                  <span class="badge badge--warning">new</span>
+                {% elif ts in ("acknowledged", "investigating") %}
+                  <span class="badge badge--info">{{ triage_labels.get(ts, ts) }}</span>
+                {% elif ts == "resolved" %}
+                  <span class="badge badge--success">resolved</span>
+                {% elif ts == "false_positive" %}
+                  <span class="badge badge--muted">false positive</span>
+                {% else %}
+                  <span class="badge badge--muted">{{ ts }}</span>
+                {% endif %}
+              </td>
+              <td style="color:var(--muted-foreground)">{{ (alert.event_ts or "")[:19] | replace("T", " ") }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div style="padding:32px 20px;text-align:center;color:var(--muted-foreground);font-size:13px">
+        No alerts in queue
+      </div>
+      {% endif %}
+    </div>
+
+    {# Anomaly preview table #}
+    <div class="card" style="padding:0;overflow:hidden">
+      <div class="flex items-center justify-between" style="padding:16px 20px;border-bottom:1px solid var(--border)">
+        <span class="card__title">Recent Anomalies</span>
+        <div class="flex items-center gap-2">
+          <span class="text-muted" style="font-size:11px;font-family:var(--font-primary)">≤8 newest</span>
+          <a href="/operations" class="btn btn-secondary" style="padding:4px 10px;font-size:12px">All anomalies →</a>
+        </div>
+      </div>
+
+      {% if anomaly_preview %}
+      <div class="table-wrap">
+        <table class="data-table data-table--mono">
+          <thead>
+            <tr>
+              <th>Event ID</th>
+              <th>Type</th>
+              <th>Reason</th>
+              <th>Time</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for anom in anomaly_preview %}
+            <tr>
+              <td>{{ anom.source_event_id }}</td>
+              <td><span class="badge badge--muted">{{ anom.anomaly_type or "unknown" }}</span></td>
+              <td style="color:var(--muted-foreground)">{{ anom.reason or "—" }}</td>
+              <td style="color:var(--muted-foreground)">{{ (anom.event_ts or "")[:19] | replace("T", " ") }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div style="padding:32px 20px;text-align:center;color:var(--muted-foreground);font-size:13px">
+        No anomalies detected
+      </div>
+      {% endif %}
+    </div>
+
+  </div>
+
+  {# ── Right panel: Triage breakdown + Model bundle + Notifications ─────── #}
+  <div style="width:280px;flex-shrink:0;display:flex;flex-direction:column;gap:16px">
+
+    {# Triage breakdown #}
+    <div class="card">
+      <div class="card__header">
+        <div class="card__title">Alert Triage</div>
+      </div>
+      {% for state_key, state_label in triage_labels.items() %}
+      <div class="flex items-center justify-between" style="padding:6px 0;border-top:1px solid var(--border)">
+        <span style="font-size:13px;color:var(--muted-foreground)">{{ state_label }}</span>
+        {% set count = alert_preview | selectattr("triage_status", "equalto", state_key) | list | length %}
+        <span style="font-size:13px;font-weight:600;font-family:var(--font-primary);color:var(--foreground)">{{ count }}</span>
+      </div>
+      {% endfor %}
+    </div>
+
+    {# Model bundle info #}
+    <div class="card">
+      <div class="card__header">
+        <div class="card__title">Model Bundle</div>
+      </div>
+      {% if bundle %}
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div class="flex items-center justify-between">
+          <span style="font-size:11px;color:var(--muted-foreground)">Version</span>
+          <span style="font-size:12px;font-family:var(--font-primary);color:var(--foreground)">{{ bundle.get("active_bundle_name", "—") }}</span>
+        </div>
+        <div class="flex items-center justify-between">
+          <span style="font-size:11px;color:var(--muted-foreground)">Status</span>
+          {% set compat = bundle.get("compatibility_status", "unknown") %}
+          {% if compat == "compatible" %}
+            <span class="badge badge--success">compatible</span>
+          {% else %}
+            <span class="badge badge--warning">{{ compat }}</span>
+          {% endif %}
+        </div>
+        {% if bundle.get("activated_at") %}
+        <div class="flex items-center justify-between">
+          <span style="font-size:11px;color:var(--muted-foreground)">Activated</span>
+          <span style="font-size:11px;font-family:var(--font-primary);color:var(--muted-foreground)">{{ bundle.activated_at[:10] }}</span>
+        </div>
+        {% endif %}
+      </div>
+      {% else %}
+      <div style="font-size:12px;color:var(--muted-foreground)">No active bundle</div>
+      {% endif %}
+    </div>
+
+    {# Notifications #}
+    <div class="card">
+      <div class="card__header">
+        <div class="card__title">Notifications</div>
+      </div>
+      <div class="flex items-center gap-2">
+        {% if notif.get("enabled") %}
+          {% if notif.get("ok") %}
+            <span class="badge badge--success">active</span>
+          {% else %}
+            <span class="badge badge--error">degraded</span>
+          {% endif %}
+          <span style="font-size:12px;color:var(--muted-foreground)">{{ notif.get("state", "unknown") }}</span>
+        {% else %}
+          <span class="badge badge--muted">disabled</span>
+          <span style="font-size:12px;color:var(--muted-foreground)">No channel configured</span>
+        {% endif %}
+      </div>
+    </div>
+
+  </div>
+
+</div>
+{% endblock %}

@@ -131,9 +131,15 @@ def create_operator_console_web_app(
         return open_existing_operator_store(config.database_path)
 
     def render_template(request: Request, template_name: str, **context: Any) -> HTMLResponse:
+        admin = current_admin(request)
+
+        def _csrf_token() -> str:
+            return admin.csrf_token if admin is not None else ""
+
         template_context: dict[str, Any] = {
             "request": request,
-            "admin": current_admin(request),
+            "admin": admin,
+            "csrf_token": _csrf_token,
             "triage_states": ALERT_TRIAGE_STATES,
             "triage_labels": TRIAGE_LABELS,
             "severity_labels": SEVERITY_LABELS,
@@ -237,7 +243,21 @@ def create_operator_console_web_app(
         redirect = require_authenticated_redirect(request, login_path="/login")
         if redirect is not None:
             return redirect
-        raise HTTPException(status_code=501, detail="Not yet implemented")
+        runtime_store = _open_store()
+        try:
+            readiness = build_readiness_payload(config, include_sensitive=True)
+            alert_preview = runtime_store.list_alerts(limit=8)
+            anomaly_preview = runtime_store.list_anomalies(limit=8)
+        finally:
+            if store is None:
+                runtime_store.close()
+        return render_template(
+            request,
+            "overview.html",
+            readiness=readiness,
+            alert_preview=alert_preview,
+            anomaly_preview=anomaly_preview,
+        )
 
     @app.get("/alerts", response_class=HTMLResponse)
     def alerts_page(request: Request) -> Response:

@@ -124,7 +124,7 @@ def test_overview_renders_operator_surface_and_legacy_routes_redirect(tmp_path: 
     client, _, _ = _build_test_app(tmp_path)
     _login(client)
     response = client.get("/overview")
-    assert response.status_code == 501
+    assert response.status_code == 200
 
     dashboard_redirect = client.get("/dashboard", follow_redirects=False)
     assert dashboard_redirect.status_code == 303
