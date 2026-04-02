@@ -619,6 +619,14 @@ class OperatorStore:
             ).fetchall()
         return [_row_to_dict(row) for row in rows if row is not None]
 
+    def deactivate_suppression_rule(self, *, rule_id: int) -> bool:
+        with self._connection:
+            cursor = self._connection.execute(
+                "UPDATE suppression_rules SET is_active=0, updated_at=? WHERE id=? AND is_active=1",
+                (_utc_now_iso(), rule_id),
+            )
+            return cursor.rowcount > 0
+
     def upsert_admin_user(
         self,
         *,

@@ -174,6 +174,63 @@ def test_inspect_operator_store_reports_legacy_and_current_states(tmp_path: Path
     assert current.runtime_ready is False
 
 
+def test_deactivate_suppression_rule_returns_true_and_sets_inactive(tmp_path: Path) -> None:
+    store = OperatorStore.open(tmp_path / "operator_console.db")
+    try:
+        rule_id = store.create_suppression_rule(
+            rule_name="Suppress scanner",
+            match_field="src_ip",
+            match_value="10.0.0.1",
+        )
+        result = store.deactivate_suppression_rule(rule_id=rule_id)
+        assert result is True
+
+        row = store._connection.execute(
+            "SELECT is_active FROM suppression_rules WHERE id = ?",
+            (rule_id,),
+        ).fetchone()
+        assert row is not None
+        assert row["is_active"] == 0
+    finally:
+        store.close()
+
+
+def test_deactivate_suppression_rule_returns_false_when_already_inactive(tmp_path: Path) -> None:
+    store = OperatorStore.open(tmp_path / "operator_console.db")
+    try:
+        rule_id = store.create_suppression_rule(
+            rule_name="Suppress scanner",
+            match_field="src_ip",
+            match_value="10.0.0.2",
+        )
+        first = store.deactivate_suppression_rule(rule_id=rule_id)
+        assert first is True
+
+        second = store.deactivate_suppression_rule(rule_id=rule_id)
+        assert second is False
+    finally:
+        store.close()
+
+
+def test_deactivated_rule_absent_from_list_active_suppression_rules(tmp_path: Path) -> None:
+    store = OperatorStore.open(tmp_path / "operator_console.db")
+    try:
+        rule_id = store.create_suppression_rule(
+            rule_name="Suppress scanner",
+            match_field="src_ip",
+            match_value="10.0.0.3",
+        )
+        active_before = store.list_active_suppression_rules()
+        assert any(r["id"] == rule_id for r in active_before)
+
+        store.deactivate_suppression_rule(rule_id=rule_id)
+
+        active_after = store.list_active_suppression_rules()
+        assert not any(r["id"] == rule_id for r in active_after)
+    finally:
+        store.close()
+
+
 def test_notification_delivery_summary_and_redrive_preserve_explicit_recovery(tmp_path: Path) -> None:
     store = OperatorStore.open(tmp_path / "operator_console.db")
     try:
