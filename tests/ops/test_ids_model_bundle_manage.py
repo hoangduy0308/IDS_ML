@@ -442,6 +442,75 @@ def test_manage_failed_promote_preserves_previous_active_bundle_for_invalid_comp
     assert "previous_bundle_name" not in activation_record
 
 
+def test_manage_failed_promote_preserves_previous_active_composite_bundle_for_invalid_composite_candidate(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    activation_path = tmp_path / "active_bundle.json"
+    composite_bundle_a = write_composite_bundle(
+        tmp_path / "composite-bundle-a",
+        bundle_name="composite-bundle-a",
+        threshold=0.5,
+    )
+    composite_bundle_b = write_composite_bundle(
+        tmp_path / "composite-bundle-b",
+        bundle_name="composite-bundle-b",
+        threshold=0.7,
+    )
+
+    manage.main(
+        [
+            "--activation-path",
+            str(activation_path),
+            "--json",
+            "promote",
+            "--bundle-root",
+            str(composite_bundle_a),
+        ]
+    )
+    capsys.readouterr()
+
+    composite_b_manifest_path = composite_bundle_b / "model_bundle.json"
+    composite_b_payload = json.loads(composite_b_manifest_path.read_text(encoding="utf-8"))
+    composite_b_payload["compatibility"]["inference_contract"]["stage2"]["closed_set_labels"] = [
+        "Attack",
+        "Benign",
+    ]
+    composite_b_manifest_path.write_text(json.dumps(composite_b_payload), encoding="utf-8")
+
+    with pytest.raises(SystemExit, match="Composite stage2 closed_set_labels"):
+        manage.main(
+            [
+                "--activation-path",
+                str(activation_path),
+                "promote",
+                "--bundle-root",
+                str(composite_bundle_b),
+            ]
+        )
+
+    status_rc = manage.main(["--activation-path", str(activation_path), "--json", "status"])
+    status_payload = json.loads(capsys.readouterr().out)
+    activation_record = read_activation_record(activation_path)
+
+    assert status_rc == 0
+    assert status_payload["active_bundle_root"] == str(composite_bundle_a.resolve())
+    assert status_payload["active_bundle_name"] == "composite-bundle-a"
+    assert status_payload["verification_status"] == "verified"
+    assert status_payload["runtime_contract_kind"] == "composite"
+    assert status_payload["is_composite_contract"] is True
+    assert status_payload["stage2_model_path"] == str((composite_bundle_a / "stage2_model.cbm").resolve())
+    assert status_payload["stage2_feature_columns_path"] == str(
+        (composite_bundle_a / "stage2_feature_columns.json").resolve()
+    )
+    assert activation_record["record_version"] == SUPPORTED_ACTIVATION_RECORD_VERSION
+    assert activation_record["active_bundle_root"] == str(composite_bundle_a.resolve())
+    assert activation_record["active_bundle_name"] == "composite-bundle-a"
+    assert activation_record["verification_status"] == "verified"
+    assert "previous_bundle_root" not in activation_record
+    assert "previous_bundle_name" not in activation_record
+
+
 def test_script_wrapper_help_runs_through_module_entrypoint() -> None:
     help_run = run_python_module_help("scripts.ids_model_bundle_manage")
     assert_help_smoke(help_run, "scripts.ids_model_bundle_manage")
