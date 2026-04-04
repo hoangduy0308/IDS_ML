@@ -18,7 +18,7 @@ from ids.core.model_bundle_activation import (
 
 def verify_candidate_bundle(bundle_root: Path) -> dict[str, Any]:
     manifest = load_model_bundle_manifest(bundle_root)
-    return {
+    payload: dict[str, Any] = {
         "compatible": True,
         "bundle_root": str(manifest.bundle_root),
         "bundle_name": manifest.bundle_name,
@@ -26,7 +26,25 @@ def verify_candidate_bundle(bundle_root: Path) -> dict[str, Any]:
         "threshold": manifest.threshold,
         "model_path": str(manifest.model_path),
         "feature_columns_path": str(manifest.feature_columns_path),
+        "inference_contract_version": manifest.inference_contract_version,
+        "runtime_contract_kind": "composite" if manifest.is_composite_contract else "binary",
+        "is_composite_contract": manifest.is_composite_contract,
     }
+    if manifest.is_composite_contract:
+        payload.update(
+            {
+                "stage1_model_path": str(manifest.model_path),
+                "stage1_feature_columns_path": str(manifest.feature_columns_path),
+                "stage2_model_path": str(manifest.stage2_model_path),
+                "stage2_feature_columns_path": str(manifest.stage2_feature_columns_path),
+                "stage2_closed_set_labels": list(manifest.stage2_inference_contract["closed_set_labels"]),
+                "stage2_top1_confidence_threshold": float(manifest.stage2_abstention["top1_confidence"]),
+                "stage2_runner_up_margin_threshold": float(
+                    manifest.stage2_abstention["runner_up_margin"]
+                ),
+            }
+        )
+    return payload
 
 
 def utc_now_isoformat() -> str:

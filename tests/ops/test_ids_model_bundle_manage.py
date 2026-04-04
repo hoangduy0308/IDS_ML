@@ -255,6 +255,55 @@ def test_manage_verify_accepts_composite_bundle(
     assert verify_payload["compatible"] is True
     assert verify_payload["bundle_name"] == "composite-bundle"
     assert verify_payload["bundle_root"] == str(composite_bundle.resolve())
+    assert verify_payload["runtime_contract_kind"] == "composite"
+    assert verify_payload["is_composite_contract"] is True
+    assert verify_payload["stage2_model_path"] == str((composite_bundle / "stage2_model.cbm").resolve())
+    assert verify_payload["stage2_feature_columns_path"] == str(
+        (composite_bundle / "stage2_feature_columns.json").resolve()
+    )
+    assert verify_payload["stage2_closed_set_labels"] == ["DDoS", "DoS", "Mirai", "Spoofing", "Web-Based"]
+    assert verify_payload["stage2_top1_confidence_threshold"] == pytest.approx(0.5589)
+    assert verify_payload["stage2_runner_up_margin_threshold"] == pytest.approx(0.3097)
+
+
+def test_manage_status_reports_composite_readiness_metadata(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    activation_path = tmp_path / "active_bundle.json"
+    composite_bundle = write_composite_bundle(
+        tmp_path / "composite-bundle",
+        bundle_name="composite-bundle",
+        threshold=0.5,
+    )
+
+    promote_rc = manage.main(
+        [
+            "--activation-path",
+            str(activation_path),
+            "--json",
+            "promote",
+            "--bundle-root",
+            str(composite_bundle),
+        ]
+    )
+    capsys.readouterr()
+
+    status_rc = manage.main(["--activation-path", str(activation_path), "--json", "status"])
+    status_payload = json.loads(capsys.readouterr().out)
+
+    assert promote_rc == 0
+    assert status_rc == 0
+    assert status_payload["runtime_contract_kind"] == "composite"
+    assert status_payload["is_composite_contract"] is True
+    assert status_payload["inference_contract_version"] == "ids_two_stage_family_contract.v1"
+    assert status_payload["stage2_model_path"] == str((composite_bundle / "stage2_model.cbm").resolve())
+    assert status_payload["stage2_feature_columns_path"] == str(
+        (composite_bundle / "stage2_feature_columns.json").resolve()
+    )
+    assert status_payload["stage2_closed_set_labels"] == ["DDoS", "DoS", "Mirai", "Spoofing", "Web-Based"]
+    assert status_payload["stage2_top1_confidence_threshold"] == pytest.approx(0.5589)
+    assert status_payload["stage2_runner_up_margin_threshold"] == pytest.approx(0.3097)
 
 
 def test_manage_rollback_fails_without_previous_known_good(
@@ -324,6 +373,67 @@ def test_manage_failed_promote_preserves_previous_active_bundle(
     assert status_payload["active_bundle_name"] == "bundle-a"
     assert status_payload["verification_status"] == "verified"
     assert "previous_bundle_name" not in status_payload
+    assert activation_record["record_version"] == SUPPORTED_ACTIVATION_RECORD_VERSION
+    assert activation_record["active_bundle_root"] == str(bundle_a.resolve())
+    assert activation_record["active_bundle_name"] == "bundle-a"
+    assert activation_record["verification_status"] == "verified"
+    assert "previous_bundle_root" not in activation_record
+    assert "previous_bundle_name" not in activation_record
+
+
+def test_manage_failed_promote_preserves_previous_active_bundle_for_invalid_composite_candidate(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    activation_path = tmp_path / "active_bundle.json"
+    bundle_a = write_bundle(tmp_path / "bundle-a", bundle_name="bundle-a", threshold=0.5)
+    composite_bundle = write_composite_bundle(
+        tmp_path / "composite-bundle",
+        bundle_name="composite-bundle",
+        threshold=0.5,
+    )
+
+    manage.main(
+        [
+            "--activation-path",
+            str(activation_path),
+            "--json",
+            "promote",
+            "--bundle-root",
+            str(bundle_a),
+        ]
+    )
+    capsys.readouterr()
+
+    composite_manifest_path = composite_bundle / "model_bundle.json"
+    composite_payload = json.loads(composite_manifest_path.read_text(encoding="utf-8"))
+    composite_payload["compatibility"]["inference_contract"]["stage2"]["closed_set_labels"] = [
+        "Attack",
+        "Benign",
+    ]
+    composite_manifest_path.write_text(json.dumps(composite_payload), encoding="utf-8")
+
+    with pytest.raises(SystemExit, match="Composite stage2 closed_set_labels"):
+        manage.main(
+            [
+                "--activation-path",
+                str(activation_path),
+                "promote",
+                "--bundle-root",
+                str(composite_bundle),
+            ]
+        )
+
+    status_rc = manage.main(["--activation-path", str(activation_path), "--json", "status"])
+    status_payload = json.loads(capsys.readouterr().out)
+    activation_record = read_activation_record(activation_path)
+
+    assert status_rc == 0
+    assert status_payload["active_bundle_root"] == str(bundle_a.resolve())
+    assert status_payload["active_bundle_name"] == "bundle-a"
+    assert status_payload["verification_status"] == "verified"
+    assert status_payload["runtime_contract_kind"] == "binary"
+    assert status_payload["is_composite_contract"] is False
     assert activation_record["record_version"] == SUPPORTED_ACTIVATION_RECORD_VERSION
     assert activation_record["active_bundle_root"] == str(bundle_a.resolve())
     assert activation_record["active_bundle_name"] == "bundle-a"

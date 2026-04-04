@@ -92,8 +92,25 @@ def build_bundle_status_payload(activation_path: Path) -> dict[str, Any]:
             "threshold": manifest.threshold,
             "feature_columns_path": str(manifest.feature_columns_path),
             "model_path": str(manifest.model_path),
+            "inference_contract_version": manifest.inference_contract_version,
+            "runtime_contract_kind": "composite" if manifest.is_composite_contract else "binary",
+            "is_composite_contract": manifest.is_composite_contract,
         }
     )
+    if manifest.is_composite_contract:
+        payload.update(
+            {
+                "stage1_model_path": str(manifest.model_path),
+                "stage1_feature_columns_path": str(manifest.feature_columns_path),
+                "stage2_model_path": str(manifest.stage2_model_path),
+                "stage2_feature_columns_path": str(manifest.stage2_feature_columns_path),
+                "stage2_closed_set_labels": list(manifest.stage2_inference_contract["closed_set_labels"]),
+                "stage2_top1_confidence_threshold": float(manifest.stage2_abstention["top1_confidence"]),
+                "stage2_runner_up_margin_threshold": float(
+                    manifest.stage2_abstention["runner_up_margin"]
+                ),
+            }
+        )
     if record.previous_bundle_root is not None:
         payload["previous_bundle_root"] = str(record.previous_bundle_root)
         payload["previous_bundle_name"] = record.payload.get("previous_bundle_name")
