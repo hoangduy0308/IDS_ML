@@ -24,6 +24,25 @@ FLOW_COLUMNS = (
     + ["Src IP", "Dst IP", "Timestamp", "Label"]
 )
 FEATURE_COLUMNS = ["f1", "f2"]
+REPO_ROOT = Path(__file__).resolve().parents[2]
+STAGE2_MODEL_PATH = (
+    REPO_ROOT
+    / "artifacts"
+    / "modeling"
+    / "cic_iot_diad_2024_family_views"
+    / "family_classifier"
+    / "models"
+    / "catboost_family_classifier.cbm"
+)
+STAGE2_REPORT_PATH = (
+    REPO_ROOT
+    / "artifacts"
+    / "modeling"
+    / "cic_iot_diad_2024_family_views"
+    / "family_classifier"
+    / "reports"
+    / "oracle_family_eval.json"
+)
 
 
 def _write_flow_csv(path: Path, *, base_value: float, rows: int = 2) -> None:
@@ -300,6 +319,104 @@ def test_package_final_model_main_writes_bundle_artifacts(
     manifest = json.loads((bundle_root / "model_bundle.json").read_text(encoding="utf-8"))
     assert manifest["feature_count"] == len(FEATURE_COLUMNS)
     assert manifest["recommended_threshold_from_validation_fpr_cap_0_02"] == 0.42
+
+
+def test_package_final_model_main_writes_composite_bundle_artifacts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    model_path = tmp_path / "stage1-model.cbm"
+    feature_columns_path = tmp_path / "feature_columns.json"
+    stage2_feature_columns_path = tmp_path / "stage2_feature_columns.json"
+    summary_path = tmp_path / "summary.csv"
+    training_summary_path = tmp_path / "training_summary.json"
+    threshold_selection_path = tmp_path / "threshold_selection.json"
+    bundle_root = tmp_path / "composite-bundle"
+
+    model_path.write_text("placeholder-stage1-model\n", encoding="utf-8")
+    feature_columns_path.write_text(json.dumps({"feature_columns": FEATURE_COLUMNS}), encoding="utf-8")
+    stage2_feature_columns_path.write_text(
+        json.dumps({"feature_columns": FEATURE_COLUMNS}),
+        encoding="utf-8",
+    )
+    with summary_path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=["val_f1", "test_f1", "test_recall", "test_precision", "test_fpr", "ood_recall"],
+        )
+        writer.writeheader()
+        writer.writerow(
+            {
+                "val_f1": "0.91",
+                "test_f1": "0.92",
+                "test_recall": "0.93",
+                "test_precision": "0.94",
+                "test_fpr": "0.01",
+                "ood_recall": "0.88",
+            }
+        )
+    training_summary_path.write_text(json.dumps({"train_rows": 10}), encoding="utf-8")
+    threshold_selection_path.write_text(
+        json.dumps({"recommended_threshold": 0.42}),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "package_final_model.py",
+            "--bundle-kind",
+            "composite",
+            "--model-path",
+            str(model_path),
+            "--feature-columns-path",
+            str(feature_columns_path),
+            "--summary-path",
+            str(summary_path),
+            "--training-summary-path",
+            str(training_summary_path),
+            "--threshold-selection-path",
+            str(threshold_selection_path),
+            "--stage2-model-path",
+            str(STAGE2_MODEL_PATH),
+            "--stage2-feature-columns-path",
+            str(stage2_feature_columns_path),
+            "--stage2-report-path",
+            str(STAGE2_REPORT_PATH),
+            "--bundle-root",
+            str(bundle_root),
+        ],
+    )
+
+    package_final_model.main()
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["bundle_root"] == str(bundle_root.resolve())
+    assert (bundle_root / "model_bundle.json").is_file()
+    assert (bundle_root / "stage2_model.cbm").is_file()
+    assert (bundle_root / "stage2_feature_columns.json").is_file()
+    assert (bundle_root / "stage2_report.json").is_file()
+    assert (bundle_root / "MODEL_CARD.md").is_file()
+
+    manifest = json.loads((bundle_root / "model_bundle.json").read_text(encoding="utf-8"))
+    inference_contract = manifest["compatibility"]["inference_contract"]
+    stage2_contract = inference_contract["stage2"]
+
+    assert manifest["bundle_kind"] == "composite"
+    assert manifest["bundle_name"] == "catboost_two_stage_family_v1"
+    assert inference_contract["version"] == "ids_two_stage_family_contract.v1"
+    assert stage2_contract["model_artifact"] == "stage2_model.cbm"
+    assert stage2_contract["feature_columns_file"] == "stage2_feature_columns.json"
+    assert stage2_contract["closed_set_labels"] == ["DDoS", "DoS", "Mirai", "Spoofing", "Web-Based"]
+    assert inference_contract["abstention"]["top1_confidence"] == pytest.approx(0.5588587362527666)
+    assert inference_contract["abstention"]["runner_up_margin"] == pytest.approx(0.3097277574209342)
+    assert manifest["source_artifacts"]["stage2_model_path"] == str(STAGE2_MODEL_PATH.resolve())
+    assert manifest["source_artifacts"]["stage2_report_path"] == str(STAGE2_REPORT_PATH.resolve())
+    card = (bundle_root / "MODEL_CARD.md").read_text(encoding="utf-8")
+    assert "bundle kind: `composite`" in card
+    assert "stage 2 model:" in card
+    assert "closed-set labels:" in card
 
 
 def test_package_final_model_defaults_follow_repo_root_override(

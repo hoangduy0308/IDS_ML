@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0",
+  "active_skill": "khuym:swarming",
+  "status": "phase3-validated-swarmed",
+  "feature": "ids-multiclass-two-stage-runtime-contract",
+  "epic_id": "ids_ml_new-d90e",
+  "current_phase": "Phase 3 - Make Promotion And Rollback Operationally Safe",
+  "current_focus": "Phase 3 is approved for execution; swarm is driving composite packaging, failed-promotion safety, and wrapper/packaging regression coverage.",
+  "validated_at": "2026-04-05T06:22:00+07:00",
+  "swarm_started_at": "2026-04-05T06:16:00+07:00",
+  "coordinator": {
+    "agent_mail_name": "RedPrairie",
+    "thread_id": "ids_ml_new-d90e",
+    "topic": "epic-ids_ml_new-d90e"
+  },
+  "workers": []
+}
