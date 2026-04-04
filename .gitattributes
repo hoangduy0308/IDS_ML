@@ -1,0 +1,16 @@
+# ── export-ignore: exclude from git-archive bundles ──
+# Directories not needed on production hosts
+tests/                          export-ignore
+.khuym/                         export-ignore
+.beads/                         export-ignore
+.spikes/                        export-ignore
+.claude/                        export-ignore
+.worktrees/                     export-ignore
+history/                        export-ignore
+kaggle/                         export-ignore
+design/                         export-ignore
+
+# Files not needed on production hosts
+AGENTS.md                       export-ignore
+wrapper_smoke_support.py        export-ignore
+tests_editable_install_cache.py export-ignore
