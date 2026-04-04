@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from fastapi import FastAPI, Form, HTTPException, Query, Request, status
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
@@ -26,9 +29,15 @@ from .auth import (
     validate_csrf_form,
 )
 from .config import OperatorConsoleConfig
-from .db import DEFAULT_SENSOR_ID, OperatorStore, open_existing_operator_store
+from .db import ALLOWED_SETTING_KEYS, DEFAULT_SENSOR_ID, OperatorStore, open_existing_operator_store
+
+# Setting key constants (sourced from ALLOWED_SETTING_KEYS in db.py)
+SETTING_TELEGRAM_BOT_TOKEN = "telegram_bot_token"
+SETTING_TELEGRAM_CHAT_ID = "telegram_chat_id"
 from .health import build_liveness_payload, build_readiness_payload
 from .migrations import assert_runtime_ready
+from .notification_runtime import resolve_telegram_config, resolve_telegram_config_with_source
+from .notifications import TelegramNotifierConfig
 
 TRIAGE_LABELS = {
     "new": "New",
@@ -67,7 +76,14 @@ PRIMARY_NAV = [
     {"key": "live-logs", "label": "Live Logs", "href": "/live-logs"},
     {"key": "suppression-rules", "label": "Suppression Rules", "href": "/suppression-rules"},
     {"key": "system-health", "label": "System Health", "href": "/system-health"},
+    {"key": "settings", "label": "Settings", "href": "/settings"},
 ]
+
+
+def _mask_token(token: str) -> str:
+    if len(token) <= 4:
+        return "****"
+    return "\u2022" * 6 + token[-4:]
 
 
 def _format_utc_now() -> str:
@@ -76,6 +92,16 @@ def _format_utc_now() -> str:
 
 def _filter_by_sensor_id(items: list[dict[str, Any]], sensor_id: str) -> list[dict[str, Any]]:
     return [item for item in items if str(item.get("sensor_id", DEFAULT_SENSOR_ID)) == sensor_id]
+
+
+def _env_telegram_fallback(config: OperatorConsoleConfig) -> TelegramNotifierConfig | None:
+    """Build env-backed Telegram config if both token and chat_id are set."""
+    if config.telegram_bot_token and config.telegram_chat_id:
+        return TelegramNotifierConfig(
+            bot_token=config.telegram_bot_token,
+            default_chat_id=config.telegram_chat_id,
+        )
+    return None
 
 
 def _with_decoded_payload(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -151,6 +177,7 @@ def create_operator_console_web_app(
             "generated_at": _format_utc_now(),
             "public_base_url": config.public_base_url,
             "primary_nav": PRIMARY_NAV,
+            "root_path": config.root_path,
             **context,
         }
         return templates.TemplateResponse(
@@ -484,6 +511,106 @@ def create_operator_console_web_app(
             return redirect
         readiness = build_readiness_payload(config, include_sensitive=True)
         return render_template(request, "system_health.html", readiness=readiness)
+
+    # ── Settings routes ─────────────────────────────────────────────────────
+
+    @app.get("/settings", response_class=HTMLResponse)
+    def settings_page(request: Request) -> Response:
+        redirect = require_authenticated_redirect(request, login_path="/login")
+        if redirect is not None:
+            return redirect
+        runtime_store = _open_store()
+        try:
+            env_fallback = _env_telegram_fallback(config)
+            effective, config_source = resolve_telegram_config_with_source(
+                runtime_store, env_fallback,
+            )
+        finally:
+            if store is None:
+                runtime_store.close()
+
+        # Derive display values from the resolved config
+        if effective is not None:
+            display_token = effective.bot_token
+            display_chat_id = effective.default_chat_id
+        else:
+            display_token = ""
+            display_chat_id = ""
+
+        masked = _mask_token(display_token) if display_token.strip() else ""
+        configured = effective is not None
+        return render_template(
+            request,
+            "settings.html",
+            masked_token=masked,
+            chat_id=display_chat_id,
+            configured=configured,
+            config_source=config_source,
+        )
+
+    @app.post("/settings")
+    async def settings_save(
+        request: Request,
+        csrf_token: str = Form(""),
+        bot_token: str = Form(""),
+        chat_id: str = Form(""),
+    ) -> Response:
+        validate_csrf_form(request, {"csrf_token": csrf_token})
+        require_authenticated_api(request)
+        runtime_store = _open_store()
+        try:
+            stripped_token = bot_token.strip()
+            stripped_chat_id = chat_id.strip()
+            if not stripped_chat_id:
+                # Clear both — empty chat_id means "disable DB Telegram config"
+                runtime_store.set_setting(SETTING_TELEGRAM_BOT_TOKEN, "")
+                runtime_store.set_setting(SETTING_TELEGRAM_CHAT_ID, "")
+            else:
+                # Only overwrite token if user typed a new one (password field
+                # submits empty when unchanged — preserving the existing token)
+                existing_token = runtime_store.get_setting(SETTING_TELEGRAM_BOT_TOKEN) or ""
+                if stripped_token:
+                    runtime_store.set_setting(SETTING_TELEGRAM_BOT_TOKEN, stripped_token)
+                    runtime_store.set_setting(SETTING_TELEGRAM_CHAT_ID, stripped_chat_id)
+                elif existing_token.strip():
+                    # Token unchanged (password field empty) but existing token present
+                    runtime_store.set_setting(SETTING_TELEGRAM_CHAT_ID, stripped_chat_id)
+                else:
+                    # No new token and no existing token — refuse to save chat_id alone
+                    pass
+        finally:
+            if store is None:
+                runtime_store.close()
+        return RedirectResponse(
+            url=f"{config.root_path}/settings", status_code=status.HTTP_303_SEE_OTHER
+        )
+
+    @app.post("/settings/test", response_class=JSONResponse)
+    async def settings_test(
+        request: Request,
+        csrf_token: str = Form(""),
+    ) -> JSONResponse:
+        validate_csrf_form(request, {"csrf_token": csrf_token})
+        require_authenticated_api(request)
+        runtime_store = _open_store()
+        try:
+            env_fallback = _env_telegram_fallback(config)
+            effective = resolve_telegram_config(runtime_store, env_fallback)
+        finally:
+            if store is None:
+                runtime_store.close()
+        if effective is None:
+            return JSONResponse({"success": False, "detail": "Telegram is not configured."})
+        from .notifications import send_telegram_message, NotificationDeliveryError
+        try:
+            send_telegram_message(effective, chat_id=effective.default_chat_id, text="VIGIL IDS test message from operator console.")
+        except NotificationDeliveryError as exc:
+            logger.warning("Settings test failed: %s", exc)
+            return JSONResponse({"success": False, "detail": "Failed to send test message. Check your bot token and chat ID."})
+        except ValueError as exc:
+            logger.warning("Settings test config error: %s", exc)
+            return JSONResponse({"success": False, "detail": "Invalid Telegram configuration."})
+        return JSONResponse({"success": True, "detail": "Test message sent successfully."})
 
     # ── JSON API routes (unchanged from Phase 0) ─────────────────────────────
 

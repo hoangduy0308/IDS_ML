@@ -8,7 +8,7 @@ from .db import bootstrap_operator_store, connect_operator_db
 
 
 SCHEMA_FAMILY = "ids_operator_console"
-CURRENT_SCHEMA_VERSION = 2
+CURRENT_SCHEMA_VERSION = 3
 LEGACY_REQUIRED_TABLES = {
     "sensors",
     "ingest_offsets",
@@ -127,6 +127,17 @@ def inspect_operator_store(database_path: Path) -> StoreInspection:
                 detail="schema is current" if admin_count > 0 else "schema is current but no admin user exists",
             )
 
+        if schema_version is not None and schema_version < CURRENT_SCHEMA_VERSION:
+            return StoreInspection(
+                database_path=resolved,
+                database_exists=True,
+                schema_state="needs-migration",
+                schema_version=schema_version,
+                admin_count=admin_count,
+                runtime_ready=False,
+                detail=f"schema version {schema_version} is behind current version {CURRENT_SCHEMA_VERSION}",
+            )
+
         if LEGACY_REQUIRED_TABLES.issubset(tables):
             return StoreInspection(
                 database_path=resolved,
@@ -160,6 +171,19 @@ def inspect_operator_store(database_path: Path) -> StoreInspection:
         )
     finally:
         connection.close()
+
+
+def _migrate_v2_to_v3(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS console_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+    _write_schema_version(connection, version=3)
 
 
 def assert_runtime_ready(database_path: Path) -> StoreInspection:
@@ -209,8 +233,13 @@ def migrate_operator_store(
                 _ensure_schema_metadata_table(connection)
                 _write_schema_version(connection, version=CURRENT_SCHEMA_VERSION)
             elif pre.schema_state == "legacy-v1":
+                bootstrap_operator_store(connection)
                 _ensure_schema_metadata_table(connection)
                 _write_schema_version(connection, version=CURRENT_SCHEMA_VERSION)
+            elif pre.schema_state == "needs-migration":
+                _ensure_schema_metadata_table(connection)
+                if pre.schema_version is not None and pre.schema_version < 3:
+                    _migrate_v2_to_v3(connection)
             elif pre.schema_state == "current":
                 _ensure_schema_metadata_table(connection)
                 _write_schema_version(connection, version=CURRENT_SCHEMA_VERSION)

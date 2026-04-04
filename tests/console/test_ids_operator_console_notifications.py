@@ -12,6 +12,10 @@ from ids.console.notifications import (  # noqa: E402
     queue_alert_notifications,
     redrive_failed_telegram_notifications,
 )
+from ids.console.notification_runtime import (  # noqa: E402
+    resolve_telegram_config,
+    resolve_telegram_config_with_source,
+)
 
 
 def _new_store(tmp_path: Path) -> OperatorStore:
@@ -195,5 +199,126 @@ def test_redrive_failed_notifications_requires_explicit_operator_action(tmp_path
         assert pending_delivery["status"] == "pending"
         assert int(pending_delivery["attempt_count"]) == 0
         assert pending_delivery["last_error"] is None
+    finally:
+        store.close()
+
+
+def testresolve_telegram_config_db_overrides_none(tmp_path: Path) -> None:
+    """When startup config has telegram=None but DB has both values, DB wins."""
+    store = _new_store(tmp_path)
+    try:
+        store.set_setting("telegram_bot_token", "123:DB_TOKEN")
+        store.set_setting("telegram_chat_id", "-100999")
+        result = resolve_telegram_config(store, fallback=None)
+        assert result is not None
+        assert result.bot_token == "123:DB_TOKEN"
+        assert result.default_chat_id == "-100999"
+    finally:
+        store.close()
+
+
+def testresolve_telegram_config_db_overrides_env(tmp_path: Path) -> None:
+    """When DB has values and env also has values, DB wins."""
+    store = _new_store(tmp_path)
+    try:
+        env_config = TelegramNotifierConfig(bot_token="env_token", default_chat_id="-100env")
+        store.set_setting("telegram_bot_token", "123:DB_TOKEN")
+        store.set_setting("telegram_chat_id", "-100db")
+        result = resolve_telegram_config(store, fallback=env_config)
+        assert result is not None
+        assert result.bot_token == "123:DB_TOKEN"
+        assert result.default_chat_id == "-100db"
+    finally:
+        store.close()
+
+
+def testresolve_telegram_config_empty_db_falls_back(tmp_path: Path) -> None:
+    """When DB has no settings, fall back to env config."""
+    store = _new_store(tmp_path)
+    try:
+        env_config = TelegramNotifierConfig(bot_token="env_token", default_chat_id="-100env")
+        result = resolve_telegram_config(store, fallback=env_config)
+        assert result is not None
+        assert result.bot_token == "env_token"
+        assert result.default_chat_id == "-100env"
+    finally:
+        store.close()
+
+
+def testresolve_telegram_config_partial_db_falls_back(tmp_path: Path) -> None:
+    """When DB has only token but no chat_id, fall back to env config."""
+    store = _new_store(tmp_path)
+    try:
+        env_config = TelegramNotifierConfig(bot_token="env_token", default_chat_id="-100env")
+        store.set_setting("telegram_bot_token", "123:DB_TOKEN")
+        # chat_id is not set in DB
+        result = resolve_telegram_config(store, fallback=env_config)
+        assert result is not None
+        assert result.bot_token == "env_token"
+    finally:
+        store.close()
+
+
+def testresolve_telegram_config_empty_string_db_falls_back(tmp_path: Path) -> None:
+    """When DB has empty strings, treat as not set and fall back."""
+    store = _new_store(tmp_path)
+    try:
+        env_config = TelegramNotifierConfig(bot_token="env_token", default_chat_id="-100env")
+        store.set_setting("telegram_bot_token", "")
+        store.set_setting("telegram_chat_id", "")
+        result = resolve_telegram_config(store, fallback=env_config)
+        assert result is not None
+        assert result.bot_token == "env_token"
+    finally:
+        store.close()
+
+
+def testresolve_telegram_config_none_fallback_and_no_db(tmp_path: Path) -> None:
+    """When DB has nothing and fallback is None, result is None (no notifications)."""
+    store = _new_store(tmp_path)
+    try:
+        result = resolve_telegram_config(store, fallback=None)
+        assert result is None
+    finally:
+        store.close()
+
+
+# ── resolve_telegram_config_with_source tests ──────────────────────────────
+
+
+def test_resolve_with_source_returns_database_when_db_has_values(tmp_path: Path) -> None:
+    """resolve_telegram_config_with_source reports 'database' source."""
+    store = _new_store(tmp_path)
+    try:
+        store.set_setting("telegram_bot_token", "123:DB_TOKEN")
+        store.set_setting("telegram_chat_id", "-100999")
+        config, source = resolve_telegram_config_with_source(store, fallback=None)
+        assert config is not None
+        assert config.bot_token == "123:DB_TOKEN"
+        assert source == "database"
+    finally:
+        store.close()
+
+
+def test_resolve_with_source_returns_environment_when_db_empty(tmp_path: Path) -> None:
+    """resolve_telegram_config_with_source reports 'environment' source for env fallback."""
+    store = _new_store(tmp_path)
+    try:
+        env_config = TelegramNotifierConfig(bot_token="env_token", default_chat_id="-100env")
+        config, source = resolve_telegram_config_with_source(store, fallback=env_config)
+        assert config is not None
+        assert config.bot_token == "env_token"
+        assert source == "environment"
+    finally:
+        store.close()
+
+
+def test_resolve_with_source_returns_none_when_nothing_configured(tmp_path: Path) -> None:
+    """resolve_telegram_config_with_source reports 'none' source when unconfigured."""
+    store = _new_store(tmp_path)
+    try:
+        config, source = resolve_telegram_config_with_source(store, fallback=None)
+        assert config is None
+        assert source == "none"
     finally:
         store.close()

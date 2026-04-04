@@ -100,3 +100,24 @@ def test_console_docs_index_links_are_portable() -> None:
 
     assert "F:/Work/IDS_ML_New" not in console_readme
     assert "F:\\Work\\IDS_ML_New" not in console_readme
+
+
+def test_operations_quickstart_docs_are_portable_and_canonical() -> None:
+    operations_readme = (REPO_ROOT / "docs" / "current" / "operations" / "README.md").read_text(
+        encoding="utf-8"
+    )
+    quickstart = (REPO_ROOT / "docs" / "current" / "operations" / "deployment_quickstart.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "[deployment_quickstart.md](" in operations_readme
+    assert "F:/Work/IDS_ML_New" not in operations_readme
+    assert "F:\\Work\\IDS_ML_New" not in operations_readme
+    assert "ops/build_release.sh" in quickstart
+    assert "ops/install.sh" in quickstart
+    assert "ids-stack" in quickstart
+    assert "/opt/ids_ml_new/.venv/bin/python" in quickstart
+    assert "pip install -e /opt/ids_ml_new" in quickstart
+    assert "/opt/ids_ml_new/artifacts/final_model/candidate_bundle" in quickstart
+    assert "F:/Work/IDS_ML_New" not in quickstart
+    assert "F:\\Work\\IDS_ML_New" not in quickstart

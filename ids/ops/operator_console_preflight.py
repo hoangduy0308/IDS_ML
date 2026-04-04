@@ -132,6 +132,49 @@ def _load_optional_secret(*, value: str | None, file_path: Path | None, name: st
     return _clean_optional(value)
 
 
+def _load_telegram_settings_from_db(database_path: Path) -> tuple[str | None, str | None]:
+    """Read Telegram credentials from console_settings if the table exists.
+
+    Wraps the shared :func:`~ids.console.notification_runtime.resolve_telegram_config`
+    with an early-return guard for pre-v3 databases that lack the
+    ``console_settings`` table.
+    """
+    import sqlite3 as _sqlite3
+
+    resolved = Path(database_path).resolve()
+    if not resolved.is_file():
+        return None, None
+    try:
+        conn = _sqlite3.connect(str(resolved))
+        try:
+            # Early-return guard: pre-v3 databases don't have console_settings
+            table_check = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='console_settings'"
+            ).fetchone()
+            if table_check is None:
+                return None, None
+        finally:
+            conn.close()
+    except _sqlite3.Error:
+        return None, None
+
+    # Table exists — delegate to the shared resolver via OperatorStore
+    from ids.console.db import open_existing_operator_store
+    from ids.console.notification_runtime import resolve_telegram_config
+
+    try:
+        store = open_existing_operator_store(resolved)
+        try:
+            result = resolve_telegram_config(store, fallback=None)
+            if result is not None:
+                return result.bot_token, result.default_chat_id
+            return None, None
+        finally:
+            store.close()
+    except Exception:
+        return None, None
+
+
 def validate_preflight(config: OperatorConsolePreflightConfig) -> None:
     python_binary = _require_existing_file(config.python_binary, name="python_binary", executable=True)
     _require_importable_module_from_trusted_root(
@@ -164,6 +207,13 @@ def validate_preflight(config: OperatorConsolePreflightConfig) -> None:
         name="telegram_bot_token",
     )
     chat_id = _clean_optional(config.telegram_chat_id)
+
+    # Check DB for stored Telegram settings (Phase 2: DB overrides env)
+    db_token, db_chat_id = _load_telegram_settings_from_db(config.database_path)
+    if db_token and db_chat_id:
+        token = db_token
+        chat_id = db_chat_id
+
     if (token is None) != (chat_id is None):
         raise ValueError(
             "telegram_bot_token and telegram_chat_id must be set together or both omitted"

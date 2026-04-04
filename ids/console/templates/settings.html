@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+
+{% block title %}Settings — VIGIL IDS{% endblock %}
+
+{% block content %}
+<div class="flex items-center justify-between mb-6">
+  <h1 class="topbar__title">Settings</h1>
+  <span class="text-muted" style="font-size:12px;font-family:var(--font-primary)">{{ generated_at }}</span>
+</div>
+
+{# ── Telegram Configuration Card ────────────────────────────────────────── #}
+<div class="card" style="max-width:600px">
+  <div class="card__header" style="border-bottom:1px solid var(--border);padding-bottom:12px;margin-bottom:16px">
+    <div class="flex items-center justify-between">
+      <div class="card__title">Telegram Notifications</div>
+      {% if configured %}
+        <span class="badge badge--success">Configured</span>
+        {% if config_source == "environment" %}
+          <span class="badge badge--muted" style="margin-left:6px">via environment</span>
+        {% elif config_source == "database" %}
+          <span class="badge badge--muted" style="margin-left:6px">via database</span>
+        {% endif %}
+      {% else %}
+        <span class="badge badge--muted">Not configured</span>
+      {% endif %}
+    </div>
+  </div>
+
+  <form method="post" action="{{ root_path }}/settings" id="settings-form" data-test-url="{{ root_path }}/settings/test" style="display:flex;flex-direction:column;gap:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <div>
+      <label style="display:block;font-size:13px;color:var(--muted-foreground);margin-bottom:6px" for="bot_token">Bot Token</label>
+      <input
+        type="password"
+        id="bot_token"
+        name="bot_token"
+        placeholder="{% if masked_token %}{{ masked_token }}{% else %}Enter bot token{% endif %}"
+        style="width:100%;padding:8px 12px;background:var(--bg-muted);border:1px solid var(--border);border-radius:4px;color:var(--foreground);font-family:var(--font-primary);font-size:13px"
+      >
+      {% if masked_token %}
+      <div style="font-size:12px;color:var(--muted-foreground);margin-top:4px">Current: {{ masked_token }}</div>
+      {% endif %}
+    </div>
+
+    <div>
+      <label style="display:block;font-size:13px;color:var(--muted-foreground);margin-bottom:6px" for="chat_id">Chat ID</label>
+      <input
+        type="text"
+        id="chat_id"
+        name="chat_id"
+        value="{{ chat_id }}"
+        placeholder="Enter chat ID (e.g. -100123456)"
+        style="width:100%;padding:8px 12px;background:var(--bg-muted);border:1px solid var(--border);border-radius:4px;color:var(--foreground);font-family:var(--font-primary);font-size:13px"
+      >
+    </div>
+
+    <div class="flex items-center gap-3" style="margin-top:4px">
+      <button type="submit" class="btn btn--primary" style="padding:8px 20px;background:var(--color-accent);color:var(--color-accent-foreground);border:none;border-radius:4px;cursor:pointer;font-size:13px;font-weight:600">Save</button>
+      <button type="button" id="test-telegram-btn" class="btn btn--secondary" style="padding:8px 20px;background:var(--bg-muted);color:var(--foreground);border:1px solid var(--border);border-radius:4px;cursor:pointer;font-size:13px;font-weight:600">Test</button>
+    </div>
+  </form>
+
+  <div id="test-result" style="margin-top:12px"></div>
+</div>
+{% endblock %}

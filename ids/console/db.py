@@ -10,6 +10,8 @@ import sqlite3
 
 DEFAULT_SENSOR_ID = "sensor-local"
 
+ALLOWED_SETTING_KEYS = {"telegram_bot_token", "telegram_chat_id"}
+
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
@@ -182,6 +184,12 @@ def bootstrap_operator_store(connection: sqlite3.Connection) -> None:
     CREATE INDEX IF NOT EXISTS idx_notification_status_next_attempt ON notification_deliveries(status, next_attempt_at);
     CREATE INDEX IF NOT EXISTS idx_status_history_alert_changed_at ON alert_status_history(alert_id, changed_at DESC);
     CREATE INDEX IF NOT EXISTS idx_notes_alert_created_at ON alert_notes(alert_id, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS console_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
     """
     with connection:
         connection.executescript(schema_sql)
@@ -955,6 +963,31 @@ class OperatorStore:
             )
         return len(delivery_ids)
 
+    def get_setting(self, key: str) -> str | None:
+        row = self._connection.execute(
+            "SELECT value FROM console_settings WHERE key = ?",
+            (key,),
+        ).fetchone()
+        if row is None:
+            return None
+        return str(row["value"])
+
+    def set_setting(self, key: str, value: str) -> None:
+        if key not in ALLOWED_SETTING_KEYS:
+            raise ValueError(f"Unknown setting key: {key}")
+        now = _utc_now_iso()
+        with self._connection:
+            self._connection.execute(
+                """
+                INSERT INTO console_settings (key, value, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET
+                    value = excluded.value,
+                    updated_at = excluded.updated_at
+                """,
+                (key, value, now),
+            )
+
 
 def open_operator_store(database_path: Path) -> OperatorStore:
     return OperatorStore.open(database_path)
@@ -970,6 +1003,7 @@ def bootstrap_operator_store_path(database_path: Path) -> None:
 
 
 __all__ = [
+    "ALLOWED_SETTING_KEYS",
     "DEFAULT_SENSOR_ID",
     "OperatorStore",
     "bootstrap_operator_store",

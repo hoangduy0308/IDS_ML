@@ -185,3 +185,30 @@ The Live Logs polling renderer in `console.js` injected `source_event_id` and `e
 A 9-screen FastAPI/Jinja2 console was rebuilt cleanly in 3 phases by delivering the shared foundation first: CSS token layer + base template + auth + all routes as 501 stubs, all with passing tests. Subsequent phases implemented screens in order against a confirmed stable base. Workers never had to guess at template inheritance contracts or CSS variables mid-bead. Future full-page UI rewrites with shared base templates should make Phase 1 = foundation-only (no screen content), with explicit failing → passing tests for the shell before any screen work begins.
 
 **Full entry:** history/learnings/20260403-console-ui-tdd-rebuild.md
+
+## [20260404] Build Release Bundles From A Safe Export Surface
+**Category:** failure
+**Feature:** ids-console-telegram-settings-and-deploy-readiness
+**Tags:** [release, packaging, git, security]
+
+`ops/build_release.sh` archived the raw working tree with a manual exclude list, allowing untracked secrets and local files to leak into deployment tarballs. The safe approach is `git archive HEAD` which exports only committed files by construction. Future release-artifact builders should never archive the live tree — use `git archive` or `git checkout-index` and add a regression test proving ignored sentinel files are absent from the produced archive.
+
+**Full entry:** history/learnings/20260404-telegram-settings-deploy-hardening.md
+
+## [20260404] Harden Pre-Seeded Secret Files During Install
+**Category:** failure
+**Feature:** ids-console-telegram-settings-and-deploy-readiness
+**Tags:** [install, permissions, secrets, security]
+
+The installer only set secure permissions when creating a new env file, leaving pre-seeded files at the caller's default umask. Since the documented workflow tells operators to copy the env example before running the installer, secrets could be world-readable. Installers that accept pre-seeded secret files must always re-apply canonical ownership and mode regardless of who created the file. Also harden SQLite DB files that contain secrets.
+
+**Full entry:** history/learnings/20260404-telegram-settings-deploy-hardening.md
+
+## [20260404] Config Contracts Must Be Shared, Not Reimplemented Per Surface
+**Category:** failure
+**Feature:** ids-console-telegram-settings-and-deploy-readiness
+**Tags:** [config, architecture, drift, preflight]
+
+The `DB > env fallback` Telegram config rule was implemented once in `resolve_telegram_config()` but reimplemented differently in the Settings page (parallel DB reads) and preflight (raw SQLite). Review found 6 of 9 P2 findings were config-drift recurrences. When a config interpretation rule is needed by more than one surface, implement it exactly once and have all consumers call that single function. Extend the return type if consumers need metadata rather than reimplementing the logic.
+
+**Full entry:** history/learnings/20260404-telegram-settings-deploy-hardening.md

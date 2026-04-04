@@ -6,6 +6,11 @@
 (function () {
   'use strict';
 
+  // ── Shared HTML escape helper ───────────────────────────────────────────
+  function esc(s) {
+    return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
   // ── Sidebar toggle (mobile) ──────────────────────────────────────────────
 
   function initSidebarToggle() {
@@ -98,10 +103,6 @@
     }
     var interval = parseInt(container.getAttribute('data-live-logs-poll'), 10) || 7000;
 
-    function esc(s) {
-      return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-    }
-
     function renderRows(alerts, anomalies) {
       var rows = [];
 
@@ -188,12 +189,51 @@
     setInterval(poll, interval);
   }
 
+  // ── Settings: Telegram test button ──────────────────────────────────────
+  function initSettingsTestButton() {
+    var btn = document.getElementById('test-telegram-btn');
+    if (!btn) {
+      return;
+    }
+
+    var resultDiv = document.getElementById('test-result');
+    var csrfInput = document.querySelector('input[name="csrf_token"]');
+    var form = document.getElementById('settings-form');
+    var testUrl = (form && form.getAttribute('data-test-url')) || '/settings/test';
+
+    btn.addEventListener('click', function () {
+      btn.disabled = true;
+      btn.textContent = 'Testing...';
+      resultDiv.innerHTML = '';
+
+      var body = new URLSearchParams();
+      body.append('csrf_token', csrfInput ? csrfInput.value : '');
+
+      fetch(testUrl, { method: 'POST', body: body, credentials: 'same-origin' })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          var cls = data.success ? 'badge--success' : 'badge--error';
+          resultDiv.innerHTML =
+            '<span class="badge ' + cls + '">' + esc(data.detail) + '</span>';
+        })
+        .catch(function (err) {
+          resultDiv.innerHTML =
+            '<span class="badge badge--error">' + esc(String(err)) + '</span>';
+        })
+        .finally(function () {
+          btn.disabled = false;
+          btn.textContent = 'Test';
+        });
+    });
+  }
+
   // ── Init ─────────────────────────────────────────────────────────────────
 
   function init() {
     initSidebarToggle();
     formatTimestamps();
     initLiveLogsPoller();
+    initSettingsTestButton();
   }
 
   if (document.readyState === 'loading') {

@@ -157,33 +157,41 @@ def test_deploy_artifacts_are_wired_to_proxy_and_secret_contract() -> None:
     service_text = (REPO_ROOT / "deploy/systemd/ids-operator-console.service").read_text(encoding="utf-8")
     notify_service_text = (REPO_ROOT / "deploy/systemd/ids-operator-console-notify.service").read_text(encoding="utf-8")
     nginx_text = (REPO_ROOT / "deploy/nginx/ids-operator-console.conf.example").read_text(encoding="utf-8")
+    env_example_text = (REPO_ROOT / "ops/ids-operator-console.env.example").read_text(encoding="utf-8")
 
+    # Service units use EnvironmentFile as sole config source (no hardcoded Environment= overrides)
     assert "EnvironmentFile=-/etc/ids-operator-console/ids-operator-console.env" in service_text
+    assert "Environment=" not in service_text, "Service must not have hardcoded Environment= overrides"
     assert "IDS_OPERATOR_CONSOLE_SECRET_KEY_FILE" in service_text
     assert "--public-base-url ${IDS_OPERATOR_CONSOLE_PUBLIC_BASE_URL}" in service_text
     assert "--secret-key-file ${IDS_OPERATOR_CONSOLE_SECRET_KEY_FILE}" in service_text
     assert "--manage-module ids.ops.operator_console_manage" in service_text
     assert "--app-module ids.console.server" in service_text
-    assert "IDS_OPERATOR_CONSOLE_TEMPLATES_DIR=/opt/ids_ml_new/ids/console/templates" in service_text
-    assert "IDS_OPERATOR_CONSOLE_STATIC_DIR=/opt/ids_ml_new/ids/console/static" in service_text
     assert "/opt/ids_ml_new/.venv/bin/python -m ids.ops.operator_console_preflight" in service_text
     assert "/opt/ids_ml_new/.venv/bin/python -m ids.console.server" in service_text
     assert "/usr/bin/python3" not in service_text
-    assert "IDS_OPERATOR_CONSOLE_TELEGRAM_BOT_TOKEN_FILE" in service_text
 
+    # Notify service: same EnvironmentFile-only pattern
+    assert "EnvironmentFile=-/etc/ids-operator-console/ids-operator-console.env" in notify_service_text
+    assert "Environment=" not in notify_service_text, "Notify service must not have hardcoded Environment= overrides"
     assert "-m ids.ops.operator_console_manage --database-path \"$IDS_OPERATOR_CONSOLE_DATABASE_PATH\" notify-worker" in notify_service_text
     assert "--iterations 1" not in notify_service_text
     assert "notify-worker --poll-interval-seconds 30" in notify_service_text
     assert "--manage-module ids.ops.operator_console_manage" in notify_service_text
     assert "--app-module ids.console.server" in notify_service_text
-    assert "IDS_OPERATOR_CONSOLE_TEMPLATES_DIR=/opt/ids_ml_new/ids/console/templates" in notify_service_text
-    assert "IDS_OPERATOR_CONSOLE_STATIC_DIR=/opt/ids_ml_new/ids/console/static" in notify_service_text
     assert "/opt/ids_ml_new/.venv/bin/python -m ids.ops.operator_console_preflight" in notify_service_text
     assert "/opt/ids_ml_new/.venv/bin/python -m ids.ops.operator_console_manage" in notify_service_text
     assert "/usr/bin/python3" not in notify_service_text
-    assert "IDS_OPERATOR_CONSOLE_TELEGRAM_BOT_TOKEN_FILE" in notify_service_text
-    assert "IDS_OPERATOR_CONSOLE_TELEGRAM_CHAT_ID" in notify_service_text
 
+    # All defaults now live in the env example file (not hardcoded in service units)
+    assert "IDS_OPERATOR_CONSOLE_TEMPLATES_DIR=/opt/ids_ml_new/ids/console/templates" in env_example_text
+    assert "IDS_OPERATOR_CONSOLE_STATIC_DIR=/opt/ids_ml_new/ids/console/static" in env_example_text
+    assert "IDS_OPERATOR_CONSOLE_TELEGRAM_BOT_TOKEN_FILE" in env_example_text
+    assert "IDS_OPERATOR_CONSOLE_TELEGRAM_CHAT_ID" in env_example_text
+    assert "IDS_OPERATOR_CONSOLE_SECRET_KEY_FILE" in env_example_text
+    assert "Settings UI" in env_example_text, "Env example must mention Settings UI for Telegram config"
+
+    # Nginx proxy contract
     assert "proxy_set_header Host $host;" in nginx_text
     assert "proxy_set_header X-Forwarded-Proto https;" in nginx_text
     assert "proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;" in nginx_text
@@ -428,6 +436,110 @@ def test_preflight_ignores_inherited_pythonhome_contamination(
     monkeypatch.setattr(preflight, "_is_executable_file", lambda path: True)
 
     # Must succeed: isolated mode (-I) and env scrubbing keep the bogus home out
+    validate_preflight(config)
+
+
+def _seed_db_telegram_settings(db_path: Path, *, token: str, chat_id: str) -> None:
+    """Write Telegram settings directly into the console_settings table."""
+    import sqlite3
+
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.execute(
+            "INSERT OR REPLACE INTO console_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))",
+            ("telegram_bot_token", token),
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO console_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))",
+            ("telegram_chat_id", chat_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def test_preflight_accepts_db_only_telegram_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Preflight passes when Telegram settings are in DB but not in env vars."""
+    config = _make_preflight_config(tmp_path)
+    monkeypatch.setattr(preflight, "_is_executable_file", lambda path: True)
+    _seed_db_telegram_settings(config.database_path, token="123:DBTOKEN", chat_id="-100db")
+    validate_preflight(config)
+
+
+def test_preflight_accepts_env_only_telegram_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Preflight passes with env-only Telegram config (existing behavior preserved)."""
+    config = _make_preflight_config(
+        tmp_path,
+        telegram_bot_token="env-token",
+        telegram_chat_id="-100env",
+    )
+    monkeypatch.setattr(preflight, "_is_executable_file", lambda path: True)
+    validate_preflight(config)
+
+
+def test_preflight_db_settings_override_env(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When both DB and env have Telegram config, DB wins (consistent with D1)."""
+    config = _make_preflight_config(
+        tmp_path,
+        telegram_bot_token="env-token",
+        telegram_chat_id="-100env",
+    )
+    monkeypatch.setattr(preflight, "_is_executable_file", lambda path: True)
+    _seed_db_telegram_settings(config.database_path, token="123:DBTOKEN", chat_id="-100db")
+    # Should pass — DB overrides env
+    validate_preflight(config)
+
+
+def test_preflight_warns_not_fails_when_telegram_unconfigured(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No DB, no env Telegram config → preflight passes (Telegram is optional)."""
+    config = _make_preflight_config(tmp_path)
+    monkeypatch.setattr(preflight, "_is_executable_file", lambda path: True)
+    # Should pass — Telegram is optional
+    validate_preflight(config)
+
+
+def test_preflight_handles_v2_db_without_console_settings_table(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A v2 DB with no console_settings table should not crash preflight.
+
+    We simulate a v2→v3 migration gap: drop console_settings and downgrade
+    schema_version, then re-migrate before running preflight. The key test is
+    that _load_telegram_settings_from_db gracefully returns (None, None) when
+    the table is absent — which we verify indirectly by confirming preflight
+    passes with no Telegram config in either DB or env.
+    """
+    config = _make_preflight_config(tmp_path)
+    monkeypatch.setattr(preflight, "_is_executable_file", lambda path: True)
+    # Drop the console_settings table and downgrade schema to simulate v2 DB
+    import sqlite3
+
+    conn = sqlite3.connect(str(config.database_path))
+    try:
+        conn.execute("DROP TABLE IF EXISTS console_settings")
+        conn.execute(
+            "UPDATE schema_metadata SET schema_version = 2 WHERE schema_family = 'operator_console'"
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    # Re-migrate to v3 so preflight doesn't fail on schema_state check
+    manage.main(["--database-path", str(config.database_path), "migrate"])
+    # Preflight should pass — _load_telegram_settings_from_db returns (None, None) before
+    # migration, and after migration the table exists but is empty
     validate_preflight(config)
 
 

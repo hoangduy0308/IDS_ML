@@ -1,10 +1,10 @@
 STATUS: compounding-complete
-FEATURE: ids-console-ui-pencil-rebuild
-EPIC: ids_ml_new-k8c1
-LAST_UPDATED: 2026-04-03T21:10:00+00:00
+EPIC: ids_ml_new-i7oa (CLOSED)
+FEATURE: ids-console-telegram-settings-and-deploy-readiness
+HANDOFF: done
 
 ## Last Compounding Run
-- Feature: ids-console-ui-pencil-rebuild
-- Date: 2026-04-03
-- Learnings file: history/learnings/20260403-console-ui-tdd-rebuild.md
-- Critical promotions: 2
+- Feature: ids-console-telegram-settings-and-deploy-readiness
+- Date: 2026-04-04
+- Learnings file: history/learnings/20260404-telegram-settings-deploy-hardening.md
+- Critical promotions: 3 (safe export surface, pre-seeded secret hardening, shared config contract)

@@ -91,8 +91,10 @@ def build_notification_runtime_status(
     store: OperatorStore,
     *,
     runtime_config: NotificationRuntimeConfig,
+    resolved_telegram: TelegramNotifierConfig | None = None,
     channel: str = "telegram",
 ) -> NotificationRuntimeStatus:
+    effective_telegram = resolved_telegram if resolved_telegram is not None else runtime_config.telegram
     summary = store.get_notification_delivery_summary(channel=channel)
     last_error = summary.get("last_error")
     normalized_last_error = None
@@ -103,10 +105,10 @@ def build_notification_runtime_status(
             "updated_at": str(last_error.get("updated_at") or ""),
         }
     return NotificationRuntimeStatus(
-        enabled=runtime_config.notifications_enabled,
-        configured=runtime_config.notifications_enabled,
+        enabled=effective_telegram is not None,
+        configured=effective_telegram is not None,
         channel=channel,
-        target=runtime_config.telegram.default_chat_id if runtime_config.telegram is not None else None,
+        target=effective_telegram.default_chat_id if effective_telegram is not None else None,
         pending_count=int(summary["pending_count"]),
         retry_count=int(summary["retry_count"]),
         failed_count=int(summary["failed_count"]),
@@ -115,6 +117,46 @@ def build_notification_runtime_status(
         oldest_due_at=summary.get("oldest_due_at"),
         last_error=normalized_last_error,
     )
+
+
+def resolve_telegram_config(
+    store: OperatorStore,
+    fallback: TelegramNotifierConfig | None,
+) -> TelegramNotifierConfig | None:
+    """Resolve effective Telegram config: DB wins over env fallback.
+
+    Returns the resolved config or None.  For source information, use
+    :func:`resolve_telegram_config_with_source`.
+    """
+    config, _source = resolve_telegram_config_with_source(store, fallback)
+    return config
+
+
+def resolve_telegram_config_with_source(
+    store: OperatorStore,
+    fallback: TelegramNotifierConfig | None,
+) -> tuple[TelegramNotifierConfig | None, str]:
+    """Resolve effective Telegram config and report its source.
+
+    Returns ``(config_or_none, source)`` where *source* is one of
+    ``"database"``, ``"environment"``, or ``"none"``.
+    """
+    db_token = store.get_setting("telegram_bot_token")
+    db_chat_id = store.get_setting("telegram_chat_id")
+    if db_token and db_token.strip() and db_chat_id and db_chat_id.strip():
+        try:
+            return (
+                TelegramNotifierConfig(
+                    bot_token=db_token,
+                    default_chat_id=db_chat_id,
+                ),
+                "database",
+            )
+        except ValueError:
+            pass  # fall through to fallback
+    if fallback is not None:
+        return fallback, "environment"
+    return None, "none"
 
 
 def run_notification_maintenance_cycle(
@@ -136,21 +178,26 @@ def run_notification_maintenance_cycle(
             summary_input_path=runtime_config.summary_input_path,
             sensor_id=runtime_config.sensor_id,
         )
+
+        resolved_telegram = resolve_telegram_config(active_store, runtime_config.telegram)
+
         queued = 0
         dispatch_summary = _zero_dispatch_summary()
-        if runtime_config.telegram is not None:
+        if resolved_telegram is not None:
             queued = queue_fn(
                 active_store,
-                chat_id=runtime_config.telegram.default_chat_id,
+                chat_id=resolved_telegram.default_chat_id,
                 limit=runtime_config.queue_limit,
             )
             dispatch_summary = dispatch_fn(
                 active_store,
-                config=runtime_config.telegram,
+                config=resolved_telegram,
                 limit=runtime_config.dispatch_limit,
                 sender=sender,
             )
-        status = build_notification_runtime_status(active_store, runtime_config=runtime_config)
+        status = build_notification_runtime_status(
+            active_store, runtime_config=runtime_config, resolved_telegram=resolved_telegram,
+        )
         return NotificationMaintenanceCycleResult(
             ingest=ingest_summary,
             queued=queued,
@@ -188,6 +235,8 @@ __all__ = [
     "NotificationRuntimeConfig",
     "NotificationRuntimeStatus",
     "build_notification_runtime_status",
+    "resolve_telegram_config",
+    "resolve_telegram_config_with_source",
     "run_notification_maintenance_cycle",
     "run_notification_worker",
 ]

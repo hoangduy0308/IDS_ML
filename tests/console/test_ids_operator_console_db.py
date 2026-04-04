@@ -3,7 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 import json
 
+import pytest
+
 from ids.console.db import (  # noqa: E402
+    ALLOWED_SETTING_KEYS,
     OperatorStore,
     bootstrap_operator_store,
     connect_operator_db,
@@ -37,6 +40,7 @@ def test_bootstrap_operator_store_is_idempotent(tmp_path: Path) -> None:
         "admin_users",
         "admin_sessions",
         "notification_deliveries",
+        "console_settings",
     }.issubset(tables)
 
 
@@ -170,7 +174,7 @@ def test_inspect_operator_store_reports_legacy_and_current_states(tmp_path: Path
 
     current = migrate_operator_store(db_path)
     assert current.schema_state == "current"
-    assert current.schema_version == 2
+    assert current.schema_version == 3
     assert current.runtime_ready is False
 
 
@@ -275,5 +279,144 @@ def test_notification_delivery_summary_and_redrive_preserve_explicit_recovery(tm
         assert summary_after["failed_count"] == 0
         assert summary_after["due_count"] == 1
         assert summary_after["last_error"] is None
+    finally:
+        store.close()
+
+
+def test_migration_v2_to_v3_adds_console_settings_table(tmp_path: Path) -> None:
+    """Create a v2 database (no console_settings table), migrate to v3, verify table exists."""
+    db_path = tmp_path / "operator_console.db"
+    connection = connect_operator_db(db_path)
+    try:
+        # Manually create a v2 schema: all legacy tables + schema_metadata stamped v2
+        # but WITHOUT console_settings table.
+        connection.executescript("""
+            CREATE TABLE sensors (sensor_id TEXT PRIMARY KEY, host_label TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+            CREATE TABLE ingest_offsets (stream_name TEXT PRIMARY KEY, sensor_id TEXT NOT NULL, source_path TEXT NOT NULL, file_inode INTEGER, file_device INTEGER, file_size INTEGER, offset_bytes INTEGER NOT NULL DEFAULT 0, last_record_ts TEXT, updated_at TEXT NOT NULL);
+            CREATE TABLE alerts (id INTEGER PRIMARY KEY AUTOINCREMENT, sensor_id TEXT NOT NULL, source_event_id TEXT, event_ts TEXT NOT NULL, severity TEXT, src_ip TEXT, dst_ip TEXT, src_port INTEGER, dst_port INTEGER, protocol TEXT, fingerprint TEXT, payload_json TEXT NOT NULL, triage_status TEXT NOT NULL DEFAULT 'new', triage_updated_at TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(sensor_id, source_event_id));
+            CREATE TABLE anomalies (id INTEGER PRIMARY KEY AUTOINCREMENT, sensor_id TEXT NOT NULL, source_event_id TEXT, event_ts TEXT NOT NULL, anomaly_type TEXT NOT NULL, reason TEXT, redacted_summary TEXT, payload_json TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+            CREATE TABLE summaries (id INTEGER PRIMARY KEY AUTOINCREMENT, sensor_id TEXT NOT NULL, summary_ts TEXT NOT NULL, payload_json TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(sensor_id, summary_ts));
+            CREATE TABLE alert_notes (id INTEGER PRIMARY KEY AUTOINCREMENT, alert_id INTEGER NOT NULL, note_text TEXT NOT NULL, author TEXT NOT NULL DEFAULT 'admin', created_at TEXT NOT NULL);
+            CREATE TABLE alert_status_history (id INTEGER PRIMARY KEY AUTOINCREMENT, alert_id INTEGER NOT NULL, from_status TEXT, to_status TEXT NOT NULL, changed_by TEXT NOT NULL DEFAULT 'admin', changed_at TEXT NOT NULL);
+            CREATE TABLE suppression_rules (id INTEGER PRIMARY KEY AUTOINCREMENT, sensor_id TEXT NOT NULL, rule_name TEXT NOT NULL, match_field TEXT NOT NULL, match_value TEXT NOT NULL, applies_to TEXT NOT NULL DEFAULT 'model_alert', is_active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+            CREATE TABLE admin_users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, is_active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, last_login_at TEXT);
+            CREATE TABLE admin_sessions (session_id TEXT PRIMARY KEY, username TEXT NOT NULL, csrf_token TEXT NOT NULL, expires_at TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+            CREATE TABLE notification_deliveries (id INTEGER PRIMARY KEY AUTOINCREMENT, alert_id INTEGER, channel TEXT NOT NULL, target TEXT NOT NULL, dedupe_key TEXT, payload_json TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', attempt_count INTEGER NOT NULL DEFAULT 0, last_attempt_at TEXT, next_attempt_at TEXT, last_error TEXT, provider_message_id TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(channel, target, dedupe_key));
+            CREATE TABLE schema_metadata (schema_family TEXT PRIMARY KEY, schema_version INTEGER NOT NULL, updated_at TEXT NOT NULL);
+            INSERT INTO schema_metadata (schema_family, schema_version, updated_at) VALUES ('ids_operator_console', 2, '2026-04-01T00:00:00Z');
+        """)
+        # Verify: no console_settings table yet
+        tables = {row["name"] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()}
+        assert "console_settings" not in tables
+    finally:
+        connection.close()
+
+    # Run inspect — should detect needs-migration
+    pre = inspect_operator_store(db_path)
+    assert pre.schema_state == "needs-migration"
+    assert pre.schema_version == 2
+
+    # Run migration
+    post = migrate_operator_store(db_path)
+    assert post.schema_state == "current"
+    assert post.schema_version == 3
+
+    # Verify console_settings table exists and data is intact
+    connection = connect_operator_db(db_path)
+    try:
+        tables = {row["name"] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()}
+        assert "console_settings" in tables
+    finally:
+        connection.close()
+
+
+def test_fresh_bootstrap_creates_console_settings_at_v3(tmp_path: Path) -> None:
+    """Fresh DB via migrate --allow-bootstrap should create console_settings and stamp v3."""
+    db_path = tmp_path / "operator_console.db"
+    result = migrate_operator_store(db_path, allow_bootstrap=True)
+    assert result.schema_state == "current"
+    assert result.schema_version == 3
+
+    connection = connect_operator_db(db_path)
+    try:
+        tables = {row["name"] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()}
+        assert "console_settings" in tables
+    finally:
+        connection.close()
+
+
+def test_migration_v2_to_v3_is_idempotent(tmp_path: Path) -> None:
+    """Running migrate twice on a v3 DB should not fail."""
+    db_path = tmp_path / "operator_console.db"
+    migrate_operator_store(db_path, allow_bootstrap=True)
+    result = migrate_operator_store(db_path)
+    assert result.schema_state == "current"
+    assert result.schema_version == 3
+
+
+def test_get_setting_returns_none_for_nonexistent_key(tmp_path: Path) -> None:
+    store = OperatorStore.open(tmp_path / "operator_console.db")
+    try:
+        assert store.get_setting("nonexistent_key") is None
+    finally:
+        store.close()
+
+
+def test_set_setting_stores_and_get_setting_retrieves(tmp_path: Path) -> None:
+    store = OperatorStore.open(tmp_path / "operator_console.db")
+    try:
+        store.set_setting("telegram_bot_token", "123:ABCDEF")
+        assert store.get_setting("telegram_bot_token") == "123:ABCDEF"
+    finally:
+        store.close()
+
+
+def test_set_setting_upserts_on_conflict(tmp_path: Path) -> None:
+    store = OperatorStore.open(tmp_path / "operator_console.db")
+    try:
+        store.set_setting("telegram_bot_token", "old_token")
+        store.set_setting("telegram_bot_token", "new_token")
+        assert store.get_setting("telegram_bot_token") == "new_token"
+    finally:
+        store.close()
+
+
+def test_set_setting_stores_empty_string(tmp_path: Path) -> None:
+    store = OperatorStore.open(tmp_path / "operator_console.db")
+    try:
+        store.set_setting("telegram_bot_token", "")
+        assert store.get_setting("telegram_bot_token") == ""
+    finally:
+        store.close()
+
+
+def test_set_setting_updates_updated_at_on_upsert(tmp_path: Path) -> None:
+    store = OperatorStore.open(tmp_path / "operator_console.db")
+    try:
+        store.set_setting("telegram_bot_token", "value1")
+        row1 = store._connection.execute(
+            "SELECT updated_at FROM console_settings WHERE key = ?",
+            ("telegram_bot_token",),
+        ).fetchone()
+        ts1 = row1["updated_at"]
+
+        store.set_setting("telegram_bot_token", "value2")
+        row2 = store._connection.execute(
+            "SELECT updated_at FROM console_settings WHERE key = ?",
+            ("telegram_bot_token",),
+        ).fetchone()
+        ts2 = row2["updated_at"]
+
+        assert ts2 >= ts1
+    finally:
+        store.close()
+
+
+def test_set_setting_rejects_unknown_key(tmp_path: Path) -> None:
+    """set_setting must raise ValueError for keys not in ALLOWED_SETTING_KEYS."""
+    store = OperatorStore.open(tmp_path / "operator_console.db")
+    try:
+        with pytest.raises(ValueError, match="Unknown setting key"):
+            store.set_setting("bad_key", "val")
     finally:
         store.close()
