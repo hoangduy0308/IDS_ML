@@ -18,6 +18,7 @@ WRAPPER_MODULES = [
 
 DIRECT_FILE_WRAPPERS = [
     "scripts/stage_kaggle_tuning.py",
+    "scripts/package_final_model.py",
     "scripts/tune_top_models.py",
 ]
 
