@@ -10,6 +10,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 from ids.core.model_bundle import (  # noqa: E402
     ModelBundleContractError,
+    build_composite_inference_contract_metadata,
     build_feature_schema_metadata,
     build_inference_contract_metadata,
     load_feature_columns as load_bundle_feature_columns,
@@ -70,6 +71,54 @@ def write_bundle_manifest(
     (bundle_root / "model_bundle.json").write_text(json.dumps(payload), encoding="utf-8")
 
 
+def write_composite_bundle_manifest(bundle_root: Path) -> None:
+    stage1_feature_columns_path = bundle_root / "stage1_feature_columns.json"
+    stage2_feature_columns_path = bundle_root / "stage2_feature_columns.json"
+    stage1_feature_columns_path.write_text(
+        json.dumps({"feature_columns": ["f1", "f2"]}),
+        encoding="utf-8",
+    )
+    stage2_feature_columns_path.write_text(
+        json.dumps({"feature_columns": ["f1", "f2", "f3"]}),
+        encoding="utf-8",
+    )
+    (bundle_root / "stage1_model.cbm").write_text("stage1", encoding="utf-8")
+    (bundle_root / "stage2_model.cbm").write_text("stage2", encoding="utf-8")
+    (bundle_root / "model_bundle.json").write_text(
+        json.dumps(
+            {
+                "manifest_version": 2,
+                "bundle_name": "bundle-under-test",
+                "created_at": "2026-03-29T00:00:00+07:00",
+                "model_key": "catboost_full_data",
+                "model_family": "CatBoostClassifier",
+                "model_artifact": "stage1_model.cbm",
+                "feature_columns_file": "stage1_feature_columns.json",
+                "threshold": 0.5,
+                "positive_label": "Attack",
+                "negative_label": "Benign",
+                "feature_count": 2,
+                "train_rows": 123,
+                "metrics_file": "metrics.json",
+                "training_summary_file": "training_summary.json",
+                "compatibility": {
+                    "feature_schema": build_feature_schema_metadata(stage1_feature_columns_path),
+                    "inference_contract": build_composite_inference_contract_metadata(
+                        positive_label="Attack",
+                        negative_label="Benign",
+                        threshold=0.5,
+                        stage2_model_artifact="stage2_model.cbm",
+                        stage2_feature_columns_path=stage2_feature_columns_path,
+                        top1_confidence_threshold=0.5589,
+                        runner_up_margin_threshold=0.3097,
+                    ),
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
 def test_load_model_bundle_manifest_accepts_versioned_contract(tmp_path: Path) -> None:
     bundle_root = tmp_path / "bundle"
     bundle_root.mkdir()
@@ -124,6 +173,35 @@ def test_load_model_bundle_manifest_fails_on_unsupported_inference_contract(tmp_
     write_bundle_manifest(bundle_root, inference_contract_version="ids_binary_classifier.v0")
 
     with pytest.raises(ModelBundleContractError, match="Unsupported inference contract version"):
+        load_model_bundle_manifest(bundle_root)
+
+
+def test_load_model_bundle_manifest_accepts_composite_contract(tmp_path: Path) -> None:
+    bundle_root = tmp_path / "bundle"
+    bundle_root.mkdir()
+    write_composite_bundle_manifest(bundle_root)
+
+    manifest = load_model_bundle_manifest(bundle_root)
+
+    assert manifest.is_composite_contract is True
+    assert manifest.stage2_model_path == (bundle_root / "stage2_model.cbm").resolve()
+    assert manifest.stage2_feature_columns_path == (
+        bundle_root / "stage2_feature_columns.json"
+    ).resolve()
+    assert manifest.stage2_abstention["top1_confidence"] == pytest.approx(0.5589)
+    assert manifest.stage2_abstention["runner_up_margin"] == pytest.approx(0.3097)
+
+
+def test_load_model_bundle_manifest_fails_on_incomplete_composite_contract(tmp_path: Path) -> None:
+    bundle_root = tmp_path / "bundle"
+    bundle_root.mkdir()
+    write_composite_bundle_manifest(bundle_root)
+    manifest_path = bundle_root / "model_bundle.json"
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    del payload["compatibility"]["inference_contract"]["stage2"]
+    manifest_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ModelBundleContractError, match="missing stage2"):
         load_model_bundle_manifest(bundle_root)
 
 

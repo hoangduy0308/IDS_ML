@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 import json
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -24,6 +25,7 @@ from ids.runtime.inference import (  # noqa: E402
 )
 from ids.core.model_bundle import (  # noqa: E402
     ModelBundleContractError,
+    build_composite_inference_contract_metadata,
     build_feature_schema_metadata,
     build_inference_contract_metadata,
 )
@@ -77,6 +79,47 @@ def write_bundle_manifest(
     )
 
 
+def write_composite_bundle_manifest(bundle_root: Path) -> None:
+    stage1_feature_columns_path = bundle_root / "stage1_feature_columns.json"
+    stage2_feature_columns_path = bundle_root / "stage2_feature_columns.json"
+    stage1_feature_columns_path.write_text(json.dumps({"feature_columns": ["f1", "f2"]}), encoding="utf-8")
+    stage2_feature_columns_path.write_text(
+        json.dumps({"feature_columns": ["f1", "f2", "f3"]}),
+        encoding="utf-8",
+    )
+    (bundle_root / "stage1_model.cbm").write_text("placeholder-stage1", encoding="utf-8")
+    (bundle_root / "stage2_model.cbm").write_text("placeholder-stage2", encoding="utf-8")
+    payload = {
+        "manifest_version": 2,
+        "bundle_name": "bundle-under-test",
+        "created_at": "2026-03-29T00:00:00+07:00",
+        "model_key": "catboost_full_data",
+        "model_family": "CatBoostClassifier",
+        "model_artifact": "stage1_model.cbm",
+        "feature_columns_file": "stage1_feature_columns.json",
+        "threshold": 0.5,
+        "positive_label": "Attack",
+        "negative_label": "Benign",
+        "feature_count": 2,
+        "train_rows": 123,
+        "metrics_file": "metrics.json",
+        "training_summary_file": "training_summary.json",
+        "compatibility": {
+            "feature_schema": build_feature_schema_metadata(stage1_feature_columns_path),
+            "inference_contract": build_composite_inference_contract_metadata(
+                positive_label="Attack",
+                negative_label="Benign",
+                threshold=0.5,
+                stage2_model_artifact="stage2_model.cbm",
+                stage2_feature_columns_path=stage2_feature_columns_path,
+                top1_confidence_threshold=0.55,
+                runner_up_margin_threshold=0.3,
+            ),
+        },
+    }
+    (bundle_root / "model_bundle.json").write_text(json.dumps(payload), encoding="utf-8")
+
+
 def _reload_inference_modules(monkeypatch: pytest.MonkeyPatch, repo_root: Path | None) -> None:
     env_var = path_defaults_module.DEFAULT_REPO_ROOT_ENV_VAR
     if repo_root is None:
@@ -106,7 +149,22 @@ class DummyInferencer:
     def __init__(self, threshold: float = 0.5) -> None:
         self.config = type("Config", (), {"threshold": threshold, "positive_label": "Attack", "negative_label": "Benign"})()
 
-    align_features = IDSInferencer.align_features
+    def align_features(self, frame: pd.DataFrame) -> pd.DataFrame:
+        missing = [column for column in self.feature_columns if column not in frame.columns]
+        if missing:
+            raise ValueError(
+                "Input frame is missing required feature columns: " + ", ".join(missing)
+            )
+        aligned = frame.loc[:, self.feature_columns].copy()
+        for column in self.feature_columns:
+            aligned[column] = pd.to_numeric(aligned[column], errors="coerce")
+        if aligned.isna().any().any():
+            bad_columns = aligned.columns[aligned.isna().any()].tolist()
+            raise ValueError(
+                "Input frame contains non-numeric or missing values after alignment in columns: "
+                + ", ".join(bad_columns)
+            )
+        return aligned.astype("float32")
 
     def score_frame(self, frame: pd.DataFrame) -> pd.DataFrame:
         aligned = self.align_features(frame)
@@ -123,6 +181,30 @@ class DummyInferencer:
         )
 
     predict = IDSInferencer.predict
+
+
+class DummyCompositeCatBoost:
+    def __init__(self) -> None:
+        self.loaded_path: Path | None = None
+
+    def load_model(self, path: Path) -> None:
+        self.loaded_path = Path(path)
+
+    def predict_proba(self, frame: pd.DataFrame) -> np.ndarray:
+        assert self.loaded_path is not None
+        if self.loaded_path.name == "stage1_model.cbm":
+            attack_scores = frame["f1"].to_numpy(dtype=np.float32)
+            return np.column_stack([1.0 - attack_scores, attack_scores])
+        if self.loaded_path.name == "stage2_model.cbm":
+            values = frame.loc[:, ["f1", "f2", "f3"]].to_numpy(dtype=np.float32)
+            rows: list[list[float]] = []
+            for f1, f2, f3 in values:
+                if f3 > 0.5:
+                    rows.append([0.6, 0.25, 0.15])
+                else:
+                    rows.append([0.51, 0.3, 0.19])
+            return np.asarray(rows, dtype=np.float32)
+        raise AssertionError(f"Unexpected model path: {self.loaded_path}")
 
 
 def test_align_features_reorders_and_converts_numeric() -> None:
@@ -154,6 +236,66 @@ def test_predict_appends_alert_columns() -> None:
     assert result["threshold"].tolist() == [0.5, 0.5]
 
 
+def test_predict_appends_family_columns_for_composite_bundle(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    bundle_root = tmp_path / "bundle"
+    bundle_root.mkdir()
+    (bundle_root / "stage1_model.cbm").write_text("stage1", encoding="utf-8")
+    write_composite_bundle_manifest(bundle_root)
+
+    monkeypatch.setattr("ids.runtime.inference.CatBoostClassifier", DummyCompositeCatBoost)
+
+    inferencer = IDSInferencer(IDSModelConfig.from_bundle(bundle_root))
+    frame = pd.DataFrame(
+        {
+            "f1": [0.9, 0.8, 0.1],
+            "f2": [0.2, 0.2, 0.7],
+            "f3": [1.0, 0.0, 1.0],
+        }
+    )
+
+    result = inferencer.predict(frame, include_input=False)
+
+    assert result["predicted_label"].tolist() == ["Attack", "Attack", "Benign"]
+    assert result["family_status"].tolist() == ["known", "unknown", "benign"]
+    assert result.loc[0, "attack_family"] == "DDoS"
+    assert result.loc[0, "attack_family_confidence"] == pytest.approx(0.6)
+    assert result.loc[0, "attack_family_margin"] == pytest.approx(0.35)
+    assert pd.isna(result.loc[1, "attack_family"])
+    assert result.loc[1, "attack_family_confidence"] == pytest.approx(0.51)
+    assert result.loc[1, "attack_family_margin"] == pytest.approx(0.21)
+    assert pd.isna(result.loc[2, "attack_family"])
+    assert pd.isna(result.loc[2, "attack_family_confidence"])
+    assert pd.isna(result.loc[2, "attack_family_margin"])
+
+
+def test_composite_inference_fails_closed_when_family_stage_raises(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    bundle_root = tmp_path / "bundle"
+    bundle_root.mkdir()
+    (bundle_root / "stage1_model.cbm").write_text("stage1", encoding="utf-8")
+    write_composite_bundle_manifest(bundle_root)
+
+    class ExplodingCompositeCatBoost(DummyCompositeCatBoost):
+        def predict_proba(self, frame: pd.DataFrame) -> np.ndarray:  # type: ignore[override]
+            assert self.loaded_path is not None
+            if self.loaded_path.name == "stage2_model.cbm":
+                raise RuntimeError("family stage failed")
+            return super().predict_proba(frame)
+
+    monkeypatch.setattr("ids.runtime.inference.CatBoostClassifier", ExplodingCompositeCatBoost)
+
+    inferencer = IDSInferencer(IDSModelConfig.from_bundle(bundle_root))
+    frame = pd.DataFrame({"f1": [0.9], "f2": [0.2], "f3": [1.0]})
+
+    with pytest.raises(RuntimeError, match="family stage failed"):
+        inferencer.predict(frame, include_input=False)
+
+
 def test_model_config_can_load_from_bundle(tmp_path: Path) -> None:
     bundle_root = tmp_path / "bundle"
     bundle_root.mkdir()
@@ -166,6 +308,24 @@ def test_model_config_can_load_from_bundle(tmp_path: Path) -> None:
     assert config.feature_columns_path == (bundle_root / "feature_columns.json").resolve()
     assert config.threshold == 0.5
     assert config.bundle_root == bundle_root.resolve()
+
+
+def test_model_config_can_load_composite_bundle(tmp_path: Path) -> None:
+    bundle_root = tmp_path / "bundle"
+    bundle_root.mkdir()
+    (bundle_root / "stage1_model.cbm").write_text("stage1", encoding="utf-8")
+    write_composite_bundle_manifest(bundle_root)
+
+    config = IDSModelConfig.from_bundle(bundle_root)
+
+    assert config.model_path == (bundle_root / "stage1_model.cbm").resolve()
+    assert config.family_model_path == (bundle_root / "stage2_model.cbm").resolve()
+    assert config.family_feature_columns_path == (
+        bundle_root / "stage2_feature_columns.json"
+    ).resolve()
+    assert config.family_top1_confidence_threshold == pytest.approx(0.55)
+    assert config.family_runner_up_margin_threshold == pytest.approx(0.3)
+    assert config.family_closed_set_labels == ("DDoS", "DoS", "Mirai", "Spoofing", "Web-Based")
 
 
 def test_build_model_config_rejects_mixed_bundle_and_config_inputs(tmp_path: Path) -> None:

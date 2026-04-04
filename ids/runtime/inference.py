@@ -5,6 +5,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 from catboost import CatBoostClassifier
 
@@ -37,10 +38,27 @@ class IDSModelConfig:
     negative_label: str = "Benign"
     bundle_root: Path | None = None
     manifest_path: Path | None = None
+    family_model_path: Path | None = None
+    family_feature_columns_path: Path | None = None
+    family_top1_confidence_threshold: float | None = None
+    family_runner_up_margin_threshold: float | None = None
+    family_closed_set_labels: tuple[str, ...] | None = None
 
     @classmethod
     def from_bundle(cls, bundle_root: Path) -> "IDSModelConfig":
         manifest = load_model_bundle_manifest(bundle_root)
+        family_model_path: Path | None = None
+        family_feature_columns_path: Path | None = None
+        family_top1_confidence_threshold: float | None = None
+        family_runner_up_margin_threshold: float | None = None
+        family_closed_set_labels: tuple[str, ...] | None = None
+        if manifest.is_composite_contract:
+            family_model_path = manifest.stage2_model_path
+            family_feature_columns_path = manifest.stage2_feature_columns_path
+            abstention = manifest.stage2_abstention
+            family_top1_confidence_threshold = float(abstention["top1_confidence"])
+            family_runner_up_margin_threshold = float(abstention["runner_up_margin"])
+            family_closed_set_labels = tuple(manifest.stage2_inference_contract["closed_set_labels"])
         return cls(
             model_path=manifest.model_path,
             feature_columns_path=manifest.feature_columns_path,
@@ -49,6 +67,11 @@ class IDSModelConfig:
             negative_label=manifest.negative_label,
             bundle_root=manifest.bundle_root,
             manifest_path=manifest.manifest_path,
+            family_model_path=family_model_path,
+            family_feature_columns_path=family_feature_columns_path,
+            family_top1_confidence_threshold=family_top1_confidence_threshold,
+            family_runner_up_margin_threshold=family_runner_up_margin_threshold,
+            family_closed_set_labels=family_closed_set_labels,
         )
 
     @classmethod
@@ -74,6 +97,25 @@ class IDSModelConfig:
             negative_label=manifest.negative_label,
             bundle_root=manifest.bundle_root,
             manifest_path=manifest.manifest_path,
+            family_model_path=manifest.stage2_model_path if manifest.is_composite_contract else None,
+            family_feature_columns_path=(
+                manifest.stage2_feature_columns_path if manifest.is_composite_contract else None
+            ),
+            family_top1_confidence_threshold=(
+                float(manifest.stage2_abstention["top1_confidence"])
+                if manifest.is_composite_contract
+                else None
+            ),
+            family_runner_up_margin_threshold=(
+                float(manifest.stage2_abstention["runner_up_margin"])
+                if manifest.is_composite_contract
+                else None
+            ),
+            family_closed_set_labels=(
+                tuple(manifest.stage2_inference_contract["closed_set_labels"])
+                if manifest.is_composite_contract
+                else None
+            ),
         )
 
 
@@ -117,15 +159,25 @@ class IDSInferencer:
         self.feature_columns = load_feature_columns(config.feature_columns_path)
         self.model = CatBoostClassifier()
         self.model.load_model(config.model_path)
+        self.family_feature_columns = (
+            load_feature_columns(config.family_feature_columns_path)
+            if config.family_feature_columns_path is not None
+            else None
+        )
+        self.family_model = None
+        if config.family_model_path is not None:
+            self.family_model = CatBoostClassifier()
+            self.family_model.load_model(config.family_model_path)
+        self.family_closed_set_labels = config.family_closed_set_labels
 
-    def align_features(self, frame: pd.DataFrame) -> pd.DataFrame:
-        missing = [column for column in self.feature_columns if column not in frame.columns]
+    def _align_features(self, frame: pd.DataFrame, feature_columns: list[str]) -> pd.DataFrame:
+        missing = [column for column in feature_columns if column not in frame.columns]
         if missing:
             raise ValueError(
                 "Input frame is missing required feature columns: " + ", ".join(missing)
             )
-        aligned = frame.loc[:, self.feature_columns].copy()
-        for column in self.feature_columns:
+        aligned = frame.loc[:, feature_columns].copy()
+        for column in feature_columns:
             aligned[column] = pd.to_numeric(aligned[column], errors="coerce")
         if aligned.isna().any().any():
             bad_columns = aligned.columns[aligned.isna().any()].tolist()
@@ -135,6 +187,9 @@ class IDSInferencer:
             )
         return aligned.astype("float32")
 
+    def align_features(self, frame: pd.DataFrame) -> pd.DataFrame:
+        return self._align_features(frame, self.feature_columns)
+
     def score_frame(self, frame: pd.DataFrame) -> pd.DataFrame:
         aligned = self.align_features(frame)
         attack_scores = self.model.predict_proba(aligned)[:, 1]
@@ -143,7 +198,7 @@ class IDSInferencer:
             self.config.positive_label if is_alert else self.config.negative_label
             for is_alert in alerts
         ]
-        return pd.DataFrame(
+        result = pd.DataFrame(
             {
                 "attack_score": attack_scores,
                 "predicted_label": predicted_labels,
@@ -151,6 +206,43 @@ class IDSInferencer:
                 "threshold": self.config.threshold,
             }
         )
+        if self.family_model is None or self.family_feature_columns is None:
+            return result
+        family_frame = self._align_features(frame, self.family_feature_columns)
+        family_score_index = np.flatnonzero(alerts.to_numpy() if hasattr(alerts, "to_numpy") else np.asarray(alerts))
+        family_attack_family = [None] * len(frame)
+        family_attack_confidence = [None] * len(frame)
+        family_attack_margin = [None] * len(frame)
+        family_status = ["benign" if not is_alert else "unknown" for is_alert in alerts]
+        if family_score_index.size:
+            family_probabilities = np.asarray(self.family_model.predict_proba(family_frame.iloc[family_score_index]))
+            if family_probabilities.ndim != 2 or family_probabilities.shape[0] != family_score_index.size:
+                raise ValueError("Stage 2 family model returned an unexpected probability matrix shape")
+            top1_indices = np.argmax(family_probabilities, axis=1)
+            top1_confidence = family_probabilities[np.arange(family_score_index.size), top1_indices]
+            if family_probabilities.shape[1] > 1:
+                runner_up_confidence = np.partition(family_probabilities, -2, axis=1)[:, -2]
+            else:
+                runner_up_confidence = np.zeros(family_score_index.size, dtype=family_probabilities.dtype)
+            runner_up_margin = top1_confidence - runner_up_confidence
+            top1_threshold = self.config.family_top1_confidence_threshold
+            margin_threshold = self.config.family_runner_up_margin_threshold
+            if top1_threshold is None or margin_threshold is None:
+                raise ValueError("Composite family thresholds are missing from the runtime config")
+            if self.family_closed_set_labels is None:
+                raise ValueError("Composite family labels are missing from the runtime config")
+            known_mask = (top1_confidence >= top1_threshold) & (runner_up_margin >= margin_threshold)
+            for output_index, probability_index in enumerate(family_score_index):
+                family_attack_confidence[probability_index] = float(top1_confidence[output_index])
+                family_attack_margin[probability_index] = float(runner_up_margin[output_index])
+                if known_mask[output_index]:
+                    family_attack_family[probability_index] = self.family_closed_set_labels[top1_indices[output_index]]
+                    family_status[probability_index] = "known"
+        result["attack_family"] = family_attack_family
+        result["attack_family_confidence"] = family_attack_confidence
+        result["attack_family_margin"] = family_attack_margin
+        result["family_status"] = family_status
+        return result
 
     def predict(self, frame: pd.DataFrame, include_input: bool = True) -> pd.DataFrame:
         predictions = self.score_frame(frame)

@@ -15,6 +15,7 @@ from wrapper_smoke_support import (
 
 import ids.ops.model_bundle_manage as manage  # noqa: E402
 from ids.core.model_bundle import (  # noqa: E402
+    build_composite_inference_contract_metadata,
     build_feature_schema_metadata,
     build_inference_contract_metadata,
 )
@@ -52,6 +53,56 @@ def write_bundle(bundle_root: Path, *, bundle_name: str, threshold: float) -> Pa
                         positive_label="Attack",
                         negative_label="Benign",
                         threshold=threshold,
+                    ),
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    return bundle_root
+
+
+def write_composite_bundle(bundle_root: Path, *, bundle_name: str, threshold: float) -> Path:
+    bundle_root.mkdir(parents=True, exist_ok=True)
+    stage1_feature_columns_path = bundle_root / "stage1_feature_columns.json"
+    stage2_feature_columns_path = bundle_root / "stage2_feature_columns.json"
+    stage1_feature_columns_path.write_text(
+        json.dumps({"feature_columns": ["f1", "f2"]}),
+        encoding="utf-8",
+    )
+    stage2_feature_columns_path.write_text(
+        json.dumps({"feature_columns": ["f1", "f2", "f3"]}),
+        encoding="utf-8",
+    )
+    (bundle_root / "stage1_model.cbm").write_text("stage1", encoding="utf-8")
+    (bundle_root / "stage2_model.cbm").write_text("stage2", encoding="utf-8")
+    (bundle_root / "model_bundle.json").write_text(
+        json.dumps(
+            {
+                "manifest_version": 2,
+                "bundle_name": bundle_name,
+                "created_at": "2026-03-29T00:00:00+07:00",
+                "model_key": "catboost_full_data",
+                "model_family": "CatBoostClassifier",
+                "model_artifact": "stage1_model.cbm",
+                "feature_columns_file": "stage1_feature_columns.json",
+                "threshold": threshold,
+                "positive_label": "Attack",
+                "negative_label": "Benign",
+                "feature_count": 2,
+                "train_rows": 123,
+                "metrics_file": "metrics.json",
+                "training_summary_file": "training_summary.json",
+                "compatibility": {
+                    "feature_schema": build_feature_schema_metadata(stage1_feature_columns_path),
+                    "inference_contract": build_composite_inference_contract_metadata(
+                        positive_label="Attack",
+                        negative_label="Benign",
+                        threshold=threshold,
+                        stage2_model_artifact="stage2_model.cbm",
+                        stage2_feature_columns_path=stage2_feature_columns_path,
+                        top1_confidence_threshold=0.5589,
+                        runner_up_margin_threshold=0.3097,
                     ),
                 },
             }
@@ -175,6 +226,35 @@ def test_manage_verify_promote_status_and_rollback(
     assert rollback_record["verification_status"] == "verified"
     assert rollback_record["previous_bundle_root"] == str(bundle_b.resolve())
     assert rollback_record["previous_bundle_name"] == "bundle-b"
+
+
+def test_manage_verify_accepts_composite_bundle(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    activation_path = tmp_path / "active_bundle.json"
+    composite_bundle = write_composite_bundle(
+        tmp_path / "composite-bundle",
+        bundle_name="composite-bundle",
+        threshold=0.5,
+    )
+
+    verify_rc = manage.main(
+        [
+            "--activation-path",
+            str(activation_path),
+            "--json",
+            "verify",
+            "--bundle-root",
+            str(composite_bundle),
+        ]
+    )
+    verify_payload = json.loads(capsys.readouterr().out)
+
+    assert verify_rc == 0
+    assert verify_payload["compatible"] is True
+    assert verify_payload["bundle_name"] == "composite-bundle"
+    assert verify_payload["bundle_root"] == str(composite_bundle.resolve())
 
 
 def test_manage_rollback_fails_without_previous_known_good(
