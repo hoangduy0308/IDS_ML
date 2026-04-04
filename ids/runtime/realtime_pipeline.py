@@ -130,17 +130,25 @@ class RealtimePipelineRunner:
             predictions.to_dict(orient="records"),
             strict=True,
         ):
-            alert_events.append(
-                {
-                    "event_type": "model_prediction",
-                    "record_index": buffered.record_index,
-                    "passthrough": buffered.passthrough,
-                    "attack_score": float(prediction["attack_score"]),
-                    "predicted_label": str(prediction["predicted_label"]),
-                    "is_alert": bool(prediction["is_alert"]),
-                    "threshold": float(prediction["threshold"]),
-                }
-            )
+            event: dict[str, Any] = {
+                "event_type": "model_prediction",
+                "record_index": buffered.record_index,
+                "passthrough": buffered.passthrough,
+                "attack_score": float(prediction["attack_score"]),
+                "predicted_label": str(prediction["predicted_label"]),
+                "is_alert": bool(prediction["is_alert"]),
+                "threshold": float(prediction["threshold"]),
+            }
+            if "attack_family" in prediction:
+                event["attack_family"] = self._normalize_optional_text(prediction["attack_family"])
+                event["attack_family_confidence"] = self._normalize_optional_float(
+                    prediction["attack_family_confidence"]
+                )
+                event["attack_family_margin"] = self._normalize_optional_float(
+                    prediction["attack_family_margin"]
+                )
+                event["family_status"] = self._normalize_optional_text(prediction["family_status"])
+            alert_events.append(event)
         self._buffer = []
         self._buffer_started_at = None
         return alert_events
@@ -151,6 +159,22 @@ class RealtimePipelineRunner:
         event["event_type"] = "schema_anomaly"
         event["source_record"] = quarantine.source_record
         return event
+
+    @staticmethod
+    def _normalize_optional_float(value: Any) -> float | None:
+        if value is None:
+            return None
+        if pd.isna(value):
+            return None
+        return float(value)
+
+    @staticmethod
+    def _normalize_optional_text(value: Any) -> str | None:
+        if value is None:
+            return None
+        if pd.isna(value):
+            return None
+        return str(value)
 
 
 def read_jsonl_stream(stream: TextIO):

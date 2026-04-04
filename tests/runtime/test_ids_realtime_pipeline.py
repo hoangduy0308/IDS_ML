@@ -47,6 +47,45 @@ class DummyInferencer:
         )
 
 
+class CompositeDummyInferencer(DummyInferencer):
+    def predict(self, frame: pd.DataFrame, include_input: bool = True) -> pd.DataFrame:
+        scores = frame["Flow Duration"].astype(float) / 100.0
+        alerts = scores >= self.threshold
+        labels = ["Attack" if is_alert else "Benign" for is_alert in alerts]
+        attack_family: list[str | None] = []
+        attack_family_confidence: list[float | None] = []
+        attack_family_margin: list[float | None] = []
+        family_status: list[str] = []
+        for score, is_alert in zip(scores, alerts, strict=True):
+            if not is_alert:
+                attack_family.append(None)
+                attack_family_confidence.append(None)
+                attack_family_margin.append(None)
+                family_status.append("benign")
+            elif score >= 0.85:
+                attack_family.append("DDoS")
+                attack_family_confidence.append(0.92)
+                attack_family_margin.append(0.44)
+                family_status.append("known")
+            else:
+                attack_family.append(None)
+                attack_family_confidence.append(0.61)
+                attack_family_margin.append(0.12)
+                family_status.append("unknown")
+        return pd.DataFrame(
+            {
+                "attack_score": scores,
+                "predicted_label": labels,
+                "is_alert": alerts,
+                "threshold": self.threshold,
+                "attack_family": attack_family,
+                "attack_family_confidence": attack_family_confidence,
+                "attack_family_margin": attack_family_margin,
+                "family_status": family_status,
+            }
+        )
+
+
 class ConfiglessInferencer(DummyInferencer):
     def __init__(self, threshold: float = 0.5) -> None:
         super().__init__(threshold=threshold)
@@ -141,8 +180,75 @@ def test_run_pipeline_stream_file_mode_mixes_valid_invalid_and_final_drain(tmp_p
     assert [event["record_index"] for event in alerts] == [0, 2]
     assert alerts[0]["passthrough"] == {"trace_id": "a"}
     assert alerts[1]["is_alert"] is True
+    assert "attack_family" not in alerts[0]
+    assert "family_status" not in alerts[0]
     assert quarantines[0]["reason"] == "non_numeric_required_features"
     assert quarantines[0]["passthrough"] == {"trace_id": "b"}
+
+
+def test_run_pipeline_stream_file_mode_emits_family_enrichment_for_composite_bundle(
+    tmp_path: Path,
+) -> None:
+    input_path = tmp_path / "flows.jsonl"
+    input_path.write_text(
+        "\n".join(
+            [
+                json.dumps({"SrcPort": 10, "DstPort": 20, "Protocol": 6, "FlowDuration": 20, "trace_id": "a"}),
+                json.dumps({"SrcPort": 11, "DstPort": 21, "Protocol": 6, "FlowDuration": 70, "trace_id": "b"}),
+                json.dumps({"SrcPort": 12, "DstPort": 22, "Protocol": 6, "FlowDuration": 90, "trace_id": "c"}),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    alerts_path = tmp_path / "alerts.jsonl"
+    quarantine_path = tmp_path / "quarantine.jsonl"
+    runner = RealtimePipelineRunner(
+        contract=make_contract(),
+        inferencer=CompositeDummyInferencer(),
+        max_batch_size=3,
+        flush_interval_seconds=60.0,
+    )
+
+    with input_path.open("r", encoding="utf-8") as handle:
+        summary = run_pipeline_stream(
+            stream=handle,
+            input_mode="file",
+            alerts_output_path=alerts_path,
+            quarantine_output_path=quarantine_path,
+            runner=runner,
+        )
+
+    alerts = load_jsonl(alerts_path)
+    quarantines = load_jsonl(quarantine_path)
+
+    assert summary.input_mode == "file"
+    assert summary.total_records == 3
+    assert summary.valid_records == 3
+    assert summary.quarantined_records == 0
+    assert summary.alert_records == 2
+    assert summary.batch_flushes == 1
+    assert len(quarantines) == 0
+    assert [event["record_index"] for event in alerts] == [0, 1, 2]
+    assert [event["family_status"] for event in alerts] == ["benign", "unknown", "known"]
+    assert alerts[0]["attack_family"] is None
+    assert alerts[0]["attack_family_confidence"] is None
+    assert alerts[0]["attack_family_margin"] is None
+    assert alerts[1]["attack_family"] is None
+    assert alerts[1]["attack_family_confidence"] == pytest.approx(0.61)
+    assert alerts[1]["attack_family_margin"] == pytest.approx(0.12)
+    assert alerts[2]["attack_family"] == "DDoS"
+    assert alerts[2]["attack_family_confidence"] == pytest.approx(0.92)
+    assert alerts[2]["attack_family_margin"] == pytest.approx(0.44)
+    assert alerts[0]["attack_score"] == pytest.approx(0.2)
+    assert alerts[1]["attack_score"] == pytest.approx(0.7)
+    assert alerts[2]["attack_score"] == pytest.approx(0.9)
+    assert alerts[0]["predicted_label"] == "Benign"
+    assert alerts[1]["predicted_label"] == "Attack"
+    assert alerts[2]["predicted_label"] == "Attack"
+    assert alerts[0]["is_alert"] is False
+    assert alerts[1]["is_alert"] is True
+    assert alerts[2]["is_alert"] is True
 
 
 def test_runner_flushes_on_time_trigger_without_losing_valid_records() -> None:
