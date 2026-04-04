@@ -80,6 +80,16 @@ def _build_activation_component(config: LiveSensorHealthConfig) -> dict[str, Any
     }
 
 
+def _activation_contract_kind(activation_component: dict[str, Any]) -> str | None:
+    if not activation_component.get("ok"):
+        return None
+    payload = activation_component.get("payload")
+    if not isinstance(payload, dict):
+        return None
+    kind = str(payload.get("runtime_contract_kind", "")).strip()
+    return kind or None
+
+
 def _bundle_mismatch_detail(
     activation_payload: dict[str, Any],
     summary_event: dict[str, Any],
@@ -179,6 +189,7 @@ def build_live_sensor_health_payload(
 ) -> dict[str, Any]:
     observed_at = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     activation_component = _build_activation_component(config)
+    contract_kind = _activation_contract_kind(activation_component)
     runtime_evidence = _build_runtime_evidence_component(
         config,
         activation_component=activation_component,
@@ -193,6 +204,9 @@ def build_live_sensor_health_payload(
         "activation_path": str(config.activation_path),
         "summary_output_path": str(config.summary_output_path),
         "freshness_window_seconds": config.freshness_window_seconds,
+        "runtime_contract_kind": contract_kind,
+        "active_bundle_contract_kind": contract_kind,
+        "active_bundle_is_composite": contract_kind == "composite" if contract_kind is not None else None,
         "components": {
             "activation_contract": activation_component,
             "runtime_evidence": runtime_evidence,

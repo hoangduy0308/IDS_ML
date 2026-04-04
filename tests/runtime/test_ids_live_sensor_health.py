@@ -12,6 +12,7 @@ from ids.runtime.live_sensor_health import (  # noqa: E402
     build_live_sensor_health_payload,
 )
 from ids.core.model_bundle import (  # noqa: E402
+    build_composite_inference_contract_metadata,
     build_feature_schema_metadata,
     build_inference_contract_metadata,
 )
@@ -52,6 +53,56 @@ def write_bundle_contract(bundle_root: Path, *, bundle_name: str) -> Path:
                         positive_label="Attack",
                         negative_label="Benign",
                         threshold=0.5,
+                    ),
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    return bundle_root
+
+
+def write_composite_bundle_contract(bundle_root: Path, *, bundle_name: str) -> Path:
+    bundle_root.mkdir(parents=True, exist_ok=True)
+    stage1_feature_columns_path = bundle_root / "stage1_feature_columns.json"
+    stage2_feature_columns_path = bundle_root / "stage2_feature_columns.json"
+    stage1_feature_columns_path.write_text(
+        json.dumps({"feature_columns": ["f1", "f2"]}),
+        encoding="utf-8",
+    )
+    stage2_feature_columns_path.write_text(
+        json.dumps({"feature_columns": ["f1", "f2", "f3"]}),
+        encoding="utf-8",
+    )
+    (bundle_root / "stage1_model.cbm").write_text("stage1", encoding="utf-8")
+    (bundle_root / "stage2_model.cbm").write_text("stage2", encoding="utf-8")
+    (bundle_root / "model_bundle.json").write_text(
+        json.dumps(
+            {
+                "manifest_version": 2,
+                "bundle_name": bundle_name,
+                "created_at": "2026-03-29T00:00:00+00:00",
+                "model_key": "catboost_full_data",
+                "model_family": "CatBoostClassifier",
+                "model_artifact": "stage1_model.cbm",
+                "feature_columns_file": "stage1_feature_columns.json",
+                "threshold": 0.5,
+                "positive_label": "Attack",
+                "negative_label": "Benign",
+                "feature_count": 2,
+                "train_rows": 123,
+                "metrics_file": "metrics.json",
+                "training_summary_file": "training_summary.json",
+                "compatibility": {
+                    "feature_schema": build_feature_schema_metadata(stage1_feature_columns_path),
+                    "inference_contract": build_composite_inference_contract_metadata(
+                        positive_label="Attack",
+                        negative_label="Benign",
+                        threshold=0.5,
+                        stage2_model_artifact="stage2_model.cbm",
+                        stage2_feature_columns_path=stage2_feature_columns_path,
+                        top1_confidence_threshold=0.5589,
+                        runner_up_margin_threshold=0.3097,
                     ),
                 },
             }
@@ -142,12 +193,57 @@ def test_build_live_sensor_health_payload_reports_healthy_matching_evidence(tmp_
 
     assert payload["ready"] is True
     assert payload["status"] == "ok"
+    assert payload["runtime_contract_kind"] == "binary"
+    assert payload["active_bundle_contract_kind"] == "binary"
+    assert payload["active_bundle_is_composite"] is False
     assert payload["components"]["activation_contract"]["ok"] is True
     runtime_evidence = payload["components"]["runtime_evidence"]
     assert runtime_evidence["ok"] is True
     assert runtime_evidence["state"] == "current"
     assert runtime_evidence["age_seconds"] == 60.0
     assert runtime_evidence["latest_summary"]["active_bundle"]["active_bundle_name"] == "bundle-under-test"
+
+
+def test_build_live_sensor_health_payload_reports_healthy_composite_evidence(tmp_path: Path) -> None:
+    bundle_root = write_composite_bundle_contract(tmp_path / "composite-bundle", bundle_name="composite-bundle")
+    activation_path = tmp_path / "active_bundle.json"
+    write_activation_record(
+        activation_path,
+        build_activation_record_payload(
+            active_bundle_root=bundle_root,
+            active_bundle_name="composite-bundle",
+            activated_at="2026-03-29T03:00:00+00:00",
+        ),
+    )
+    summary_output_path = tmp_path / "ids_live_sensor_summary.jsonl"
+    append_summary_event(
+        summary_output_path,
+        activation_path=activation_path,
+        bundle_root=bundle_root,
+        bundle_name="composite-bundle",
+        timestamp="2026-03-29T03:01:00Z",
+    )
+    config = LiveSensorHealthConfig(
+        activation_path=activation_path,
+        summary_output_path=summary_output_path,
+    )
+
+    payload = build_live_sensor_health_payload(
+        config,
+        now=datetime(2026, 3, 29, 3, 2, 0, tzinfo=timezone.utc),
+    )
+
+    assert payload["ready"] is True
+    assert payload["status"] == "ok"
+    assert payload["runtime_contract_kind"] == "composite"
+    assert payload["active_bundle_contract_kind"] == "composite"
+    assert payload["active_bundle_is_composite"] is True
+    assert payload["components"]["activation_contract"]["payload"]["runtime_contract_kind"] == "composite"
+    assert payload["components"]["activation_contract"]["payload"]["is_composite_contract"] is True
+    runtime_evidence = payload["components"]["runtime_evidence"]
+    assert runtime_evidence["ok"] is True
+    assert runtime_evidence["state"] == "current"
+    assert runtime_evidence["latest_summary"]["active_bundle"]["active_bundle_name"] == "composite-bundle"
 
 
 def test_build_live_sensor_health_payload_rejects_empty_summary_file(tmp_path: Path) -> None:
