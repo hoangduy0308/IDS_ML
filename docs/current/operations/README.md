@@ -2,9 +2,10 @@
 
 Canonical same-host operations docs live here.
 
+- [linux_prerequisites.md](linux_prerequisites.md) — system packages required before installation
+- [deployment_quickstart.md](deployment_quickstart.md) — fastest path to deploy on a new Linux host
 - [ids_same_host_stack_operations.md](ids_same_host_stack_operations.md) — full stack operations guide
 - [e2e_demo_runbook.md](e2e_demo_runbook.md) — end-to-end demo walkthrough
-- [deployment_quickstart.md](deployment_quickstart.md) — fastest path to deploy on a new Linux host
 
 ## Release Safety
 

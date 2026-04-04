@@ -139,6 +139,23 @@ if [[ "${INSTALL_ROOT}" != "/opt/ids_ml_new" ]]; then
   exit 1
 fi
 
+# Verify Python binary exists and meets minimum version requirement (3.11+)
+if ! command -v "${PYTHON_BIN}" >/dev/null 2>&1; then
+  printf 'Python binary not found: %s\nPython 3.11+ is required.\n' "${PYTHON_BIN}" >&2
+  exit 1
+fi
+py_version=$("${PYTHON_BIN}" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null)
+if [[ -z "${py_version}" ]]; then
+  printf 'Could not determine Python version from %s.\nPython 3.11+ is required.\n' "${PYTHON_BIN}" >&2
+  exit 1
+fi
+py_major="${py_version%%.*}"
+py_minor="${py_version#*.}"
+if [[ "${py_major}" -lt 3 ]] || { [[ "${py_major}" -eq 3 ]] && [[ "${py_minor}" -lt 11 ]]; }; then
+  printf 'Python 3.11+ required, found %s (%s).\n' "${py_version}" "${PYTHON_BIN}" >&2
+  exit 1
+fi
+
 require_file() {
   local path=$1
   if [[ ! -f "$path" ]]; then

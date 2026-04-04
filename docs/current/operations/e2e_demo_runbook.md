@@ -10,12 +10,18 @@ This runbook collects the shortest commands needed to show the repo has the full
 - realtime pipeline
 - end-to-end adapter -> pipeline -> alert
 
-The commands below assume you are at the repo root `F:\Work\IDS_ML_New`.
+The commands below assume you are at the repo root (e.g. `F:\Work\IDS_ML_New` on Windows or `/opt/ids_ml_new` on Linux).
+
+> **Platform note:** Commands are shown in PowerShell (Windows development) and bash (Linux deployment) syntax.
 
 ## Preparation
 
 ```powershell
 python -m pip install -r requirements.txt
+```
+
+```bash
+python3.11 -m pip install -r requirements.txt
 ```
 
 For a quick smoke check before demoing:
@@ -24,14 +30,18 @@ For a quick smoke check before demoing:
 python -m pytest tests/runtime/test_ids_inference.py tests/runtime/test_ids_realtime_pipeline.py tests/runtime/test_ids_record_adapter.py -q
 ```
 
+```bash
+python3.11 -m pytest tests/runtime/test_ids_inference.py tests/runtime/test_ids_realtime_pipeline.py tests/runtime/test_ids_record_adapter.py -q
+```
+
 ## Demo 0: Offline closed-window extractor
 
 This demo shows the replacement extractor path directly.
 
 Golden output artifacts:
 
-- [artifacts/demo/flows/capture-00001_Flow.csv](F:/Work/IDS_ML_New/artifacts/demo/flows/capture-00001_Flow.csv)
-- [artifacts/demo/ids_offline_window_extractor_expected.csv](F:/Work/IDS_ML_New/artifacts/demo/ids_offline_window_extractor_expected.csv)
+- [artifacts/demo/flows/capture-00001_Flow.csv](../../../artifacts/demo/flows/capture-00001_Flow.csv)
+- [artifacts/demo/ids_offline_window_extractor_expected.csv](../../../artifacts/demo/ids_offline_window_extractor_expected.csv)
 
 Command:
 
@@ -39,6 +49,13 @@ Command:
 python -m scripts.ids_offline_window_extractor `
   <closed-window.pcap> `
   artifacts/demo/flows `
+  --profile-id cicflowmeter_primary_v1
+```
+
+```bash
+python3.11 -m scripts.ids_offline_window_extractor \
+  <closed-window.pcap> \
+  artifacts/demo/flows \
   --profile-id cicflowmeter_primary_v1
 ```
 
@@ -65,6 +82,14 @@ python -m scripts.ids_inference `
   --limit 10000
 ```
 
+```bash
+python3.11 -m scripts.ids_inference \
+  --bundle-root artifacts/final_model/catboost_full_data_v1 \
+  --input-path artifacts/cic_iot_diad_2024_binary/clean/test.parquet \
+  --output-path artifacts/demo/test_predictions_from_bundle.parquet \
+  --limit 10000
+```
+
 Expected result:
 
 - the command returns a JSON summary
@@ -81,7 +106,7 @@ Meaning:
 
 Fixture:
 
-- [artifacts/demo/ids_record_adapter_primary_sample.jsonl](F:/Work/IDS_ML_New/artifacts/demo/ids_record_adapter_primary_sample.jsonl)
+- [artifacts/demo/ids_record_adapter_primary_sample.jsonl](../../../artifacts/demo/ids_record_adapter_primary_sample.jsonl)
 
 Command:
 
@@ -90,6 +115,14 @@ python -m scripts.ids_record_adapter `
   --profile cicflowmeter_primary_v1 `
   --input-path artifacts/demo/ids_record_adapter_primary_sample.jsonl `
   --output-path artifacts/demo/ids_record_adapter_primary_adapted.jsonl `
+  --quarantine-output-path artifacts/demo/ids_record_adapter_primary_quarantine.jsonl
+```
+
+```bash
+python3.11 -m scripts.ids_record_adapter \
+  --profile cicflowmeter_primary_v1 \
+  --input-path artifacts/demo/ids_record_adapter_primary_sample.jsonl \
+  --output-path artifacts/demo/ids_record_adapter_primary_adapted.jsonl \
   --quarantine-output-path artifacts/demo/ids_record_adapter_primary_quarantine.jsonl
 ```
 
@@ -107,7 +140,7 @@ Meaning:
 
 Fixture:
 
-- [artifacts/demo/ids_realtime_pipeline_sample.jsonl](F:/Work/IDS_ML_New/artifacts/demo/ids_realtime_pipeline_sample.jsonl)
+- [artifacts/demo/ids_realtime_pipeline_sample.jsonl](../../../artifacts/demo/ids_realtime_pipeline_sample.jsonl)
 
 Command:
 
@@ -117,6 +150,15 @@ python -m scripts.ids_realtime_pipeline `
   --alerts-output-path artifacts/demo/ids_realtime_pipeline_alerts.jsonl `
   --quarantine-output-path artifacts/demo/ids_realtime_pipeline_quarantine.jsonl `
   --max-batch-size 2 `
+  --flush-interval-seconds 0.1
+```
+
+```bash
+python3.11 -m scripts.ids_realtime_pipeline \
+  --input-path artifacts/demo/ids_realtime_pipeline_sample.jsonl \
+  --alerts-output-path artifacts/demo/ids_realtime_pipeline_alerts.jsonl \
+  --quarantine-output-path artifacts/demo/ids_realtime_pipeline_quarantine.jsonl \
+  --max-batch-size 2 \
   --flush-interval-seconds 0.1
 ```
 
@@ -142,6 +184,14 @@ python -m scripts.ids_record_adapter `
   --quarantine-output-path artifacts/demo/e2e_adapter_quarantine.jsonl
 ```
 
+```bash
+python3.11 -m scripts.ids_record_adapter \
+  --profile cicflowmeter_primary_v1 \
+  --input-path artifacts/demo/ids_record_adapter_primary_sample.jsonl \
+  --output-path artifacts/demo/e2e_adapted.jsonl \
+  --quarantine-output-path artifacts/demo/e2e_adapter_quarantine.jsonl
+```
+
 Step 2:
 
 ```powershell
@@ -150,6 +200,15 @@ python -m scripts.ids_realtime_pipeline `
   --alerts-output-path artifacts/demo/e2e_alerts.jsonl `
   --quarantine-output-path artifacts/demo/e2e_runtime_quarantine.jsonl `
   --max-batch-size 8 `
+  --flush-interval-seconds 0.1
+```
+
+```bash
+python3.11 -m scripts.ids_realtime_pipeline \
+  --input-path artifacts/demo/e2e_adapted.jsonl \
+  --alerts-output-path artifacts/demo/e2e_alerts.jsonl \
+  --quarantine-output-path artifacts/demo/e2e_runtime_quarantine.jsonl \
+  --max-batch-size 8 \
   --flush-interval-seconds 0.1
 ```
 
@@ -173,6 +232,13 @@ Verify the bundle:
 python -m scripts.ids_model_bundle_manage `
   --activation-path artifacts/runtime/active_bundle.json `
   --json verify `
+  --bundle-root artifacts/final_model/catboost_full_data_v1
+```
+
+```bash
+python3.11 -m scripts.ids_model_bundle_manage \
+  --activation-path artifacts/runtime/active_bundle.json \
+  --json verify \
   --bundle-root artifacts/final_model/catboost_full_data_v1
 ```
 
