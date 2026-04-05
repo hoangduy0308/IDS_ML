@@ -124,7 +124,14 @@ C) End session and write HANDOFF.json
 ## Runtime Contract Lane
 
 - Feature: ids-multiclass-two-stage-runtime-contract
-- Local status: Phase 2 complete; Phase 3 validated and swarm starting
+- Local status: review complete after review-fix pass 1; compounding complete
+
+### Last Compounding Run (Runtime Contract Lane)
+
+- Feature: ids-multiclass-two-stage-runtime-contract
+- Date: 2026-04-05
+- Learnings file: history/learnings/20260405-composite-runtime-review-contracts.md
+- Critical promotions: 2
 - CONTEXT.md: history/ids-multiclass-two-stage-runtime-contract/CONTEXT.md
 - discovery.md: history/ids-multiclass-two-stage-runtime-contract/discovery.md
 - approach.md: history/ids-multiclass-two-stage-runtime-contract/approach.md
@@ -146,17 +153,22 @@ C) End session and write HANDOFF.json
 - Thread: ids_ml_new-d90e
 - Topic: epic-ids_ml_new-d90e
 - Swarm status: Phase 1 complete via commit cfb45f5; Phase 2 complete via commits 022486d, 452f1be, 1a21d97
-- Current phase: Phase 3 - Make Promotion And Rollback Operationally Safe
+- Current phase: Review Fix Pass 1
 - phase-2-contract.md: history/ids-multiclass-two-stage-runtime-contract/phase-2-contract.md
 - phase-2-story-map.md: history/ids-multiclass-two-stage-runtime-contract/phase-2-story-map.md
 - Phase 2 beads closed: ids_ml_new-d90e.4, ids_ml_new-d90e.5, ids_ml_new-d90e.6
 - phase-3-contract.md: history/ids-multiclass-two-stage-runtime-contract/phase-3-contract.md
 - phase-3-story-map.md: history/ids-multiclass-two-stage-runtime-contract/phase-3-story-map.md
-- Phase 3 beads: ids_ml_new-d90e.8, ids_ml_new-d90e.9, ids_ml_new-d90e.10
+- Phase 3 beads closed: ids_ml_new-d90e.8, ids_ml_new-d90e.9, ids_ml_new-d90e.10
 - Phase 3 spike: ids_ml_new-d90e.11 (CLOSED, YES)
-- HIGH-risk component in current phase: composite packaging flow
-- Proposed next skill: khuym:swarming
+- review-fix-1-contract.md: history/ids-multiclass-two-stage-runtime-contract/review-fix-1-contract.md
+- review-fix-1-story-map.md: history/ids-multiclass-two-stage-runtime-contract/review-fix-1-story-map.md
+- Review-fix beads: ids_ml_new-d90e.12 (CLOSED via 107f9e3), ids_ml_new-d90e.13 (CLOSED via 284d74c)
+- Follow-up review: clean rerun, 126 passed / 0 failed on the targeted suite
+- Learnings file: history/learnings/20260405-composite-runtime-review-contracts.md
+- Critical promotions: 2
+- Proposed next skill: none for this lane; feature complete
 
 ## Active Workers
 
-- RubyElk: claimed `ids_ml_new-d90e.8` for composite packaging
+- no active workers for this lane; runtime contract feature is complete

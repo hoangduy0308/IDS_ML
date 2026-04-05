@@ -212,3 +212,39 @@ The installer only set secure permissions when creating a new env file, leaving 
 The `DB > env fallback` Telegram config rule was implemented once in `resolve_telegram_config()` but reimplemented differently in the Settings page (parallel DB reads) and preflight (raw SQLite). Review found 6 of 9 P2 findings were config-drift recurrences. When a config interpretation rule is needed by more than one surface, implement it exactly once and have all consumers call that single function. Extend the return type if consumers need metadata rather than reimplementing the logic.
 
 **Full entry:** history/learnings/20260404-telegram-settings-deploy-hardening.md
+
+## [20260405] Fixture Install-Check Must Match Production Contract, Not pytest's Warm sys.path
+**Category:** failure
+**Feature:** fix-failing-tests-m1
+**Tags:** [testing, fixture, editable-install, sys-path, importlib-metadata]
+
+A fixture that gates on "is package X installed?" will silently take the wrong branch if its check reads metadata off `sys.path`. `conftest.py` that inserts `REPO_ROOT` into `sys.path` lets `importlib.metadata.distribution()` find stale `.egg-info` directories and return a live `Distribution` object even when the package is not in any `site-packages`. Production subprocesses spawned with `python -I` and scrubbed env do not share that view, so the fixture's pre-condition disagrees with production's definition of "installed" and the fix fails. The check must spawn its own isolated subprocess under the exact same contract (interpreter via `sys.executable`, `-I` isolation, `cwd` discipline, `PYTHON*` scrubbed env) that production uses. Use the same helper for both the pre-install gate and the post-install verification. Never use `importlib.metadata` or `pkg_resources` alone when `conftest.py` modifies `sys.path`.
+
+**Full entry:** history/learnings/20260405-m1-fixture-install-check-and-parallel-swarm.md
+
+## [20260405] Realtime Composite Contract Tests Must Exercise A Real Composite Inferencer
+**Category:** failure
+**Feature:** ids-multiclass-two-stage-runtime-contract
+**Tags:** [testing, runtime, composite-bundle, realtime, review]
+
+When a runtime path feeds a composite or multi-stage model, dummy inferencers are not enough to prove alignment safety. This feature initially passed review with a fake composite scorer even though realtime buffering had dropped stage-2-only columns and would fail under the real `IDSInferencer`. Future staged-runtime work should add at least one regression test that uses the real inferencer/config loader and a later-stage feature schema that is a strict superset of stage 1.
+
+**Full entry:** history/learnings/20260405-composite-runtime-review-contracts.md
+
+## [20260405] Manifest Safety Flags Must Assert Semantic Falsehood, Not Only Boolean Shape
+**Category:** failure
+**Feature:** ids-multiclass-two-stage-runtime-contract
+**Tags:** [validation, manifests, safety-flags, fail-closed, model-bundle]
+
+Boolean flags that are meant to ban unsafe override seams are not ordinary typed metadata. This feature's composite bundle validator originally checked only that the flags were booleans, which still allowed `true` to reopen forbidden runtime override paths. Future manifest validation must assert both type and exact allowed value for every safety flag, and tests should mutate each flag into its forbidden state to prove fail-closed behavior.
+
+**Full entry:** history/learnings/20260405-composite-runtime-review-contracts.md
+
+## [20260405] When You See An Unfamiliar Agent Identity On Your Bead, Assume Parallel Session First
+**Category:** failure
+**Feature:** fix-failing-tests-m1
+**Tags:** [agent-coordination, reservations, parallel-swarm, agent-mail, trust]
+
+When a swarm orchestrator sees an agent identity holding reservations or posting to a bead it did not spawn, the safe default is "legitimate peer worker from another parallel session" — not "ghost of my own worker". A shared `task_description` is evidence of shared **intent**, not shared **lineage**. Multiple concurrent Claude/Codex/other-runtime sessions can register independent identities in the same Agent Mail project, and nothing signals lineage. Force-releasing another agent's reservation without first pinging on thread violates AGENTS.md line 353-369 ("NEVER disturb the work of other agents"). Before force-releasing any reservation you did not create: run `whois` on the agent, ping on thread, wait at least one poll cycle, and only release if the agent is silent >15 minutes AND has no commits/mail activity. Matching `task_description` is the strongest evidence for parallel session, not for ghost identity.
+
+**Full entry:** history/learnings/20260405-m1-fixture-install-check-and-parallel-swarm.md
