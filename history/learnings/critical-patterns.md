@@ -248,3 +248,12 @@ Boolean flags that are meant to ban unsafe override seams are not ordinary typed
 When a swarm orchestrator sees an agent identity holding reservations or posting to a bead it did not spawn, the safe default is "legitimate peer worker from another parallel session" — not "ghost of my own worker". A shared `task_description` is evidence of shared **intent**, not shared **lineage**. Multiple concurrent Claude/Codex/other-runtime sessions can register independent identities in the same Agent Mail project, and nothing signals lineage. Force-releasing another agent's reservation without first pinging on thread violates AGENTS.md line 353-369 ("NEVER disturb the work of other agents"). Before force-releasing any reservation you did not create: run `whois` on the agent, ping on thread, wait at least one poll cycle, and only release if the agent is silent >15 minutes AND has no commits/mail activity. Matching `task_description` is the strongest evidence for parallel session, not for ghost identity.
 
 **Full entry:** history/learnings/20260405-m1-fixture-install-check-and-parallel-swarm.md
+
+## [20260405] Write The Full Visible State Matrix Before Stateful UI Execution
+**Category:** failure
+**Feature:** ids-multiclass-two-stage-operator-surfaces
+**Tags:** [testing, state-machine, review, ui-contract]
+
+This operator-surface lane looked complete after `known`, `unknown`, and legacy states were wired, but review-fix exposed that `benign` had never been pinned as a first-class visible state. That allowed semantically illegal family fields to leak through the shared helper until the review loop forced a full four-state contract. Future stateful UI work should write the full visible state matrix first and require at least one route-level regression case per semantic state before declaring the phase done.
+
+**Full entry:** history/learnings/20260405-operator-surface-family-contracts.md

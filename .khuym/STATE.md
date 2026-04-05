@@ -51,10 +51,10 @@ HANDOFF: complete
 
 ## Last Compounding Run
 
-- Feature: fix-failing-tests-m1
+- Feature: ids-multiclass-two-stage-operator-surfaces
 - Date: 2026-04-05
-- Learnings file: history/learnings/20260405-m1-fixture-install-check-and-parallel-swarm.md
-- Critical promotions: 2 (fixture install-check contract + parallel-session identity rule)
+- Learnings file: history/learnings/20260405-operator-surface-family-contracts.md
+- Critical promotions: 1 (full visible state matrix before stateful UI execution)
 
 ## M1 Lane — COMPLETE (BoldSpring session)
 
