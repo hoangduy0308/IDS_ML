@@ -119,9 +119,11 @@ class RealtimePipelineRunner:
     def flush_buffer(self) -> list[dict[str, Any]]:
         if not self._buffer:
             return []
+        # Preserve both the raw source record and the canonical stage-1 aligned
+        # fields so legacy binary scoring still finds its expected columns while
+        # composite bundles can see stage-2-only source fields.
         frame = pd.DataFrame(
-            [record.aligned_features for record in self._buffer],
-            columns=self.contract.feature_columns,
+            [{**record.source_record, **record.aligned_features} for record in self._buffer]
         )
         predictions = self.inferencer.predict(frame, include_input=False)
         alert_events: list[dict[str, Any]] = []

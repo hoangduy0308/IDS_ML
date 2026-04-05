@@ -9,6 +9,7 @@ import sys
 import threading
 import time
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -16,6 +17,11 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 from ids.core.feature_contract import FlowFeatureContract  # noqa: E402
+from ids.core.model_bundle import (  # noqa: E402
+    build_composite_inference_contract_metadata,
+    build_feature_schema_metadata,
+)
+from ids.runtime.inference import IDSInferencer, IDSModelConfig  # noqa: E402
 from ids.runtime.realtime_pipeline import (  # noqa: E402
     RealtimePipelineRunner,
     main,
@@ -47,43 +53,28 @@ class DummyInferencer:
         )
 
 
-class CompositeDummyInferencer(DummyInferencer):
-    def predict(self, frame: pd.DataFrame, include_input: bool = True) -> pd.DataFrame:
-        scores = frame["Flow Duration"].astype(float) / 100.0
-        alerts = scores >= self.threshold
-        labels = ["Attack" if is_alert else "Benign" for is_alert in alerts]
-        attack_family: list[str | None] = []
-        attack_family_confidence: list[float | None] = []
-        attack_family_margin: list[float | None] = []
-        family_status: list[str] = []
-        for score, is_alert in zip(scores, alerts, strict=True):
-            if not is_alert:
-                attack_family.append(None)
-                attack_family_confidence.append(None)
-                attack_family_margin.append(None)
-                family_status.append("benign")
-            elif score >= 0.85:
-                attack_family.append("DDoS")
-                attack_family_confidence.append(0.92)
-                attack_family_margin.append(0.44)
-                family_status.append("known")
-            else:
-                attack_family.append(None)
-                attack_family_confidence.append(0.61)
-                attack_family_margin.append(0.12)
-                family_status.append("unknown")
-        return pd.DataFrame(
-            {
-                "attack_score": scores,
-                "predicted_label": labels,
-                "is_alert": alerts,
-                "threshold": self.threshold,
-                "attack_family": attack_family,
-                "attack_family_confidence": attack_family_confidence,
-                "attack_family_margin": attack_family_margin,
-                "family_status": family_status,
-            }
-        )
+class RealtimeCompositeCatBoost:
+    def __init__(self) -> None:
+        self.loaded_path: Path | None = None
+
+    def load_model(self, path: Path) -> None:
+        self.loaded_path = Path(path)
+
+    def predict_proba(self, frame: pd.DataFrame) -> np.ndarray:
+        assert self.loaded_path is not None
+        if self.loaded_path.name == "stage1_model.cbm":
+            scores = frame["Flow Duration"].astype(float).to_numpy(dtype=np.float32) / 100.0
+            return np.column_stack([1.0 - scores, scores]).astype(np.float32)
+        if self.loaded_path.name == "stage2_model.cbm":
+            assert "Stage 2 Signal" in frame.columns
+            rows: list[list[float]] = []
+            for signal in frame["Stage 2 Signal"].astype(float).to_numpy(dtype=np.float32):
+                if signal >= 0.5:
+                    rows.append([0.62, 0.24, 0.14])
+                else:
+                    rows.append([0.52, 0.31, 0.17])
+            return np.asarray(rows, dtype=np.float32)
+        raise AssertionError(f"Unexpected model path: {self.loaded_path}")
 
 
 class ConfiglessInferencer(DummyInferencer):
@@ -122,6 +113,66 @@ def make_contract() -> FlowFeatureContract:
             "FlowDuration": "Flow Duration",
         },
     )
+
+
+def write_realtime_composite_bundle(bundle_root: Path) -> Path:
+    bundle_root.mkdir(parents=True, exist_ok=True)
+    stage1_feature_columns_path = bundle_root / "stage1_feature_columns.json"
+    stage2_feature_columns_path = bundle_root / "stage2_feature_columns.json"
+    stage1_feature_columns_path.write_text(
+        json.dumps({"feature_columns": ["Src Port", "Dst Port", "Protocol", "Flow Duration"]}),
+        encoding="utf-8",
+    )
+    stage2_feature_columns_path.write_text(
+        json.dumps(
+            {
+                "feature_columns": [
+                    "Src Port",
+                    "Dst Port",
+                    "Protocol",
+                    "Flow Duration",
+                    "Stage 2 Signal",
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    (bundle_root / "stage1_model.cbm").write_text("stage1", encoding="utf-8")
+    (bundle_root / "stage2_model.cbm").write_text("stage2", encoding="utf-8")
+    (bundle_root / "model_bundle.json").write_text(
+        json.dumps(
+            {
+                "manifest_version": 2,
+                "bundle_name": "realtime-composite-bundle",
+                "created_at": "2026-03-29T00:00:00+07:00",
+                "model_key": "catboost_full_data",
+                "model_family": "CatBoostClassifier",
+                "model_artifact": "stage1_model.cbm",
+                "feature_columns_file": "stage1_feature_columns.json",
+                "threshold": 0.5,
+                "positive_label": "Attack",
+                "negative_label": "Benign",
+                "feature_count": 4,
+                "train_rows": 123,
+                "metrics_file": "metrics.json",
+                "training_summary_file": "training_summary.json",
+                "compatibility": {
+                    "feature_schema": build_feature_schema_metadata(stage1_feature_columns_path),
+                    "inference_contract": build_composite_inference_contract_metadata(
+                        positive_label="Attack",
+                        negative_label="Benign",
+                        threshold=0.5,
+                        stage2_model_artifact="stage2_model.cbm",
+                        stage2_feature_columns_path=stage2_feature_columns_path,
+                        top1_confidence_threshold=0.55,
+                        runner_up_margin_threshold=0.30,
+                    ),
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    return bundle_root
 
 
 def load_jsonl(path: Path) -> list[dict[str, object]]:
@@ -188,14 +239,42 @@ def test_run_pipeline_stream_file_mode_mixes_valid_invalid_and_final_drain(tmp_p
 
 def test_run_pipeline_stream_file_mode_emits_family_enrichment_for_composite_bundle(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     input_path = tmp_path / "flows.jsonl"
     input_path.write_text(
         "\n".join(
             [
-                json.dumps({"SrcPort": 10, "DstPort": 20, "Protocol": 6, "FlowDuration": 20, "trace_id": "a"}),
-                json.dumps({"SrcPort": 11, "DstPort": 21, "Protocol": 6, "FlowDuration": 70, "trace_id": "b"}),
-                json.dumps({"SrcPort": 12, "DstPort": 22, "Protocol": 6, "FlowDuration": 90, "trace_id": "c"}),
+                json.dumps(
+                    {
+                        "SrcPort": 10,
+                        "DstPort": 20,
+                        "Protocol": 6,
+                        "FlowDuration": 20,
+                        "Stage 2 Signal": 0.1,
+                        "trace_id": "a",
+                    }
+                ),
+                json.dumps(
+                    {
+                        "SrcPort": 11,
+                        "DstPort": 21,
+                        "Protocol": 6,
+                        "FlowDuration": 70,
+                        "Stage 2 Signal": 0.2,
+                        "trace_id": "b",
+                    }
+                ),
+                json.dumps(
+                    {
+                        "SrcPort": 12,
+                        "DstPort": 22,
+                        "Protocol": 6,
+                        "FlowDuration": 90,
+                        "Stage 2 Signal": 1.0,
+                        "trace_id": "c",
+                    }
+                ),
             ]
         )
         + "\n",
@@ -203,9 +282,12 @@ def test_run_pipeline_stream_file_mode_emits_family_enrichment_for_composite_bun
     )
     alerts_path = tmp_path / "alerts.jsonl"
     quarantine_path = tmp_path / "quarantine.jsonl"
+    bundle_root = write_realtime_composite_bundle(tmp_path / "bundle")
+    monkeypatch.setattr("ids.runtime.inference.CatBoostClassifier", RealtimeCompositeCatBoost)
+    inferencer = IDSInferencer(IDSModelConfig.from_bundle(bundle_root))
     runner = RealtimePipelineRunner(
         contract=make_contract(),
-        inferencer=CompositeDummyInferencer(),
+        inferencer=inferencer,
         max_batch_size=3,
         flush_interval_seconds=60.0,
     )
@@ -235,11 +317,11 @@ def test_run_pipeline_stream_file_mode_emits_family_enrichment_for_composite_bun
     assert alerts[0]["attack_family_confidence"] is None
     assert alerts[0]["attack_family_margin"] is None
     assert alerts[1]["attack_family"] is None
-    assert alerts[1]["attack_family_confidence"] == pytest.approx(0.61)
-    assert alerts[1]["attack_family_margin"] == pytest.approx(0.12)
+    assert alerts[1]["attack_family_confidence"] == pytest.approx(0.52)
+    assert alerts[1]["attack_family_margin"] == pytest.approx(0.21)
     assert alerts[2]["attack_family"] == "DDoS"
-    assert alerts[2]["attack_family_confidence"] == pytest.approx(0.92)
-    assert alerts[2]["attack_family_margin"] == pytest.approx(0.44)
+    assert alerts[2]["attack_family_confidence"] == pytest.approx(0.62)
+    assert alerts[2]["attack_family_margin"] == pytest.approx(0.38)
     assert alerts[0]["attack_score"] == pytest.approx(0.2)
     assert alerts[1]["attack_score"] == pytest.approx(0.7)
     assert alerts[2]["attack_score"] == pytest.approx(0.9)
