@@ -93,6 +93,77 @@ def _build_alerts_test_app(tmp_path: Path) -> tuple[TestClient, int, int]:
     return client, attack_id, ack_id
 
 
+def _build_family_detail_test_app(tmp_path: Path) -> tuple[TestClient, int, int, int]:
+    """Build test client with known/unknown/legacy family-state alerts."""
+    env = {
+        "IDS_OPERATOR_CONSOLE_ENVIRONMENT": "development",
+        "IDS_OPERATOR_CONSOLE_SECRET_KEY": "family-detail-test-secret",
+        "IDS_OPERATOR_CONSOLE_DATABASE_PATH": str(tmp_path / "operator_console_family.db"),
+        "IDS_OPERATOR_CONSOLE_TEMPLATES_DIR": str(REPO_ROOT / "ids/console/templates"),
+        "IDS_OPERATOR_CONSOLE_STATIC_DIR": str(REPO_ROOT / "ids/console/static"),
+    }
+    config = load_operator_console_config(environ=env, repo_root=REPO_ROOT)
+    migrate_operator_store(config.database_path, allow_bootstrap=True)
+    store = open_existing_operator_store(config.database_path)
+    known_id: int = -1
+    unknown_id: int = -1
+    legacy_id: int = -1
+    try:
+        ensure_admin_user(store, username="admin", password="secret")
+
+        known_id = store.upsert_alert(
+            source_event_id="alerts-web-known-003",
+            event_ts="2026-03-30T10:00:00+00:00",
+            severity="high",
+            src_ip="10.20.0.3",
+            dst_ip="192.168.1.30",
+            src_port=3333,
+            dst_port=443,
+            protocol="tcp",
+            fingerprint="fp-known-003",
+            payload={
+                "family_status": "known",
+                "attack_family": "mirai",
+                "attack_family_confidence": 0.97,
+                "attack_family_margin": 0.42,
+            },
+        )
+        unknown_id = store.upsert_alert(
+            source_event_id="alerts-web-unknown-004",
+            event_ts="2026-03-30T11:00:00+00:00",
+            severity="high",
+            src_ip="10.20.0.4",
+            dst_ip="192.168.1.31",
+            src_port=4444,
+            dst_port=443,
+            protocol="tcp",
+            fingerprint="fp-unknown-004",
+            payload={
+                "family_status": "unknown",
+                "attack_family_confidence": 0.49,
+                "attack_family_margin": 0.01,
+            },
+        )
+        legacy_id = store.upsert_alert(
+            source_event_id="alerts-web-legacy-005",
+            event_ts="2026-03-30T12:00:00+00:00",
+            severity="medium",
+            src_ip="10.20.0.5",
+            dst_ip="192.168.1.32",
+            src_port=5555,
+            dst_port=443,
+            protocol="tcp",
+            fingerprint="fp-legacy-005",
+            payload={"score": 0.82},
+        )
+    finally:
+        store.close()
+
+    app = create_operator_console_web_app(config)
+    client = TestClient(app, base_url="http://testserver")
+    return client, known_id, unknown_id, legacy_id
+
+
 def _login(client: TestClient) -> None:
     response = client.post(
         "/login",
@@ -288,6 +359,48 @@ def test_alert_detail_returns_404_for_unknown_id(tmp_path: Path) -> None:
     _login(client)
     response = client.get("/alerts/99999")
     assert response.status_code == 404
+
+
+def test_alert_detail_known_family_explanation(tmp_path: Path) -> None:
+    client, known_id, _, _ = _build_family_detail_test_app(tmp_path)
+    _login(client)
+    response = client.get(f"/alerts/{known_id}")
+    assert response.status_code == 200
+    body = response.text
+    assert "Family Signal" in body
+    assert "known family" in body.lower()
+    assert "mirai" in body.lower()
+    assert "97.0%" in body
+
+
+def test_alert_detail_unknown_family_explanation(tmp_path: Path) -> None:
+    client, _, unknown_id, _ = _build_family_detail_test_app(tmp_path)
+    _login(client)
+    response = client.get(f"/alerts/{unknown_id}")
+    assert response.status_code == 200
+    body = response.text
+    assert "unknown family" in body.lower()
+    assert "binary stage still classified this event as an attack" in body.lower()
+
+
+def test_alert_detail_legacy_family_fallback(tmp_path: Path) -> None:
+    client, _, _, legacy_id = _build_family_detail_test_app(tmp_path)
+    _login(client)
+    response = client.get(f"/alerts/{legacy_id}")
+    assert response.status_code == 200
+    body = response.text
+    assert "family unavailable" in body.lower()
+    assert "predates family enrichment rollout" in body.lower()
+
+
+def test_alert_detail_family_block_keeps_triage_and_notes_controls(tmp_path: Path) -> None:
+    client, known_id, _, _ = _build_family_detail_test_app(tmp_path)
+    _login(client)
+    response = client.get(f"/alerts/{known_id}")
+    assert response.status_code == 200
+    body = response.text
+    assert f"/alerts/{known_id}/status" in body
+    assert f"/alerts/{known_id}/notes" in body
 
 
 # ── POST /alerts/{id}/notes ───────────────────────────────────────────────────

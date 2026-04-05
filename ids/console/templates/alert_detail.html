@@ -138,6 +138,77 @@
   {# ── Right: Status history + Triage form ──────────────────────────────── #}
   <div style="width:300px;flex-shrink:0;display:flex;flex-direction:column;gap:16px">
 
+    {# Family explanation block for two-stage attack-family enrichment #}
+    {% set family_state = family.get("family_state") or "legacy_unavailable" %}
+    <div class="card">
+      <div class="card__header">
+        <div class="card__title">Family Signal</div>
+      </div>
+      {% if family_state == "known" %}
+      <div style="margin-bottom:10px">
+        <span class="badge badge--success">known family</span>
+      </div>
+      <div class="grid grid-cols-1 gap-3" style="margin-bottom:10px">
+        <div>
+          <div class="form-label">Family label</div>
+          <div style="font-family:var(--font-primary);font-size:13px;margin-top:4px">{{ family.get("attack_family") or "—" }}</div>
+        </div>
+        <div>
+          <div class="form-label">Confidence</div>
+          <div style="font-family:var(--font-primary);font-size:13px;margin-top:4px">
+            {% if family.get("attack_family_confidence") is not none %}
+              {{ "%.1f"|format(family.get("attack_family_confidence") * 100.0) }}%
+            {% else %}
+              —
+            {% endif %}
+          </div>
+        </div>
+        <div>
+          <div class="form-label">Margin</div>
+          <div style="font-family:var(--font-primary);font-size:13px;margin-top:4px">
+            {% if family.get("attack_family_margin") is not none %}
+              {{ "%.3f"|format(family.get("attack_family_margin")) }}
+            {% else %}
+              —
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      <div style="font-size:12px;color:var(--muted-foreground);line-height:1.5">
+        Stage 2 confidently assigned this attack to a known family.
+      </div>
+      {% elif family_state == "unknown" %}
+      <div style="margin-bottom:10px">
+        <span class="badge badge--warning">unknown family</span>
+      </div>
+      <div style="font-size:12px;color:var(--muted-foreground);line-height:1.5">
+        The binary stage still classified this event as an attack, but stage 2 did not confidently match a known family.
+      </div>
+      {% if family.get("attack_family_confidence") is not none %}
+      <div style="margin-top:10px">
+        <div class="form-label">Confidence</div>
+        <div style="font-family:var(--font-primary);font-size:13px;margin-top:4px">
+          {{ "%.1f"|format(family.get("attack_family_confidence") * 100.0) }}%
+        </div>
+      </div>
+      {% endif %}
+      {% elif family_state == "benign" %}
+      <div style="margin-bottom:10px">
+        <span class="badge badge--muted">benign</span>
+      </div>
+      <div style="font-size:12px;color:var(--muted-foreground);line-height:1.5">
+        Benign alerts do not carry an attack-family label.
+      </div>
+      {% else %}
+      <div style="margin-bottom:10px">
+        <span class="badge badge--muted">family unavailable</span>
+      </div>
+      <div style="font-size:12px;color:var(--muted-foreground);line-height:1.5">
+        This alert predates family enrichment rollout; no family metadata was captured for this record.
+      </div>
+      {% endif %}
+    </div>
+
     {# Current triage status #}
     <div class="card">
       <div class="card__header">

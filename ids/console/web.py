@@ -339,6 +339,7 @@ def create_operator_console_web_app(
             request,
             "alert_detail.html",
             alert=alert,
+            family=alert.get("family", {}),
             notes=timeline["notes"],
             status_history=timeline["status_history"],
         )
