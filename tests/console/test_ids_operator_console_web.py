@@ -312,6 +312,21 @@ def test_alert_detail_route_pins_known_unknown_benign_legacy_family_contract(tmp
     assert "predates family enrichment rollout" in legacy.text.lower()
 
 
+def test_alerts_queue_renders_compact_family_signal_column(tmp_path: Path) -> None:
+    """Queue rows must show a compact family signal column without expanding into a report."""
+    client, alert_ids = _build_family_contract_test_app(tmp_path)
+    _login(client)
+
+    response = client.get("/alerts")
+    assert response.status_code == 200
+    body = response.text
+    assert "Family Signal" in body
+    assert "known family" in body.lower()
+    assert "mirai" in body.lower()
+    assert "no attack-family label" in body.lower()
+    assert f"/alerts/{alert_ids['known']}" in body
+
+
 def test_production_login_sets_secure_session_cookie(tmp_path: Path) -> None:
     client, _, _ = _build_test_app(tmp_path, environment="production")
     response = client.post(

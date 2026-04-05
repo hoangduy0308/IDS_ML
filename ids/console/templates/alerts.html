@@ -44,12 +44,15 @@
           <th>Dst IP</th>
           <th>Protocol</th>
           <th>Status</th>
+          <th style="width:180px">Family Signal</th>
           <th>Time</th>
         </tr>
       </thead>
       <tbody>
         {% for alert in alerts %}
         {% set is_suppressed = alert.get("suppressed", False) %}
+        {% set family = alert.get("family", {}) or {} %}
+        {% set family_state = family.get("family_state") or "legacy_unavailable" %}
         <tr style="{% if is_suppressed %}opacity:0.55{% endif %}">
           {# Severity dot indicator #}
           <td style="padding:10px 8px 10px 12px">
@@ -103,6 +106,26 @@
             {% else %}
               <span class="badge badge--muted">{{ ts }}</span>
             {% endif %}
+          </td>
+
+          <td style="min-width:180px;vertical-align:top">
+            <div style="display:flex;flex-direction:column;gap:4px;line-height:1.1">
+              {% if family_state == "known" %}
+                <span class="badge badge--success" style="align-self:flex-start">known family</span>
+                <div style="font-family:var(--font-primary);font-size:12px;font-weight:600">
+                  {{ family.get("attack_family") or "—" }}
+                </div>
+              {% elif family_state == "unknown" %}
+                <span class="badge badge--warning" style="align-self:flex-start">unknown</span>
+                <div style="font-family:var(--font-primary);font-size:12px;color:var(--muted-foreground)">—</div>
+              {% elif family_state == "legacy_unavailable" %}
+                <span class="badge badge--muted" style="align-self:flex-start">unavailable</span>
+                <div style="font-family:var(--font-primary);font-size:12px;color:var(--muted-foreground)">—</div>
+              {% else %}
+                <span class="badge badge--muted" style="align-self:flex-start">benign</span>
+                <div style="font-family:var(--font-primary);font-size:12px;color:var(--muted-foreground)">no attack-family label</div>
+              {% endif %}
+            </div>
           </td>
 
           <td style="color:var(--muted-foreground)">{{ (alert.event_ts or "")[:19] | replace("T", " ") }}</td>
