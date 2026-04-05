@@ -1,108 +1,234 @@
 from __future__ import annotations
 
 import json
+import tempfile
+from argparse import Namespace
 from pathlib import Path
 
 import pandas as pd
 
-from ml_pipeline.data_prep.prepare_iot_diad_family_views import run_pipeline
+import pytest
+
+from ml_pipeline.data_prep.prepare_iot_diad_family_views import (
+    assert_safe_output_root,
+    run_pipeline,
+)
 from wrapper_smoke_support import assert_help_smoke, run_python_module_help
 
 
 FEATURE_COLUMNS = ["f1", "f2"]
+METADATA_COLUMNS = [
+    "source_file",
+    "attack_family",
+    "attack_scenario",
+    "derived_label_binary",
+    "derived_label_family",
+    "split",
+]
 
 
-def _frame(rows: list[tuple[float, float, str, str, str]]) -> pd.DataFrame:
-    return pd.DataFrame(
-        rows,
-        columns=[
-            "f1",
-            "f2",
-            "derived_label_binary",
-            "derived_label_family",
-            "split",
-        ],
-    ).assign(attack_family=lambda frame: frame["derived_label_family"], attack_scenario=lambda frame: frame["derived_label_family"])
+def _write_parquet(path: Path, records: list[dict[str, object]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame.from_records(records).to_parquet(path, index=False)
 
 
-def _build_binary_artifact_root(root: Path) -> Path:
-    clean_dir = root / "clean"
-    manifests_dir = root / "manifests"
+def _make_record(
+    *,
+    source_file: str,
+    attack_family: str,
+    attack_scenario: str,
+    derived_label_binary: str,
+    derived_label_family: str,
+    split: str,
+    base: float,
+) -> dict[str, object]:
+    return {
+        "f1": base,
+        "f2": base + 0.5,
+        "source_file": source_file,
+        "attack_family": attack_family,
+        "attack_scenario": attack_scenario,
+        "derived_label_binary": derived_label_binary,
+        "derived_label_family": derived_label_family,
+        "split": split,
+    }
+
+
+def _build_source_root(source_root: Path) -> Path:
+    clean_dir = source_root / "clean"
+    manifests_dir = source_root / "manifests"
     clean_dir.mkdir(parents=True, exist_ok=True)
     manifests_dir.mkdir(parents=True, exist_ok=True)
 
-    train = _frame(
+    _write_parquet(
+        clean_dir / "train.parquet",
         [
-            (0.0, 0.1, "Benign", "Benign", "train"),
-            (0.1, 0.2, "Attack", "DDoS", "train"),
-            (0.2, 0.3, "Attack", "Mirai", "train"),
-        ]
+            _make_record(
+                source_file="Benign/benign.csv",
+                attack_family="Benign",
+                attack_scenario="Benign",
+                derived_label_binary="Benign",
+                derived_label_family="Benign",
+                split="train",
+                base=0.0,
+            ),
+            _make_record(
+                source_file="DoS/dos.csv",
+                attack_family="DoS",
+                attack_scenario="DoS",
+                derived_label_binary="Attack",
+                derived_label_family="DoS",
+                split="train",
+                base=1.0,
+            ),
+            _make_record(
+                source_file="Mirai/mirai.csv",
+                attack_family="Mirai",
+                attack_scenario="Mirai",
+                derived_label_binary="Attack",
+                derived_label_family="Mirai",
+                split="train",
+                base=2.0,
+            ),
+        ],
     )
-    val = _frame(
+    _write_parquet(
+        clean_dir / "val.parquet",
         [
-            (0.3, 0.4, "Benign", "Benign", "val"),
-            (0.4, 0.5, "Attack", "DoS", "val"),
-        ]
+            _make_record(
+                source_file="Benign/benign_val.csv",
+                attack_family="Benign",
+                attack_scenario="Benign",
+                derived_label_binary="Benign",
+                derived_label_family="Benign",
+                split="val",
+                base=3.0,
+            ),
+            _make_record(
+                source_file="Spoofing/spoof.csv",
+                attack_family="Spoofing",
+                attack_scenario="Spoofing",
+                derived_label_binary="Attack",
+                derived_label_family="Spoofing",
+                split="val",
+                base=4.0,
+            ),
+        ],
     )
-    test = _frame(
+    _write_parquet(
+        clean_dir / "test.parquet",
         [
-            (0.5, 0.6, "Benign", "Benign", "test"),
-            (0.6, 0.7, "Attack", "Spoofing", "test"),
-        ]
+            _make_record(
+                source_file="Benign/benign_test.csv",
+                attack_family="Benign",
+                attack_scenario="Benign",
+                derived_label_binary="Benign",
+                derived_label_family="Benign",
+                split="test",
+                base=5.0,
+            ),
+            _make_record(
+                source_file="Web-Based/web.csv",
+                attack_family="Web-Based",
+                attack_scenario="Web-Based",
+                derived_label_binary="Attack",
+                derived_label_family="Web-Based",
+                split="test",
+                base=6.0,
+            ),
+        ],
     )
-    ood = _frame(
+    _write_parquet(
+        clean_dir / "ood_attack_holdout.parquet",
         [
-            (0.7, 0.8, "Attack", "BruteForce", "ood_attack_holdout"),
-            (0.8, 0.9, "Attack", "Recon", "ood_attack_holdout"),
-        ]
+            _make_record(
+                source_file="BruteForce/brute.csv",
+                attack_family="BruteForce",
+                attack_scenario="BruteForce",
+                derived_label_binary="Attack",
+                derived_label_family="BruteForce",
+                split="ood_attack_holdout",
+                base=7.0,
+            ),
+            _make_record(
+                source_file="Recon/recon.csv",
+                attack_family="Recon",
+                attack_scenario="Recon",
+                derived_label_binary="Attack",
+                derived_label_family="Recon",
+                split="ood_attack_holdout",
+                base=8.0,
+            ),
+        ],
     )
-
-    train.to_parquet(clean_dir / "train.parquet", index=False)
-    val.to_parquet(clean_dir / "val.parquet", index=False)
-    test.to_parquet(clean_dir / "test.parquet", index=False)
-    ood.to_parquet(clean_dir / "ood_attack_holdout.parquet", index=False)
-
     (manifests_dir / "feature_columns.json").write_text(
         json.dumps({"feature_columns": FEATURE_COLUMNS}),
         encoding="utf-8",
     )
     (manifests_dir / "cleaning_report.json").write_text(
-        json.dumps({"label_distribution_by_split": {}}),
+        json.dumps(
+            {
+                "label_distribution_by_split": {
+                    "train": {"Benign": 1, "Attack": 2},
+                    "val": {"Benign": 1, "Attack": 1},
+                    "test": {"Benign": 1, "Attack": 1},
+                    "ood_attack_holdout": {"Attack": 2},
+                },
+                "ood_families": ["BruteForce", "Recon"],
+            }
+        ),
         encoding="utf-8",
     )
-    return root
+    (manifests_dir / "file_manifest.csv").write_text(
+        "source_file,attack_family,attack_scenario,split\n"
+        "Benign/benign.csv,Benign,Benign,train\n"
+        "DoS/dos.csv,DoS,DoS,train\n"
+        "Mirai/mirai.csv,Mirai,Mirai,train\n"
+        "Benign/benign_val.csv,Benign,Benign,val\n"
+        "Spoofing/spoof.csv,Spoofing,Spoofing,val\n"
+        "Benign/benign_test.csv,Benign,Benign,test\n"
+        "Web-Based/web.csv,Web-Based,Web-Based,test\n"
+        "BruteForce/brute.csv,BruteForce,BruteForce,ood_attack_holdout\n"
+        "Recon/recon.csv,Recon,Recon,ood_attack_holdout\n",
+        encoding="utf-8",
+    )
+    return source_root
 
 
-def test_prepare_iot_diad_family_views_derives_distinct_views(tmp_path: Path) -> None:
-    source_root = _build_binary_artifact_root(tmp_path / "binary")
-    output_root = tmp_path / "family_views"
+def test_prepare_iot_diad_family_views_derives_attack_only_and_multiclass_views(tmp_path: Path) -> None:
+    source_root = _build_source_root(tmp_path / "source")
+    output_root = tmp_path / "derived"
 
-    summary = run_pipeline(source_root=source_root, output_root=output_root, batch_size=2)
+    run_pipeline(
+        Namespace(
+            source_root=source_root,
+            output_root=output_root,
+        )
+    )
 
-    index_path = output_root / "manifests" / "family_view_index.json"
-    index = json.loads(index_path.read_text(encoding="utf-8"))
+    index = json.loads((output_root / "manifests" / "family_view_index.json").read_text(encoding="utf-8"))
+    assert index["feature_schema_path"] == "manifests/feature_columns.json"
+    assert index["views"]["attack_only"]["split_paths"]["train"] == "attack_only/clean/train.parquet"
+    assert index["views"]["direct_multiclass"]["split_paths"]["train"] == "direct_multiclass/clean/train.parquet"
+    assert index["views"]["attack_only"]["label_space"] == ["DDoS", "DoS", "Mirai", "Spoofing", "Web-Based"]
+    assert index["views"]["direct_multiclass"]["label_space"] == [
+        "Benign",
+        "DDoS",
+        "DoS",
+        "Mirai",
+        "Spoofing",
+        "Web-Based",
+    ]
 
-    assert summary["family_view_index"] == str(index_path.resolve())
-    assert index["views"]["attack_only_family"]["includes_benign"] is False
-    assert index["views"]["direct_multiclass"]["includes_benign"] is True
-    assert index["views"]["attack_only_family"]["closed_set_labels"] == ["DDoS", "DoS", "Mirai", "Spoofing", "Web-Based"]
-    assert index["views"]["direct_multiclass"]["closed_set_labels"][0] == "Benign"
-    assert index["ood_probe_families"] == ["BruteForce", "Recon"]
+    attack_train = pd.read_parquet(output_root / "attack_only" / "clean" / "train.parquet")
+    direct_train = pd.read_parquet(output_root / "direct_multiclass" / "clean" / "train.parquet")
+    ood_holdout = pd.read_parquet(output_root / "attack_only" / "clean" / "ood_attack_holdout.parquet")
 
-    attack_only_train = pd.read_parquet(output_root / "clean" / "attack_only_family" / "train.parquet")
-    direct_train = pd.read_parquet(output_root / "clean" / "direct_multiclass" / "train.parquet")
-    ood_attack_only = pd.read_parquet(output_root / "clean" / "attack_only_family" / "ood_attack_holdout.parquet")
-
-    assert list(attack_only_train["derived_label_family"]) == ["DDoS", "Mirai"]
-    assert list(direct_train["derived_label_family"]) == ["Benign", "DDoS", "Mirai"]
-    assert set(ood_attack_only["derived_label_family"]) == {"BruteForce", "Recon"}
-
-    attack_counts = json.loads((output_root / "reports" / "attack_only_family_counts.json").read_text(encoding="utf-8"))
-    direct_counts = json.loads((output_root / "reports" / "direct_multiclass_counts.json").read_text(encoding="utf-8"))
-
-    assert attack_counts["split_summaries"]["train"]["written_label_counts"] == {"DDoS": 1, "Mirai": 1}
-    assert direct_counts["split_summaries"]["train"]["written_label_counts"] == {"Benign": 1, "DDoS": 1, "Mirai": 1}
-    assert attack_counts["split_summaries"]["ood_attack_holdout"]["written_label_counts"] == {"BruteForce": 1, "Recon": 1}
+    assert set(attack_train["derived_label_family"]) == {"DoS", "Mirai"}
+    assert "Benign" not in set(attack_train["derived_label_family"])
+    assert set(direct_train["derived_label_family"]) == {"Benign", "DoS", "Mirai"}
+    assert set(ood_holdout["derived_label_family"]) == {"BruteForce", "Recon"}
+    assert index["views"]["attack_only"]["split_semantics"]["ood_attack_holdout"].startswith("Rows from source ood_attack_holdout")
 
 
 def test_prepare_iot_diad_family_views_help_smoke() -> None:
@@ -110,3 +236,42 @@ def test_prepare_iot_diad_family_views_help_smoke() -> None:
     assert_help_smoke(completed, "scripts.prepare_iot_diad_family_views")
     assert completed.stdout.strip()
     assert "usage:" in completed.stdout.lower()
+
+
+def test_prepare_iot_diad_family_views_rejects_unexpected_known_split_label(tmp_path: Path) -> None:
+    source_root = _build_source_root(tmp_path / "source")
+    output_root = tmp_path / "derived"
+    train_path = source_root / "clean" / "train.parquet"
+    train_frame = pd.read_parquet(train_path)
+    injected = _make_record(
+        source_file="Recon/recon-train.csv",
+        attack_family="Recon",
+        attack_scenario="Recon",
+        derived_label_binary="Attack",
+        derived_label_family="Recon",
+        split="train",
+        base=9.0,
+    )
+    pd.concat([train_frame, pd.DataFrame([injected])], ignore_index=True).to_parquet(train_path, index=False)
+
+    with pytest.raises(ValueError, match="unexpected labels"):
+        run_pipeline(Namespace(source_root=source_root, output_root=output_root))
+
+
+def test_prepare_iot_diad_family_views_fails_when_split_filters_to_empty(tmp_path: Path) -> None:
+    source_root = _build_source_root(tmp_path / "source")
+    output_root = tmp_path / "derived"
+    train_path = source_root / "clean" / "train.parquet"
+    train_frame = pd.read_parquet(train_path)
+    benign_only = train_frame[train_frame["derived_label_family"] == "Benign"].copy()
+    benign_only.to_parquet(train_path, index=False)
+
+    with pytest.raises(ValueError, match="produced no rows for split train"):
+        run_pipeline(Namespace(source_root=source_root, output_root=output_root))
+
+
+def test_prepare_iot_diad_family_views_rejects_unsafe_output_root() -> None:
+    unsafe_root = Path(tempfile.gettempdir()).resolve()
+
+    with pytest.raises(ValueError, match="Refusing to operate on approved root directly"):
+        assert_safe_output_root(unsafe_root)

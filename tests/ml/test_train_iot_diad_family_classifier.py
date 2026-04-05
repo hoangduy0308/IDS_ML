@@ -5,6 +5,7 @@ from argparse import Namespace
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from ml_pipeline.data_prep.prepare_iot_diad_family_views import run_pipeline
 from ml_pipeline.training import train_iot_diad_family_classifier as train_family
@@ -162,6 +163,96 @@ def test_train_iot_diad_family_classifier_writes_oracle_report(tmp_path: Path) -
     assert "runner_up_margin" in report["signal_profiles"]["val"]
     assert report["oracle_evaluation"]["test"]["rows"] > 0
     assert set(report["oracle_evaluation"]["test"]["per_family"]) == {"DDoS", "DoS", "Mirai", "Spoofing", "Web-Based"}
+    assert report["unknown_signal_evidence"]["ood_attack_holdout"]["rows"] == 2
+    assert set(report["unknown_signal_evidence"]["ood_attack_holdout"]["by_true_family"]) == {"BruteForce", "Recon"}
+    assert (
+        report["unknown_signal_evidence"]["ood_attack_holdout"]["top1_confidence"]["mean"]
+        < report["signal_profiles"]["test"]["top1_confidence"]["mean"]
+    )
+    assert (
+        report["unknown_signal_evidence"]["ood_attack_holdout"]["runner_up_margin"]["mean"]
+        < report["signal_profiles"]["test"]["runner_up_margin"]["mean"]
+    )
+
+
+def test_sample_train_split_preserves_all_present_known_labels(tmp_path: Path) -> None:
+    source_root = _build_source_root(tmp_path / "source")
+    derived_root = tmp_path / "family_views"
+    run_pipeline(Namespace(source_root=source_root, output_root=derived_root))
+
+    index = train_family.load_family_view_index(derived_root)
+    feature_columns = train_family.load_feature_columns(derived_root, index)
+    label_index = train_family.build_label_index(["DDoS", "DoS", "Mirai", "Spoofing", "Web-Based"])
+    train_split_path = train_family.resolve_view_split_path(derived_root, index, "attack_only", "train")
+
+    X_train, y_train, summary = train_family.sample_train_split(
+        train_split_path,
+        feature_columns,
+        label_index,
+        seed=7,
+        max_rows=5,
+        batch_size=16,
+    )
+
+    assert len(X_train) == 5
+    assert set(y_train.tolist()) == {0, 1, 2, 3, 4}
+    assert set(summary["source_label_presence"]) == {"0", "1", "2", "3", "4"}
+
+
+def test_train_iot_diad_family_classifier_rejects_absolute_feature_schema_path(tmp_path: Path) -> None:
+    source_root = _build_source_root(tmp_path / "source")
+    derived_root = tmp_path / "family_views"
+    run_pipeline(Namespace(source_root=source_root, output_root=derived_root))
+
+    index_path = derived_root / "manifests" / "family_view_index.json"
+    index = json.loads(index_path.read_text(encoding="utf-8"))
+    index["feature_schema_path"] = str((tmp_path / "outside_feature_columns.json").resolve())
+    index_path.write_text(json.dumps(index, indent=2), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="relative to dataset_root"):
+        train_family.run_training(
+            Namespace(
+                dataset_root=derived_root,
+                output_root=tmp_path / "modeling",
+                view_name="attack_only",
+                seed=7,
+                batch_size=16,
+                max_train_rows=64,
+                iterations=20,
+                learning_rate=0.2,
+                depth=4,
+                l2_leaf_reg=1.0,
+                thread_count=1,
+            )
+        )
+
+
+def test_train_iot_diad_family_classifier_rejects_parent_escape_split_path(tmp_path: Path) -> None:
+    source_root = _build_source_root(tmp_path / "source")
+    derived_root = tmp_path / "family_views"
+    run_pipeline(Namespace(source_root=source_root, output_root=derived_root))
+
+    index_path = derived_root / "manifests" / "family_view_index.json"
+    index = json.loads(index_path.read_text(encoding="utf-8"))
+    index["views"]["attack_only"]["split_paths"]["train"] = r"..\outside\train.parquet"
+    index_path.write_text(json.dumps(index, indent=2), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="must not escape dataset_root"):
+        train_family.run_training(
+            Namespace(
+                dataset_root=derived_root,
+                output_root=tmp_path / "modeling",
+                view_name="attack_only",
+                seed=7,
+                batch_size=16,
+                max_train_rows=64,
+                iterations=20,
+                learning_rate=0.2,
+                depth=4,
+                l2_leaf_reg=1.0,
+                thread_count=1,
+            )
+        )
 
 
 def test_train_iot_diad_family_classifier_help_smoke() -> None:

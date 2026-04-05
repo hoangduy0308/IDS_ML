@@ -172,3 +172,17 @@ C) End session and write HANDOFF.json
 ## Active Workers
 
 - none
+
+## Classification Lane
+
+- Feature: ids-multiclass-two-stage-classification
+- Local status: Phase 1 review follow-up beads resolved clean
+- Epic: ids_ml_new-3rc7 (OPEN as umbrella for future operator-facing work)
+- Closed follow-up beads: ids_ml_new-a84m, ids_ml_new-6kqe, ids_ml_new-1ikf, ids_ml_new-6azv, ids_ml_new-j3ga, ids_ml_new-qv7c, ids_ml_new-c6x9
+- Current outcome: no remaining actionable task/bug beads under the multiclass lane; only the umbrella epic remains open for later phases
+- Verification: `pytest tests/ml -q` -> 52 passed, 4 warnings
+- Current checkpoint files:
+  - history/ids-multiclass-two-stage-classification/phase-1-acceptance-summary.md
+  - artifacts/modeling/cic_iot_diad_2024_family_views/family_classifier/reports/oracle_family_eval.json
+  - artifacts/modeling/cic_iot_diad_2024_family_views/direct_multiclass/reports/direct_multiclass_eval.json
+- Proposed next skill if the user resumes this lane: khuym:exploring for the operator-facing phase, or direct implementation planning if that scope is already locked

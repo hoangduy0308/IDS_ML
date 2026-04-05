@@ -25,6 +25,9 @@ DEFAULT_ITERATIONS = 300
 DEFAULT_LEARNING_RATE = 0.06
 DEFAULT_DEPTH = 8
 DEFAULT_L2_LEAF_REG = 3.0
+DEFAULT_CLASS_WEIGHT_EXPONENT = 1.0
+DEFAULT_TASK_TYPE = "CPU"
+DEFAULT_DEVICES = ""
 
 
 @dataclass(frozen=True)
@@ -51,7 +54,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--learning-rate", type=float, default=DEFAULT_LEARNING_RATE)
     parser.add_argument("--depth", type=int, default=DEFAULT_DEPTH)
     parser.add_argument("--l2-leaf-reg", type=float, default=DEFAULT_L2_LEAF_REG)
+    parser.add_argument("--class-weight-exponent", type=float, default=DEFAULT_CLASS_WEIGHT_EXPONENT)
     parser.add_argument("--thread-count", type=int, default=1)
+    parser.add_argument("--task-type", choices=("CPU", "GPU"), default=DEFAULT_TASK_TYPE)
+    parser.add_argument("--devices", type=str, default=DEFAULT_DEVICES)
     return parser.parse_args()
 
 
@@ -68,14 +74,43 @@ def write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
+def _is_relative_to(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
+def _normalize_dataset_candidate(candidate: str | Path) -> Path:
+    candidate_path = Path(candidate)
+    if candidate_path.is_absolute():
+        raise ValueError(f"Dataset index path must be relative to dataset_root, got absolute path: {candidate}")
+
+    parts = [part for part in candidate_path.parts if part not in ("", ".")]
+    if not parts:
+        raise ValueError("Dataset index path must not be empty.")
+    if any(part == ".." for part in parts):
+        raise ValueError(f"Dataset index path must not escape dataset_root: {candidate}")
+    return Path(*parts)
+
+
 def resolve_dataset_file(dataset_root: Path, *candidates: str) -> Path:
-    searched = [str(dataset_root / candidate) for candidate in candidates]
-    for candidate in candidates:
-        path = dataset_root / candidate
+    dataset_root = dataset_root.resolve()
+    normalized_candidates = [_normalize_dataset_candidate(candidate) for candidate in candidates]
+    searched = [str(dataset_root / candidate) for candidate in normalized_candidates]
+    for candidate in normalized_candidates:
+        path = (dataset_root / candidate).resolve()
+        if not _is_relative_to(path, dataset_root):
+            raise ValueError(f"Resolved dataset path escapes dataset_root: {candidate}")
         if path.exists():
             return path
-    candidate_names = {Path(candidate).name for candidate in candidates}
-    recursive_hits = [path for path in dataset_root.rglob("*") if path.is_file() and path.name in candidate_names]
+    candidate_names = {candidate.name for candidate in normalized_candidates}
+    recursive_hits = [
+        path.resolve()
+        for path in dataset_root.rglob("*")
+        if path.is_file() and path.name in candidate_names and _is_relative_to(path.resolve(), dataset_root)
+    ]
     if recursive_hits:
         recursive_hits.sort(key=lambda path: (len(path.parts), str(path)))
         return recursive_hits[0]
@@ -143,16 +178,42 @@ def sample_train_split(
 
     frames: list[pd.DataFrame] = []
     labels: list[np.ndarray] = []
+    mandatory_feature_rows: dict[int, pd.DataFrame] = {}
+    source_label_presence: Counter[int] = Counter()
     for batch in parquet_file.iter_batches(batch_size=batch_size, columns=feature_columns + [DEFAULT_LABEL_COLUMN]):
         frame = batch.to_pandas()
-        if keep_probability < 1.0:
-            frame = frame.loc[rng.random(len(frame)) < keep_probability]
-        if frame.empty:
+        mapped_labels = frame[DEFAULT_LABEL_COLUMN].astype(str).map(label_index)
+        valid_mask = mapped_labels.notna()
+        if not valid_mask.any():
             continue
-        frames.append(frame[feature_columns].astype(np.float32).copy())
-        labels.append(frame[DEFAULT_LABEL_COLUMN].astype(str).map(label_index).to_numpy(dtype=np.int8))
 
-    if not frames:
+        valid_indices = frame.index[valid_mask]
+        valid_labels = mapped_labels.loc[valid_indices].astype(np.int16)
+        source_label_presence.update(int(value) for value in valid_labels.tolist())
+
+        mandatory_indices: list[int] = []
+        for row_index, label_value in zip(valid_indices.tolist(), valid_labels.tolist()):
+            label_key = int(label_value)
+            if label_key not in mandatory_feature_rows:
+                mandatory_feature_rows[label_key] = frame.loc[[row_index], feature_columns].astype(np.float32).copy()
+                mandatory_indices.append(row_index)
+
+        sampled_frame = frame.loc[valid_indices].drop(index=mandatory_indices, errors="ignore")
+        sampled_labels = mapped_labels.loc[sampled_frame.index]
+        if keep_probability < 1.0 and not sampled_frame.empty:
+            sampled_frame = sampled_frame.loc[rng.random(len(sampled_frame)) < keep_probability]
+            sampled_labels = sampled_labels.loc[sampled_frame.index]
+        if sampled_frame.empty:
+            continue
+
+        frames.append(sampled_frame[feature_columns].astype(np.float32).copy())
+        labels.append(sampled_labels.to_numpy(dtype=np.int8))
+
+    mandatory_items = sorted(mandatory_feature_rows.items())
+    mandatory_frames = [frame for _, frame in mandatory_items]
+    mandatory_labels = np.asarray([label for label, _ in mandatory_items], dtype=np.int8)
+
+    if not frames and not mandatory_frames:
         return pd.DataFrame(columns=feature_columns), np.array([], dtype=np.int8), {
             "source_rows": total_rows,
             "sampled_rows": 0,
@@ -160,12 +221,26 @@ def sample_train_split(
             "label_counts": {},
         }
 
-    X = pd.concat(frames, ignore_index=True)
-    y = np.concatenate(labels)
+    sampled_frames = mandatory_frames + frames
+    sampled_label_parts = ([mandatory_labels] if mandatory_labels.size else []) + labels
+    X = pd.concat(sampled_frames, ignore_index=True)
+    y = np.concatenate(sampled_label_parts)
     if len(X) > max_rows:
-        sampled_idx = rng.choice(len(X), size=max_rows, replace=False)
-        X = X.iloc[sampled_idx].reset_index(drop=True)
-        y = y[sampled_idx]
+        mandatory_count = int(mandatory_labels.size)
+        if mandatory_count >= max_rows:
+            X = X.iloc[:max_rows].reset_index(drop=True)
+            y = y[:max_rows]
+        else:
+            remaining = len(X) - mandatory_count
+            selected_tail = rng.choice(remaining, size=max_rows - mandatory_count, replace=False)
+            sampled_idx = np.concatenate(
+                [
+                    np.arange(mandatory_count, dtype=np.int32),
+                    mandatory_count + np.sort(selected_tail.astype(np.int32)),
+                ]
+            )
+            X = X.iloc[sampled_idx].reset_index(drop=True)
+            y = y[sampled_idx]
 
     label_counts = Counter(int(value) for value in y.tolist())
     sampled_rows = int(len(X))
@@ -174,6 +249,7 @@ def sample_train_split(
         "sampled_rows": sampled_rows,
         "sample_rate": float(sampled_rows / max(1, total_rows)),
         "label_counts": {str(index): int(count) for index, count in sorted(label_counts.items())},
+        "source_label_presence": {str(index): int(count) for index, count in sorted(source_label_presence.items())},
     }
 
 
@@ -181,30 +257,44 @@ def train_model(
     X_train: pd.DataFrame,
     y_train: np.ndarray,
     *,
+    classes_count: int,
     seed: int,
     iterations: int,
     learning_rate: float,
     depth: int,
     l2_leaf_reg: float,
+    class_weight_exponent: float,
     thread_count: int,
+    task_type: str,
+    devices: str,
 ) -> CatBoostClassifier:
-    class_counts = np.bincount(y_train, minlength=int(y_train.max() + 1) if y_train.size else 0)
+    class_counts = np.bincount(y_train, minlength=int(classes_count))
     if class_counts.size == 0:
         raise ValueError("Training split is empty.")
     max_count = max(1, int(class_counts.max()))
-    class_weights = [float(max_count / max(1, int(count))) for count in class_counts]
+    class_weights = [
+        float((max_count / max(1, int(count))) ** float(class_weight_exponent))
+        for count in class_counts
+    ]
+    model_kwargs: dict[str, Any] = {
+        "iterations": iterations,
+        "learning_rate": learning_rate,
+        "depth": depth,
+        "loss_function": "MultiClass",
+        "eval_metric": "MultiClass",
+        "random_seed": seed,
+        "verbose": False,
+        "allow_writing_files": False,
+        "class_weights": class_weights,
+        "l2_leaf_reg": l2_leaf_reg,
+        "thread_count": thread_count,
+        "task_type": task_type,
+        "classes_count": int(classes_count),
+    }
+    if task_type == "GPU" and devices.strip():
+        model_kwargs["devices"] = devices.strip()
     model = CatBoostClassifier(
-        iterations=iterations,
-        learning_rate=learning_rate,
-        depth=depth,
-        loss_function="MultiClass",
-        eval_metric="MultiClass",
-        random_seed=seed,
-        verbose=False,
-        allow_writing_files=False,
-        class_weights=class_weights,
-        l2_leaf_reg=l2_leaf_reg,
-        thread_count=thread_count,
+        **model_kwargs,
     )
     model.fit(X_train, y_train)
     return model
@@ -374,6 +464,9 @@ def run_training(args: argparse.Namespace) -> dict[str, Any]:
     dataset_root = args.dataset_root.resolve()
     output_root = args.output_root.resolve()
     models_dir, reports_dir = ensure_output_dirs(output_root)
+    task_type = str(getattr(args, "task_type", DEFAULT_TASK_TYPE))
+    devices = str(getattr(args, "devices", DEFAULT_DEVICES))
+    class_weight_exponent = float(getattr(args, "class_weight_exponent", DEFAULT_CLASS_WEIGHT_EXPONENT))
 
     index = load_family_view_index(dataset_root)
     feature_columns = load_feature_columns(dataset_root, index)
@@ -399,17 +492,29 @@ def run_training(args: argparse.Namespace) -> dict[str, Any]:
     if X_train.empty:
         raise ValueError(f"No training rows found in {train_split_path}")
 
+    max_sampled_count = max((int(v) for v in train_summary["label_counts"].values()), default=1)
+    reported_class_weights = {
+        class_name: float(
+            (max_sampled_count / max(1, int(train_summary["label_counts"].get(str(index), 0)))) ** class_weight_exponent
+        )
+        for index, class_name in enumerate(class_names)
+    }
+
     log("Training CatBoost family classifier")
     train_start = time.perf_counter()
     model = train_model(
         X_train,
         y_train,
+        classes_count=len(class_names),
         seed=args.seed,
         iterations=args.iterations,
         learning_rate=args.learning_rate,
         depth=args.depth,
         l2_leaf_reg=args.l2_leaf_reg,
+        class_weight_exponent=class_weight_exponent,
         thread_count=args.thread_count,
+        task_type=task_type,
+        devices=devices,
     )
     train_seconds = time.perf_counter() - train_start
 
@@ -448,20 +553,17 @@ def run_training(args: argparse.Namespace) -> dict[str, Any]:
                 "sampled_rows": int(train_summary["sampled_rows"]),
                 "sample_rate": float(train_summary["sample_rate"]),
                 "label_counts": train_summary["label_counts"],
-                "class_weights": {
-                    class_name: float(
-                        max(1, max((int(v) for v in train_summary["label_counts"].values()), default=1))
-                        / max(1, int(train_summary["label_counts"].get(str(index), 0)))
-                    )
-                    for index, class_name in enumerate(class_names)
-                },
+                "class_weights": reported_class_weights,
             },
             "catboost_params": {
                 "iterations": int(args.iterations),
                 "learning_rate": float(args.learning_rate),
                 "depth": int(args.depth),
                 "l2_leaf_reg": float(args.l2_leaf_reg),
+                "class_weight_exponent": float(class_weight_exponent),
                 "thread_count": int(args.thread_count),
+                "task_type": task_type,
+                "devices": devices,
             },
         },
         "oracle_evaluation": {

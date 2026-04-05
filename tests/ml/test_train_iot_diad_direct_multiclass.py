@@ -4,14 +4,10 @@ import json
 from argparse import Namespace
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
-from catboost import CatBoostClassifier
 
-from ids.core.model_bundle import build_feature_schema_metadata, build_inference_contract_metadata, write_json
 from ml_pipeline.data_prep.prepare_iot_diad_family_views import run_pipeline
-from ml_pipeline.training import evaluate_iot_diad_two_stage_gated as gated_eval
-from ml_pipeline.training import train_iot_diad_family_classifier as train_family
+from ml_pipeline.training import train_iot_diad_direct_multiclass as train_direct
 from wrapper_smoke_support import assert_help_smoke, run_python_module_help
 
 
@@ -87,8 +83,8 @@ def _build_source_root(source_root: Path) -> Path:
     _write_parquet(
         clean_dir / "ood_attack_holdout.parquet",
         [
-            _make_record(source_file="BruteForce/bf0.csv", attack_family="BruteForce", attack_scenario="BruteForce", derived_label_binary="Attack", derived_label_family="BruteForce", split="ood_attack_holdout", base=0.3),
-            _make_record(source_file="Recon/r0.csv", attack_family="Recon", attack_scenario="Recon", derived_label_binary="Attack", derived_label_family="Recon", split="ood_attack_holdout", base=0.4),
+            _make_record(source_file="BruteForce/bf0.csv", attack_family="BruteForce", attack_scenario="BruteForce", derived_label_binary="Attack", derived_label_family="BruteForce", split="ood_attack_holdout", base=7.0),
+            _make_record(source_file="Recon/r0.csv", attack_family="Recon", attack_scenario="Recon", derived_label_binary="Attack", derived_label_family="Recon", split="ood_attack_holdout", base=8.0),
         ],
     )
     (manifests_dir / "feature_columns.json").write_text(json.dumps({"feature_columns": FEATURE_COLUMNS}), encoding="utf-8")
@@ -96,9 +92,9 @@ def _build_source_root(source_root: Path) -> Path:
         json.dumps(
             {
                 "label_distribution_by_split": {
-                    "train": {"Benign": 1, "Attack": 5},
-                    "val": {"Benign": 1, "Attack": 5},
-                    "test": {"Benign": 1, "Attack": 5},
+                    "train": {"Benign": 1, "Attack": 2},
+                    "val": {"Benign": 1, "Attack": 1},
+                    "test": {"Benign": 1, "Attack": 1},
                     "ood_attack_holdout": {"Attack": 2},
                 },
                 "ood_families": ["BruteForce", "Recon"],
@@ -133,69 +129,17 @@ def _build_source_root(source_root: Path) -> Path:
     return source_root
 
 
-def _build_binary_bundle(bundle_root: Path, source_root: Path, *, seed: int = 11) -> Path:
-    bundle_root.mkdir(parents=True, exist_ok=True)
-    feature_columns_path = bundle_root / "feature_columns.json"
-    feature_columns_path.write_text(json.dumps({"feature_columns": FEATURE_COLUMNS}), encoding="utf-8")
-
-    train_frame = pd.read_parquet(source_root / "clean" / "train.parquet")
-    X = train_frame[FEATURE_COLUMNS].astype(np.float32)
-    y = (train_frame["derived_label_binary"].astype(str) == "Attack").astype(np.int8).to_numpy()
-
-    model = CatBoostClassifier(
-        iterations=20,
-        depth=4,
-        learning_rate=0.2,
-        loss_function="Logloss",
-        eval_metric="AUC",
-        random_seed=seed,
-        verbose=False,
-        allow_writing_files=False,
-        thread_count=1,
-    )
-    model.fit(X, y)
-    model_path = bundle_root / "model.cbm"
-    model.save_model(model_path)
-
-    manifest = {
-        "manifest_version": 2,
-        "bundle_name": "synthetic_binary",
-        "created_at": "2026-04-05T00:00:00+07:00",
-        "model_key": "synthetic_binary",
-        "model_family": "CatBoostClassifier",
-        "model_artifact": "model.cbm",
-        "feature_columns_file": "feature_columns.json",
-        "threshold": 0.5,
-        "positive_label": "Attack",
-        "negative_label": "Benign",
-        "feature_count": len(FEATURE_COLUMNS),
-        "train_rows": int(len(X)),
-        "metrics_file": "metrics.json",
-        "training_summary_file": "training_summary.json",
-        "compatibility": {
-            "feature_schema": build_feature_schema_metadata(feature_columns_path),
-            "inference_contract": build_inference_contract_metadata(positive_label="Attack", negative_label="Benign", threshold=0.5),
-        },
-        "source_artifacts": {
-            "model_path": str(model_path),
-            "feature_columns_path": str(feature_columns_path),
-        },
-    }
-    write_json(bundle_root / "model_bundle.json", manifest)
-    return bundle_root / "model_bundle.json"
-
-
-def test_evaluate_iot_diad_two_stage_gated_writes_report(tmp_path: Path) -> None:
+def test_train_iot_diad_direct_multiclass_writes_comparison_report(tmp_path: Path) -> None:
     source_root = _build_source_root(tmp_path / "source")
     derived_root = tmp_path / "family_views"
     run_pipeline(Namespace(source_root=source_root, output_root=derived_root))
 
-    family_output_root = tmp_path / "family_modeling"
-    train_family.run_training(
+    output_root = tmp_path / "modeling"
+    train_direct.run_training(
         Namespace(
             dataset_root=derived_root,
-            output_root=family_output_root,
-            view_name="attack_only",
+            output_root=output_root,
+            view_name="direct_multiclass",
             seed=7,
             batch_size=16,
             max_train_rows=64,
@@ -207,43 +151,29 @@ def test_evaluate_iot_diad_two_stage_gated_writes_report(tmp_path: Path) -> None
         )
     )
 
-    binary_bundle_path = _build_binary_bundle(tmp_path / "binary_bundle", source_root)
-    gated_output_root = tmp_path / "gated_modeling"
-
-    gated_eval.run_evaluation(
-        Namespace(
-            dataset_root=derived_root,
-            oracle_report=family_output_root / "reports" / "oracle_family_eval.json",
-            binary_bundle=binary_bundle_path,
-            output_root=gated_output_root,
-            view_name="attack_only",
-            batch_size=16,
-        )
+    report_path = output_root / "reports" / "direct_multiclass_eval.json"
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["model"]["kind"] == "CatBoostClassifier"
+    assert "artifact_path" in report["model"]
+    assert "direct_multiclass_evaluation" in report
+    assert "comparison_summary" in report
+    assert report["source_contract"]["label_space"][0] == "Benign"
+    assert report["direct_multiclass_evaluation"]["test"]["rows"] > 0
+    assert "top1_confidence" in report["direct_multiclass_evaluation"]["test"]
+    assert "runner_up_margin" in report["direct_multiclass_evaluation"]["test"]
+    assert set(report["direct_multiclass_evaluation"]["test"]["per_family"]) == {"Benign", "DDoS", "DoS", "Mirai", "Spoofing", "Web-Based"}
+    assert report["comparison_summary"]["test"]["rows"] == report["direct_multiclass_evaluation"]["test"]["rows"]
+    assert report["comparison_summary"]["test"]["accuracy"] >= 0.0
+    assert report["comparison_summary"]["test"]["macro_f1"] >= 0.0
+    assert report["comparison_summary"]["test"]["weighted_f1"] >= report["comparison_summary"]["test"]["macro_f1"]
+    assert report["comparison_summary"]["ood_attack_holdout"]["rows"] == 2
+    assert report["comparison_summary"]["ood_attack_holdout"]["predicted_family_counts"]
+    assert set(report["comparison_summary"]["ood_attack_holdout"]["predicted_family_counts"]).issubset(
+        {"Benign", "DDoS", "DoS", "Mirai", "Spoofing", "Web-Based"}
     )
 
-    report_path = gated_output_root / "reports" / "gated_family_eval.json"
-    report = json.loads(report_path.read_text(encoding="utf-8"))
-    assert report["oracle_reference"]["val"]["rows"] > 0
-    assert report["gated_evaluation"]["test"]["stage1_alert_rows"] >= 0
-    assert report["gated_evaluation"]["test"]["stage2_scored_rows"] <= report["gated_evaluation"]["test"]["stage1_alert_rows"]
-    assert "BruteForce" in report["gated_evaluation"]["ood_attack_holdout"]["by_true_family"]
-    assert "Recon" in report["gated_evaluation"]["ood_attack_holdout"]["by_true_family"]
-    brute_force = report["gated_evaluation"]["ood_attack_holdout"]["by_true_family"]["BruteForce"]
-    recon = report["gated_evaluation"]["ood_attack_holdout"]["by_true_family"]["Recon"]
-    assert brute_force["stage2_scored_rows"] <= brute_force["stage1_alert_rows"]
-    assert recon["stage2_scored_rows"] <= recon["stage1_alert_rows"]
-    assert brute_force["zero_pass_through"] == (brute_force["stage1_alert_rows"] == 0)
-    assert recon["zero_pass_through"] == (recon["stage1_alert_rows"] == 0)
-    assert brute_force["zero_pass_through"] or recon["zero_pass_through"]
-    if brute_force["stage2_scored_rows"] > 0:
-        assert brute_force["predicted_family_counts"]
-        assert brute_force["top1_confidence"]["mean"] < report["gated_evaluation"]["test"]["top1_confidence"]["mean"]
-    if recon["stage2_scored_rows"] > 0:
-        assert recon["predicted_family_counts"]
-        assert recon["top1_confidence"]["mean"] < report["gated_evaluation"]["test"]["top1_confidence"]["mean"]
 
-
-def test_evaluate_iot_diad_two_stage_gated_help_smoke() -> None:
-    completed = run_python_module_help("scripts.evaluate_iot_diad_two_stage_gated")
-    assert_help_smoke(completed, "scripts.evaluate_iot_diad_two_stage_gated")
+def test_train_iot_diad_direct_multiclass_help_smoke() -> None:
+    completed = run_python_module_help("scripts.train_iot_diad_direct_multiclass")
+    assert_help_smoke(completed, "scripts.train_iot_diad_direct_multiclass")
     assert "usage:" in completed.stdout.lower()

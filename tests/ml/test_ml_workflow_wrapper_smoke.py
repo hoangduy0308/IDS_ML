@@ -6,6 +6,7 @@ from wrapper_smoke_support import assert_help_smoke, run_python_module_help, run
 
 WRAPPER_MODULES = [
     "scripts.stage_kaggle_benchmark",
+    "scripts.stage_kaggle_direct_multiclass",
     "scripts.stage_kaggle_promotion",
     "scripts.preprocess_iot_diad",
     "scripts.package_final_model",
@@ -17,8 +18,8 @@ WRAPPER_MODULES = [
 ]
 
 DIRECT_FILE_WRAPPERS = [
-    "scripts/stage_kaggle_tuning.py",
     "scripts/package_final_model.py",
+    "scripts/stage_kaggle_tuning.py",
     "scripts/tune_top_models.py",
 ]
 

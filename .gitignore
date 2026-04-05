@@ -32,3 +32,16 @@ kaggle_tmp_kernel/
 *.egg-info/
 
 .claude
+
+# Local Khuym review scratch
+.khuym/findings/*.diff
+
+# Generated release/document outputs
+dist/
+
+# Local spike outputs from Kaggle/notebook experiments
+.spikes/kaggle_*/
+.spikes/kaggle_nb_*/
+.spikes/mini_*/
+.spikes/ids-multiclass-two-stage-classification/
+.spikes/ids-multiclass-two-stage-runtime-contract/

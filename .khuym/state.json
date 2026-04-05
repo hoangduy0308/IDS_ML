@@ -1,19 +1,19 @@
 {
   "schema_version": "1.0",
   "active_skill": "khuym:reviewing",
-  "status": "review-complete-clean",
-  "feature": "ids-multiclass-two-stage-runtime-contract",
-  "epic_id": "ids_ml_new-d90e",
-  "current_phase": "Complete",
-  "current_focus": "Feature review is clean after review-fix pass 2. Composite runtime contract, realtime path, and manifest validation are closed with no remaining blockers.",
+  "status": "review-followups-complete-clean",
+  "feature": "ids-multiclass-two-stage-classification",
+  "epic_id": "ids_ml_new-3rc7",
+  "current_phase": "Phase 1 review follow-ups complete",
+  "current_focus": "All actionable review beads for the multiclass classification lane are closed. Derived family views, dataset-path containment, Kaggle bundle coverage, and ML proof tests are clean; only the umbrella epic remains open for future operator-facing work.",
   "validated_at": "2026-04-05T06:22:00+07:00",
   "swarm_started_at": "2026-04-05T06:16:00+07:00",
   "review_started_at": "2026-04-05T07:06:00+07:00",
-  "review_completed_at": "2026-04-05T07:18:00+07:00",
+  "review_completed_at": "2026-04-05T07:33:00+07:00",
   "coordinator": {
     "agent_mail_name": "RedPrairie",
-    "thread_id": "ids_ml_new-d90e",
-    "topic": "epic-ids_ml_new-d90e"
+    "thread_id": "ids_ml_new-3rc7",
+    "topic": "epic-ids_ml_new-3rc7"
   },
   "workers": []
 }
