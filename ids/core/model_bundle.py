@@ -83,6 +83,17 @@ def _require_bool(payload: dict[str, Any], key: str, *, manifest_path: Path) -> 
     return raw_value
 
 
+def _require_false_bool(
+    payload: dict[str, Any],
+    key: str,
+    *,
+    manifest_path: Path,
+    error_message: str,
+) -> None:
+    if _require_bool(payload, key, manifest_path=manifest_path):
+        raise ModelBundleContractError(error_message)
+
+
 def _require_string_list(payload: dict[str, Any], key: str, *, manifest_path: Path) -> list[str]:
     raw_value = _require_field(payload, key, manifest_path=manifest_path)
     if not isinstance(raw_value, list):
@@ -581,31 +592,41 @@ def validate_bundle_manifest(manifest: ModelBundleManifest) -> ModelBundleManife
         raise ModelBundleContractError(
             "Composite inference contract must declare abstention.threshold_source='bundle'"
         )
-    _require_bool(inference_contract, "allows_external_stage1_model_path", manifest_path=manifest.manifest_path)
-    _require_bool(
+    _require_false_bool(
+        inference_contract,
+        "allows_external_stage1_model_path",
+        manifest_path=manifest.manifest_path,
+        error_message="Composite stage1 contract cannot allow external model path overrides",
+    )
+    _require_false_bool(
         inference_contract,
         "allows_external_stage1_feature_columns_path",
         manifest_path=manifest.manifest_path,
+        error_message="Composite stage1 contract cannot allow external feature schema overrides",
     )
-    _require_bool(
+    _require_false_bool(
         inference_contract,
         "allows_external_stage1_threshold_override",
         manifest_path=manifest.manifest_path,
+        error_message="Composite stage1 contract cannot allow external threshold overrides",
     )
-    _require_bool(
+    _require_false_bool(
         inference_contract,
         "allows_external_stage2_model_path",
         manifest_path=manifest.manifest_path,
+        error_message="Composite stage2 contract cannot allow external model path overrides",
     )
-    _require_bool(
+    _require_false_bool(
         inference_contract,
         "allows_external_stage2_feature_columns_path",
         manifest_path=manifest.manifest_path,
+        error_message="Composite stage2 contract cannot allow external feature schema overrides",
     )
-    _require_bool(
+    _require_false_bool(
         inference_contract,
         "allows_external_abstention_override",
         manifest_path=manifest.manifest_path,
+        error_message="Composite inference contract cannot allow external abstention overrides",
     )
     try:
         top1_confidence = float(abstention["top1_confidence"])

@@ -192,6 +192,86 @@ def test_load_model_bundle_manifest_accepts_composite_contract(tmp_path: Path) -
     assert manifest.stage2_abstention["runner_up_margin"] == pytest.approx(0.3097)
 
 
+@pytest.mark.parametrize(
+    ("flag_name", "error_message"),
+    [
+        (
+            "allows_external_stage1_model_path",
+            "Composite stage1 contract cannot allow external model path overrides",
+        ),
+        (
+            "allows_external_stage1_feature_columns_path",
+            "Composite stage1 contract cannot allow external feature schema overrides",
+        ),
+        (
+            "allows_external_stage1_threshold_override",
+            "Composite stage1 contract cannot allow external threshold overrides",
+        ),
+        (
+            "allows_external_stage2_model_path",
+            "Composite stage2 contract cannot allow external model path overrides",
+        ),
+        (
+            "allows_external_stage2_feature_columns_path",
+            "Composite stage2 contract cannot allow external feature schema overrides",
+        ),
+        (
+            "allows_external_abstention_override",
+            "Composite inference contract cannot allow external abstention overrides",
+        ),
+    ],
+)
+def test_load_model_bundle_manifest_rejects_composite_external_override_flags(
+    tmp_path: Path,
+    flag_name: str,
+    error_message: str,
+) -> None:
+    bundle_root = tmp_path / "bundle"
+    bundle_root.mkdir()
+    write_composite_bundle_manifest(bundle_root)
+    manifest_path = bundle_root / "model_bundle.json"
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    payload["compatibility"]["inference_contract"][flag_name] = True
+    manifest_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ModelBundleContractError, match=error_message):
+        load_model_bundle_manifest(bundle_root)
+
+
+@pytest.mark.parametrize(
+    ("flag_name", "error_message"),
+    [
+        (
+            "allows_external_model_path",
+            "Inference contract cannot allow external model path overrides",
+        ),
+        (
+            "allows_external_feature_columns_path",
+            "Inference contract cannot allow external feature schema overrides",
+        ),
+        (
+            "allows_external_threshold_override",
+            "Inference contract cannot allow external threshold overrides",
+        ),
+    ],
+)
+def test_load_model_bundle_manifest_rejects_legacy_binary_external_override_flags(
+    tmp_path: Path,
+    flag_name: str,
+    error_message: str,
+) -> None:
+    bundle_root = tmp_path / "bundle"
+    bundle_root.mkdir()
+    write_bundle_manifest(bundle_root)
+    manifest_path = bundle_root / "model_bundle.json"
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    payload["compatibility"]["inference_contract"][flag_name] = True
+    manifest_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ModelBundleContractError, match=error_message):
+        load_model_bundle_manifest(bundle_root)
+
+
 def test_load_model_bundle_manifest_fails_on_incomplete_composite_contract(tmp_path: Path) -> None:
     bundle_root = tmp_path / "bundle"
     bundle_root.mkdir()
