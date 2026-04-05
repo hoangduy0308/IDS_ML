@@ -16,13 +16,28 @@ def test_install_helper_keeps_in_place_editable_checkout_contract() -> None:
     assert "--install-root" not in install_script
     assert "--source-root" not in install_script
     assert "copy_repo_tree" not in install_script
+    assert "--mode MODE" in install_script
+    assert "console-only" in install_script
+    assert "full-stack-same-host" in install_script
     assert 'INSTALL_ROOT=$(cd -- "${SCRIPT_DIR}/.." && pwd)' in install_script
     assert 'if [[ "${INSTALL_ROOT}" != "/opt/ids_ml_new" ]]' in install_script
     assert '"${PYTHON_BIN}" -m venv --clear "${INSTALL_ROOT}/.venv"' in install_script
     assert '"${INSTALL_ROOT}/.venv/bin/python" -m pip install --no-deps -e "${INSTALL_ROOT}"' in install_script
+    assert 'Missing required --mode. Use console-only or full-stack-same-host.' in install_script
+    assert 'console-only mode does not accept bootstrap or bundle inputs.' in install_script
+    assert 'full-stack-same-host mode requires --bootstrap.' in install_script
     assert 'Cannot run --bootstrap without --candidate-bundle-root.' in install_script
     assert '--extractor-command-prefix-token P' in install_script
     assert '--extractor-command-prefix "${EXTRACTOR_COMMAND_PREFIX[@]}"' in install_script
+
+
+def test_install_helper_routes_service_enable_by_mode() -> None:
+    install_script = (REPO_ROOT / "ops" / "install.sh").read_text(encoding="utf-8")
+
+    assert "enable_mode_services" in install_script
+    assert "systemctl enable --now ids-operator-console.service ids-operator-console-notify.service" in install_script
+    assert "systemctl enable ids-live-sensor.service ids-operator-console.service ids-operator-console-notify.service" in install_script
+    assert "Finalizing %s install path" in install_script
 
 
 def test_install_helper_hardens_preseeded_env_file() -> None:

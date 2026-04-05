@@ -9,6 +9,7 @@ Usage:
   sudo ./ops/install.sh [options]
 
 Options:
+  --mode MODE                   Install mode: console-only or full-stack-same-host
   --python-bin PATH             Python binary used to create the target venv (default: python3.11)
   --operator-env-src PATH       Template env file to seed (default: ops/ids-operator-console.env.example)
   --operator-env-dest PATH      Host env file path (default: /etc/ids-operator-console/ids-operator-console.env)
@@ -31,12 +32,14 @@ Notes:
   - Run this script from the extracted checkout at /opt/ids_ml_new/ops/install.sh.
   - The script recreates /opt/ids_ml_new/.venv on the target host and installs the app via pip install -e.
   - If wheelhouse/ is present under the checkout, the script prefers it for dependency installation only.
-  - ids-stack remains the canonical lifecycle surface; this script only prepares the host and optionally invokes bootstrap.
+  - console-only ends with the operator console + notification worker on the canonical packaged services.
+  - full-stack-same-host remains bootstrappable through ids-stack and requires explicit bootstrap inputs.
 EOF
 }
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 INSTALL_ROOT=$(cd -- "${SCRIPT_DIR}/.." && pwd)
+MODE=""
 PYTHON_BIN="python3.11"
 SERVICE_DIR="/etc/systemd/system"
 OPS_CONFIG_DIR="/etc/ids-operator-console"
@@ -56,6 +59,10 @@ CANDIDATE_BUNDLE_ROOT=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --mode)
+      MODE=$2
+      shift 2
+      ;;
     --python-bin)
       PYTHON_BIN=$2
       shift 2
@@ -139,6 +146,9 @@ if [[ "${INSTALL_ROOT}" != "/opt/ids_ml_new" ]]; then
   exit 1
 fi
 
+require_mode
+ensure_mode_contract
+
 # Verify Python binary exists and meets minimum version requirement (3.11+)
 if ! command -v "${PYTHON_BIN}" >/dev/null 2>&1; then
   printf 'Python binary not found: %s\nPython 3.11+ is required.\n' "${PYTHON_BIN}" >&2
@@ -168,6 +178,36 @@ require_dir() {
   local path=$1
   if [[ ! -d "$path" ]]; then
     printf 'Required directory not found: %s\n' "$path" >&2
+    exit 1
+  fi
+}
+
+require_mode() {
+  case "${MODE}" in
+    console-only|full-stack-same-host)
+      return
+      ;;
+    "")
+      printf 'Missing required --mode. Use console-only or full-stack-same-host.\n' >&2
+      exit 2
+      ;;
+    *)
+      printf 'Unknown install mode: %s\n' "${MODE}" >&2
+      exit 2
+      ;;
+  esac
+}
+
+ensure_mode_contract() {
+  if [[ "${MODE}" == "console-only" ]]; then
+    if [[ ${BOOTSTRAP} -eq 1 || -n "${CANDIDATE_BUNDLE_ROOT}" || -n "${ADMIN_PASSWORD_FILE}" ]]; then
+      printf 'console-only mode does not accept bootstrap or bundle inputs.\n' >&2
+      exit 1
+    fi
+  fi
+
+  if [[ "${MODE}" == "full-stack-same-host" && ${BOOTSTRAP} -ne 1 ]]; then
+    printf 'full-stack-same-host mode requires --bootstrap.\n' >&2
     exit 1
   fi
 }
@@ -216,6 +256,15 @@ install_service_units() {
   install -m 0644 "${INSTALL_ROOT}/deploy/systemd/ids-operator-console.service" "${SERVICE_DIR}/ids-operator-console.service"
   install -m 0644 "${INSTALL_ROOT}/deploy/systemd/ids-operator-console-notify.service" "${SERVICE_DIR}/ids-operator-console-notify.service"
   systemctl daemon-reload
+}
+
+enable_mode_services() {
+  if [[ "${MODE}" == "console-only" ]]; then
+    systemctl enable --now ids-operator-console.service ids-operator-console-notify.service >/dev/null
+    return
+  fi
+
+  systemctl enable ids-live-sensor.service ids-operator-console.service ids-operator-console-notify.service >/dev/null
 }
 
 install_python_product() {
@@ -309,13 +358,17 @@ printf '[5/6] Installing systemd units...\n'
 install_service_units
 
 if [[ ${SKIP_SERVICE_ENABLE} -ne 1 ]]; then
-  printf '[6/6] Enabling base services...\n'
-  systemctl enable ids-live-sensor.service ids-operator-console.service ids-operator-console-notify.service >/dev/null
+  if [[ "${MODE}" == "console-only" ]]; then
+    printf '[6/6] Enabling and starting console-only services...\n'
+  else
+    printf '[6/6] Enabling full-stack services...\n'
+  fi
+  enable_mode_services
 else
   printf '[6/6] Skipping systemd enable as requested...\n'
 fi
 
-printf 'Finalizing bootstrap path...\n'
+printf 'Finalizing %s install path...\n' "${MODE}"
 run_bootstrap
 
 # Harden SQLite DB file permissions if it exists (the DB now contains
@@ -325,6 +378,13 @@ chown root:ids-operator /var/lib/ids-operator-console/operator_console.db 2>/dev
 
 printf '\nInstall complete.\n'
 printf 'Next checks:\n'
-printf '  %s\n' "${INSTALL_ROOT}/.venv/bin/ids-stack --repo-root ${INSTALL_ROOT} --operator-env-file ${OPERATOR_ENV_DEST} --activation-path /var/lib/ids-live-sensor/active_bundle.json --json preflight"
-printf '  %s\n' "${INSTALL_ROOT}/.venv/bin/ids-stack --repo-root ${INSTALL_ROOT} --operator-env-file ${OPERATOR_ENV_DEST} --activation-path /var/lib/ids-live-sensor/active_bundle.json --json status"
-printf '  %s\n' "${INSTALL_ROOT}/.venv/bin/ids-stack --repo-root ${INSTALL_ROOT} --operator-env-file ${OPERATOR_ENV_DEST} --activation-path /var/lib/ids-live-sensor/active_bundle.json --proxy-public-url https://console.example --json smoke"
+if [[ "${MODE}" == "console-only" ]]; then
+  printf '  %s\n' "${INSTALL_ROOT}/.venv/bin/ids-stack --repo-root ${INSTALL_ROOT} --operator-env-file ${OPERATOR_ENV_DEST} --activation-path /var/lib/ids-live-sensor/active_bundle.json --json preflight"
+  printf '  %s\n' "${INSTALL_ROOT}/.venv/bin/ids-stack --repo-root ${INSTALL_ROOT} --operator-env-file ${OPERATOR_ENV_DEST} --activation-path /var/lib/ids-live-sensor/active_bundle.json --json status"
+  printf '  %s\n' "${INSTALL_ROOT}/.venv/bin/ids-stack --repo-root ${INSTALL_ROOT} --operator-env-file ${OPERATOR_ENV_DEST} --activation-path /var/lib/ids-live-sensor/active_bundle.json --proxy-public-url https://console.example --json smoke"
+else
+  printf '  %s\n' "${INSTALL_ROOT}/.venv/bin/ids-stack --repo-root ${INSTALL_ROOT} --operator-env-file ${OPERATOR_ENV_DEST} --activation-path /var/lib/ids-live-sensor/active_bundle.json --json bootstrap --candidate-bundle-root <bundle-root> --admin-username ${ADMIN_USERNAME} --admin-password-file <password-file>"
+  printf '  %s\n' "${INSTALL_ROOT}/.venv/bin/ids-stack --repo-root ${INSTALL_ROOT} --operator-env-file ${OPERATOR_ENV_DEST} --activation-path /var/lib/ids-live-sensor/active_bundle.json --json preflight"
+  printf '  %s\n' "${INSTALL_ROOT}/.venv/bin/ids-stack --repo-root ${INSTALL_ROOT} --operator-env-file ${OPERATOR_ENV_DEST} --activation-path /var/lib/ids-live-sensor/active_bundle.json --json status"
+  printf '  %s\n' "${INSTALL_ROOT}/.venv/bin/ids-stack --repo-root ${INSTALL_ROOT} --operator-env-file ${OPERATOR_ENV_DEST} --activation-path /var/lib/ids-live-sensor/active_bundle.json --proxy-public-url https://console.example --json smoke"
+fi
