@@ -166,7 +166,7 @@ C) End session and write HANDOFF.json
 - Review-fix beads: ids_ml_new-d90e.12 (CLOSED via 107f9e3), ids_ml_new-d90e.13 (CLOSED via 284d74c), ids_ml_new-d90e.14 (CLOSED in review-fix pass 2)
 - review-fix-2-contract.md: history/ids-multiclass-two-stage-runtime-contract/review-fix-2-contract.md
 - review-fix-2-story-map.md: history/ids-multiclass-two-stage-runtime-contract/review-fix-2-story-map.md
-- Follow-up review: pass-1 rerun found a remaining stage-2 alignment bug in mixed benign/attack batches; pass-2 fix and rerun closed it cleanly
+- Follow-up review: pass-1 rerun found a remaining stage-2 alignment bug in mixed benign/attack batches; pass-2 fix landed in `08e160b` and the final rerun closed it cleanly with 127 passed / 0 failed
 - Proposed next skill: khuym:compounding or next feature planning
 
 ## Active Workers
