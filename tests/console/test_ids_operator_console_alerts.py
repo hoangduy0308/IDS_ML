@@ -7,6 +7,7 @@ import pytest
 
 from ids.console.alerts import (  # noqa: E402
     add_investigation_note,
+    build_alert_family_view,
     get_alert_timeline,
     list_alerts_for_notification,
     list_alerts_for_triage,
@@ -26,7 +27,11 @@ def _seed_alert(
     source_event_id: str,
     src_ip: str,
     severity: str = "high",
+    payload: dict[str, object] | None = None,
 ) -> int:
+    alert_payload: dict[str, object] = {"event_type": "model_prediction", "src_ip": src_ip, "score": 0.99}
+    if payload is not None:
+        alert_payload.update(payload)
     return store.upsert_alert(
         source_event_id=source_event_id,
         event_ts="2026-03-28T15:00:00+00:00",
@@ -37,7 +42,7 @@ def _seed_alert(
         dst_port=51432,
         protocol="tcp",
         fingerprint=f"fp-{source_event_id}",
-        payload={"event_type": "model_prediction", "src_ip": src_ip, "score": 0.99},
+        payload=alert_payload,
     )
 
 
@@ -155,3 +160,81 @@ def test_console_snapshot_keeps_alerts_anomalies_and_summaries_separate(tmp_path
         assert len(snapshot["summaries"]) == 1
     finally:
         store.close()
+
+
+def test_alert_family_view_model_distinguishes_known_unknown_and_legacy(tmp_path: Path) -> None:
+    store = _new_store(tmp_path)
+    try:
+        _seed_alert(
+            store,
+            source_event_id="family-known",
+            src_ip="10.0.0.21",
+            payload={
+                "family_status": "known",
+                "attack_family": "DDoS",
+                "attack_family_confidence": 0.93,
+                "attack_family_margin": 0.44,
+            },
+        )
+        _seed_alert(
+            store,
+            source_event_id="family-unknown",
+            src_ip="10.0.0.22",
+            payload={
+                "family_status": "unknown",
+                "attack_family_confidence": 0.61,
+                "attack_family_margin": 0.11,
+            },
+        )
+        _seed_alert(store, source_event_id="family-legacy", src_ip="10.0.0.23")
+
+        triage_rows = list_alerts_for_triage(store, include_suppressed=True)
+        by_event = {row["source_event_id"]: row for row in triage_rows}
+
+        known = by_event["family-known"]["family"]
+        assert known["family_status"] == "known"
+        assert known["family_state"] == "known"
+        assert known["legacy_unavailable"] is False
+        assert known["attack_family"] == "DDoS"
+        assert known["attack_family_confidence"] == pytest.approx(0.93)
+        assert known["attack_family_margin"] == pytest.approx(0.44)
+
+        unknown = by_event["family-unknown"]["family"]
+        assert unknown["family_status"] == "unknown"
+        assert unknown["family_state"] == "unknown"
+        assert unknown["legacy_unavailable"] is False
+        assert unknown["attack_family"] is None
+        assert unknown["attack_family_confidence"] == pytest.approx(0.61)
+        assert unknown["attack_family_margin"] == pytest.approx(0.11)
+
+        legacy = by_event["family-legacy"]["family"]
+        assert legacy["family_status"] is None
+        assert legacy["family_state"] == "legacy_unavailable"
+        assert legacy["legacy_unavailable"] is True
+        assert legacy["attack_family"] is None
+        assert legacy["attack_family_confidence"] is None
+        assert legacy["attack_family_margin"] is None
+    finally:
+        store.close()
+
+
+def test_build_alert_family_view_handles_payload_json_fallback() -> None:
+    alert = {
+        "payload_json": json.dumps(
+            {
+                "family_status": "known",
+                "attack_family": "Recon",
+                "attack_family_confidence": "0.75",
+                "attack_family_margin": "0.25",
+            }
+        )
+    }
+
+    family = build_alert_family_view(alert)
+
+    assert family["family_status"] == "known"
+    assert family["family_state"] == "known"
+    assert family["legacy_unavailable"] is False
+    assert family["attack_family"] == "Recon"
+    assert family["attack_family_confidence"] == pytest.approx(0.75)
+    assert family["attack_family_margin"] == pytest.approx(0.25)

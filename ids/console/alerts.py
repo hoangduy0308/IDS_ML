@@ -37,6 +37,59 @@ def _decode_payload(raw_payload: Any) -> dict[str, Any]:
     return {}
 
 
+def _normalize_optional_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        normalized = value.strip()
+        return normalized or None
+    return str(value).strip() or None
+
+
+def _normalize_optional_float(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def build_alert_family_view(alert: dict[str, Any]) -> dict[str, Any]:
+    payload = alert.get("payload")
+    if not isinstance(payload, dict):
+        payload = _decode_payload(alert.get("payload_json"))
+
+    family_status = _normalize_optional_text(payload.get("family_status"))
+    if family_status is not None:
+        family_status = family_status.lower()
+    if family_status not in {"known", "unknown", "benign"}:
+        family_status = None
+
+    attack_family = _normalize_optional_text(payload.get("attack_family"))
+    attack_family_confidence = _normalize_optional_float(payload.get("attack_family_confidence"))
+    attack_family_margin = _normalize_optional_float(payload.get("attack_family_margin"))
+
+    if family_status in {"known", "unknown", "benign"}:
+        family_state = family_status
+        legacy_unavailable = False
+    else:
+        family_state = "legacy_unavailable"
+        legacy_unavailable = True
+        attack_family = None
+        attack_family_confidence = None
+        attack_family_margin = None
+
+    return {
+        "family_status": family_status,
+        "attack_family": attack_family,
+        "attack_family_confidence": attack_family_confidence,
+        "attack_family_margin": attack_family_margin,
+        "family_state": family_state,
+        "legacy_unavailable": legacy_unavailable,
+    }
+
+
 def transition_alert_status(
     store: OperatorStore,
     *,
@@ -110,6 +163,12 @@ def list_alerts_for_triage(
         suppressed = is_alert_suppressed(store, alert=alert)
         alert["suppressed"] = suppressed
         alert["payload"] = _decode_payload(alert.get("payload_json"))
+        family_view = build_alert_family_view(alert)
+        alert["family"] = family_view
+        alert["family_status"] = family_view["family_status"]
+        alert["attack_family"] = family_view["attack_family"]
+        alert["attack_family_confidence"] = family_view["attack_family_confidence"]
+        alert["attack_family_margin"] = family_view["attack_family_margin"]
         if include_suppressed or not suppressed:
             hydrated.append(alert)
     return hydrated
@@ -141,4 +200,3 @@ def load_console_snapshot(
         "anomalies": store.list_anomalies(limit=anomaly_limit),
         "summaries": store.list_recent_summaries(limit=summary_limit),
     }
-
