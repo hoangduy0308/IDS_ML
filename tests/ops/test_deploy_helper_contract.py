@@ -1,13 +1,214 @@
 from __future__ import annotations
 
+import hashlib
+import json
+import os
 import re
 import subprocess
+import sys
 import tarfile
 import tempfile
 from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+FIXED_RELEASE_TIMESTAMP = "20260405T181500Z"
+
+
+def _to_bash_path(path: Path | str) -> str:
+    resolved = Path(path).resolve()
+    text = str(resolved).replace("\\", "/")
+    if os.name == "nt" and len(text) >= 2 and text[1] == ":" and text[0].isalpha():
+        return f"/mnt/{text[0].lower()}{text[2:]}"
+    return text
+
+
+def _write_release_bundle_contract(bundle_root: Path, *, valid: bool) -> Path:
+    bundle_root.mkdir(parents=True, exist_ok=True)
+    feature_columns_path = bundle_root / "feature_columns.json"
+    feature_columns_payload = {"feature_columns": ["f1", "f2"]}
+    feature_columns_path.write_text(json.dumps(feature_columns_payload), encoding="utf-8")
+    (bundle_root / "model.cbm").write_text("model", encoding="utf-8")
+
+    schema_sha256 = hashlib.sha256(feature_columns_path.read_bytes()).hexdigest()
+    if not valid:
+        schema_sha256 = "0" * 64
+
+    manifest = {
+        "manifest_version": 2,
+        "bundle_name": "bundle-proof",
+        "created_at": "2026-04-05T00:00:00+07:00",
+        "model_key": "catboost_full_data",
+        "model_family": "CatBoostClassifier",
+        "model_artifact": "model.cbm",
+        "feature_columns_file": "feature_columns.json",
+        "threshold": 0.5,
+        "positive_label": "Attack",
+        "negative_label": "Benign",
+        "feature_count": 2,
+        "train_rows": 123,
+        "metrics_file": "metrics.json",
+        "training_summary_file": "training_summary.json",
+        "compatibility": {
+            "feature_schema": {
+                "kind": "feature_columns_json.v1",
+                "path": "feature_columns.json",
+                "feature_count": 2,
+                "sha256": schema_sha256,
+            },
+            "inference_contract": {
+                "version": "ids_binary_classifier.v1",
+                "prediction_type": "binary_classifier",
+                "score_field": "attack_score",
+                "alert_field": "is_alert",
+                "threshold_source": "bundle",
+                "threshold": 0.5,
+                "positive_label": "Attack",
+                "negative_label": "Benign",
+                "allows_external_model_path": False,
+                "allows_external_feature_columns_path": False,
+                "allows_external_threshold_override": False,
+            },
+        },
+    }
+    (bundle_root / "model_bundle.json").write_text(json.dumps(manifest), encoding="utf-8")
+    return bundle_root
+
+
+def _git(repo_root: Path, *args: str) -> None:
+    env = os.environ.copy()
+    env.update(
+        {
+            "GIT_AUTHOR_NAME": "Codex",
+            "GIT_AUTHOR_EMAIL": "codex@example.com",
+            "GIT_COMMITTER_NAME": "Codex",
+            "GIT_COMMITTER_EMAIL": "codex@example.com",
+        }
+    )
+    completed = subprocess.run(
+        ["git", *args],
+        cwd=repo_root,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+
+
+def _make_release_fixture_repo(tmp_path: Path, *, valid_bundle: bool) -> tuple[Path, Path, Path]:
+    repo_root = tmp_path / "fixture-repo"
+    bundle_root = repo_root / "artifacts" / "final_model" / "catboost_full_data_v1"
+    output_dir = tmp_path / "release-output"
+    fake_python = tmp_path / "fake-python.sh"
+    real_python = _to_bash_path(sys.executable)
+
+    _write_release_bundle_contract(bundle_root, valid=valid_bundle)
+    (repo_root / "pyproject.toml").parent.mkdir(parents=True, exist_ok=True)
+    (repo_root / "pyproject.toml").write_text(
+        "[project]\nname = 'ids-ml-new'\nversion = '0.1.0'\n",
+        encoding="utf-8",
+    )
+    (repo_root / "requirements.txt").write_text("", encoding="utf-8")
+
+    _git(repo_root, "init")
+    _git(repo_root, "add", ".")
+    _git(repo_root, "commit", "-m", "seed release fixture")
+
+    fake_python.write_text(
+        "\n".join(
+            [
+                "#!/usr/bin/env bash",
+                "set -euo pipefail",
+                f'real_python="{real_python}"',
+                f'fixed_timestamp="{FIXED_RELEASE_TIMESTAMP}"',
+                "to_windows_path() {",
+                "  case \"$1\" in",
+                "    /mnt/[a-z]/*)",
+                "      local drive rest",
+                "      drive=${1#/mnt/}",
+                "      drive=${drive%%/*}",
+                "      rest=${1#\"/mnt/${drive}\"}",
+                "      printf '%s:%s\\n' \"$(printf '%s' \"${drive}\" | tr '[:lower:]' '[:upper:]')\" \"${rest}\"",
+                "      ;;",
+                "    *)",
+                "      printf '%s\\n' \"$1\"",
+                "      ;;",
+                "  esac",
+                "}",
+                'case "${1-}" in',
+                "  -c)",
+                '    code="${2-}"',
+                '    if [[ "${code}" == *"datetime.now(timezone.utc).strftime(\'%Y%m%dT%H%M%SZ\')"* ]]; then',
+                '      printf "%s\\n" "${fixed_timestamp}"',
+                "      exit 0",
+                "    fi",
+                '    if [[ "${code}" == *"load_model_bundle_manifest"* ]]; then',
+                '      bundle_root="$(to_windows_path "${4-}")"',
+                '      exec "${real_python}" - "${bundle_root}" <<\'PY\'',
+                "import hashlib",
+                "import json",
+                "import sys",
+                "from pathlib import Path",
+                "",
+                "bundle_root = Path(sys.argv[1])",
+                "manifest_path = bundle_root / 'model_bundle.json'",
+                "if not manifest_path.is_file():",
+                "    raise SystemExit(f'Bundle manifest not found: {manifest_path}')",
+                "manifest = json.loads(manifest_path.read_text(encoding='utf-8'))",
+                "feature_schema = manifest.get('compatibility', {}).get('feature_schema', {})",
+                "feature_columns_file = str(manifest.get('feature_columns_file', 'feature_columns.json'))",
+                "feature_columns_path = bundle_root / feature_columns_file",
+                "if not feature_columns_path.is_file():",
+                "    raise SystemExit(f'Bundle feature schema missing: {feature_columns_path}')",
+                "if int(manifest.get('manifest_version', 0)) != 2:",
+                "    raise SystemExit('Unsupported model bundle manifest version')",
+                "actual_digest = hashlib.sha256(feature_columns_path.read_bytes()).hexdigest()",
+                "if str(feature_schema.get('sha256', '')).strip() != actual_digest:",
+                "    raise SystemExit(f'Bundle feature schema digest mismatch for {feature_columns_path}')",
+                "PY",
+                "    fi",
+                '    exec "${real_python}" "$@"',
+                "    ;;",
+                "  -m)",
+                '    if [[ "${2-}" == "pip" && "${3-}" == "wheel" ]]; then',
+                "      exit 0",
+                "    fi",
+                '    exec "${real_python}" "$@"',
+                "    ;;",
+                "  *)",
+                '    exec "${real_python}" "$@"',
+                "    ;;",
+                "esac",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+        newline="\n",
+    )
+    fake_python.chmod(fake_python.stat().st_mode | 0o111)
+
+    return repo_root, output_dir, fake_python
+
+
+def _run_build_release(repo_root: Path, output_dir: Path, python_bin: Path) -> subprocess.CompletedProcess[str]:
+    build_release_script = _to_bash_path(REPO_ROOT / "ops" / "build_release.sh")
+    return subprocess.run(
+        [
+            "bash",
+            build_release_script,
+            "--repo-root",
+            _to_bash_path(repo_root),
+            "--output-dir",
+            _to_bash_path(output_dir),
+            "--python-bin",
+            _to_bash_path(python_bin),
+        ],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
 
 
 def test_install_helper_keeps_in_place_editable_checkout_contract() -> None:
@@ -123,6 +324,8 @@ def test_build_release_uses_git_archive_not_manual_excludes() -> None:
         "build_release.sh must use 'git archive' to export only tracked files"
     )
     assert 'git -C "${REPO_ROOT}" archive HEAD' in build_script
+    assert "load_model_bundle_manifest" in build_script
+    assert "artifacts/final_model/catboost_full_data_v1" in build_script
 
     # Must NOT fall back to the old manual-exclude tar approach
     assert "tar -cf - ." not in build_script, (
@@ -137,6 +340,35 @@ def test_build_release_uses_git_archive_not_manual_excludes() -> None:
 
     # Must not build the project itself as a wheel (only deps)
     assert 'pip wheel "${REPO_ROOT}"' not in build_script
+
+
+def test_build_release_succeeds_for_valid_default_bundle(tmp_path: Path) -> None:
+    repo_root, output_dir, fake_python = _make_release_fixture_repo(tmp_path, valid_bundle=True)
+
+    completed = _run_build_release(repo_root, output_dir, fake_python)
+
+    archive_path = output_dir / f"ids_ml_new-{FIXED_RELEASE_TIMESTAMP}.tar.gz"
+    assert completed.returncode == 0, completed.stderr
+    assert "[1/4] Validating bundled default production artifact..." in completed.stdout
+    assert archive_path.is_file(), completed.stdout
+
+    with tarfile.open(archive_path, "r:gz") as handle:
+        archive_names = handle.getnames()
+
+    assert "ids_ml_new/pyproject.toml" in archive_names
+    assert "ids_ml_new/artifacts/final_model/catboost_full_data_v1/model_bundle.json" in archive_names
+
+
+def test_build_release_fails_closed_for_invalid_default_bundle(tmp_path: Path) -> None:
+    repo_root, output_dir, fake_python = _make_release_fixture_repo(tmp_path, valid_bundle=False)
+
+    completed = _run_build_release(repo_root, output_dir, fake_python)
+
+    archive_path = output_dir / f"ids_ml_new-{FIXED_RELEASE_TIMESTAMP}.tar.gz"
+    assert completed.returncode != 0
+    assert "[1/4] Validating bundled default production artifact..." in completed.stdout
+    assert "Bundle feature schema digest mismatch" in completed.stderr
+    assert not archive_path.exists()
 
 
 # ── Phase 4 closure proof: cross-surface contract verification ─────────────
