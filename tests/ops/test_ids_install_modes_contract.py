@@ -16,7 +16,7 @@ def test_install_help_exposes_explicit_mode_selection() -> None:
     assert "--mode MODE" in install_script
     assert "Install mode: console-only or full-stack-same-host" in install_script
     assert "console-only ends with the operator console + notification worker" in install_script
-    assert "full-stack-same-host remains bootstrappable through ids-stack" in install_script
+    assert "full-stack-same-host auto-runs ids-stack bootstrap with the bundled default artifact" in install_script
 
 
 def test_install_mode_validation_distinguishes_console_only_from_full_stack() -> None:
@@ -48,6 +48,7 @@ def test_install_mode_next_checks_document_mode_specific_readiness() -> None:
     assert "--json preflight" in install_script
     assert "--json status" in install_script
     assert "--proxy-public-url https://console.example --json smoke" in install_script
-    assert "--json bootstrap --candidate-bundle-root <bundle-root>" in install_script
+    assert "ids-model-bundle-manage --activation-path /var/lib/ids-live-sensor/active_bundle.json --json status" in install_script
+    assert "--json bootstrap --candidate-bundle-root <bundle-root>" not in install_script
     assert "full-stack-same-host" in install_script
     assert "console-only" in install_script

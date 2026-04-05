@@ -20,7 +20,7 @@ Options:
   --extractor-command-prefix P  Packaged replacement extractor helper prefix (default: /opt/ids_ml_new/.venv/bin/ids-offline-window-extractor)
   --extractor-command-prefix-token P
                                Repeat to pass a multi-token extractor command prefix
-  --candidate-bundle-root PATH  Bundle root for ids-stack bootstrap (required with --bootstrap)
+  --candidate-bundle-root PATH  Bundle root override for ids-stack bootstrap (default: /opt/ids_ml_new/artifacts/final_model/catboost_full_data_v1)
   --admin-username NAME         Admin username for bootstrap (default: admin)
   --admin-password-file PATH    Admin password file for bootstrap
   --proxy-public-url URL        Public console URL used for smoke checks
@@ -34,7 +34,7 @@ Notes:
   - The script recreates /opt/ids_ml_new/.venv on the target host and installs the app via pip install -e.
   - If wheelhouse/ is present under the checkout, the script prefers it for dependency installation only.
   - console-only ends with the operator console + notification worker on the canonical packaged services.
-  - full-stack-same-host remains bootstrappable through ids-stack and requires explicit bootstrap inputs.
+  - full-stack-same-host auto-runs ids-stack bootstrap with the bundled default artifact unless --candidate-bundle-root overrides it.
 EOF
 }
 
@@ -60,6 +60,7 @@ BOOTSTRAP=0
 CREATE_SECRETS=0
 SKIP_SERVICE_ENABLE=0
 CANDIDATE_BUNDLE_ROOT=""
+DEFAULT_BUNDLED_BUNDLE_ROOT="${INSTALL_ROOT}/artifacts/final_model/catboost_full_data_v1"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -312,12 +313,13 @@ run_bootstrap() {
     printf 'Cannot run --bootstrap without --admin-password-file.\n' >&2
     exit 1
   fi
-  if [[ -z "${CANDIDATE_BUNDLE_ROOT}" ]]; then
-    printf 'Cannot run --bootstrap without --candidate-bundle-root.\n' >&2
-    exit 1
-  fi
   require_file "${ADMIN_PASSWORD_FILE}"
-  require_dir "${CANDIDATE_BUNDLE_ROOT}"
+
+  local selected_bundle_root="${CANDIDATE_BUNDLE_ROOT}"
+  if [[ -z "${selected_bundle_root}" ]]; then
+    selected_bundle_root="${DEFAULT_BUNDLED_BUNDLE_ROOT}"
+  fi
+  require_dir "${selected_bundle_root}"
 
   local stack_cmd="${INSTALL_ROOT}/.venv/bin/ids-stack"
   local activation_path="/var/lib/ids-live-sensor/active_bundle.json"
@@ -339,7 +341,7 @@ run_bootstrap() {
     --summary-output-path /var/log/ids-live-sensor/ids_live_sensor_summary.jsonl \
     --proxy-public-url "${smoke_url}" \
     --json bootstrap \
-    --candidate-bundle-root "${CANDIDATE_BUNDLE_ROOT}" \
+    --candidate-bundle-root "${selected_bundle_root}" \
     --admin-username "${ADMIN_USERNAME}" \
     --admin-password-file "${ADMIN_PASSWORD_FILE}"
 }
@@ -407,7 +409,7 @@ if [[ "${MODE}" == "console-only" ]]; then
   printf '  %s\n' "${INSTALL_ROOT}/.venv/bin/ids-stack --repo-root ${INSTALL_ROOT} --operator-env-file ${OPERATOR_ENV_DEST} --activation-path /var/lib/ids-live-sensor/active_bundle.json --json status"
   printf '  %s\n' "${INSTALL_ROOT}/.venv/bin/ids-stack --repo-root ${INSTALL_ROOT} --operator-env-file ${OPERATOR_ENV_DEST} --activation-path /var/lib/ids-live-sensor/active_bundle.json --proxy-public-url https://console.example --json smoke"
 else
-  printf '  %s\n' "${INSTALL_ROOT}/.venv/bin/ids-stack --repo-root ${INSTALL_ROOT} --operator-env-file ${OPERATOR_ENV_DEST} --activation-path /var/lib/ids-live-sensor/active_bundle.json --json bootstrap --candidate-bundle-root <bundle-root> --admin-username ${ADMIN_USERNAME} --admin-password-file <password-file>"
+  printf '  %s\n' "${INSTALL_ROOT}/.venv/bin/ids-model-bundle-manage --activation-path /var/lib/ids-live-sensor/active_bundle.json --json status"
   printf '  %s\n' "${INSTALL_ROOT}/.venv/bin/ids-stack --repo-root ${INSTALL_ROOT} --operator-env-file ${OPERATOR_ENV_DEST} --activation-path /var/lib/ids-live-sensor/active_bundle.json --json preflight"
   printf '  %s\n' "${INSTALL_ROOT}/.venv/bin/ids-stack --repo-root ${INSTALL_ROOT} --operator-env-file ${OPERATOR_ENV_DEST} --activation-path /var/lib/ids-live-sensor/active_bundle.json --json status"
   printf '  %s\n' "${INSTALL_ROOT}/.venv/bin/ids-stack --repo-root ${INSTALL_ROOT} --operator-env-file ${OPERATOR_ENV_DEST} --activation-path /var/lib/ids-live-sensor/active_bundle.json --proxy-public-url https://console.example --json smoke"

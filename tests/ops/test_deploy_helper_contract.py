@@ -229,12 +229,14 @@ def test_install_helper_keeps_in_place_editable_checkout_contract() -> None:
     assert 'Missing required --mode. Use console-only or full-stack-same-host.' in install_script
     assert 'console-only mode does not accept bootstrap or bundle inputs.' in install_script
     assert 'full-stack-same-host mode requires --bootstrap.' in install_script
-    assert 'Cannot run --bootstrap without --candidate-bundle-root.' in install_script
+    assert 'DEFAULT_BUNDLED_BUNDLE_ROOT="${INSTALL_ROOT}/artifacts/final_model/catboost_full_data_v1"' in install_script
     assert 'LIVE_SENSOR_ENV_SRC="${INSTALL_ROOT}/ops/ids-live-sensor.env.example"' in install_script
     assert 'LIVE_SENSOR_ENV_DEST="${LIVE_SENSOR_CONFIG_DIR}/ids-live-sensor.env"' in install_script
     assert 'seed_live_sensor_env()' in install_script
     assert '--extractor-command-prefix-token P' in install_script
     assert '--extractor-command-prefix "${EXTRACTOR_COMMAND_PREFIX[@]}"' in install_script
+    assert 'selected_bundle_root="${DEFAULT_BUNDLED_BUNDLE_ROOT}"' in install_script
+    assert '--candidate-bundle-root "${selected_bundle_root}"' in install_script
 
 
 def test_install_helper_routes_service_enable_by_mode() -> None:
@@ -244,6 +246,19 @@ def test_install_helper_routes_service_enable_by_mode() -> None:
     assert "systemctl enable --now ids-operator-console.service ids-operator-console-notify.service" in install_script
     assert "systemctl enable ids-live-sensor.service ids-operator-console.service ids-operator-console-notify.service" in install_script
     assert "Finalizing %s install path" in install_script
+
+
+def test_install_helper_defaults_full_stack_bootstrap_to_shipped_bundle_root() -> None:
+    install_script = (REPO_ROOT / "ops" / "install.sh").read_text(encoding="utf-8")
+    build_script = (REPO_ROOT / "ops" / "build_release.sh").read_text(encoding="utf-8")
+
+    shipped_root = "artifacts/final_model/catboost_full_data_v1"
+    assert shipped_root in install_script
+    assert shipped_root in build_script
+    assert 'local selected_bundle_root="${CANDIDATE_BUNDLE_ROOT}"' in install_script
+    assert 'selected_bundle_root="${DEFAULT_BUNDLED_BUNDLE_ROOT}"' in install_script
+    assert 'require_dir "${selected_bundle_root}"' in install_script
+    assert 'Cannot run --bootstrap without --candidate-bundle-root.' not in install_script
 
 
 def test_install_helper_seeds_live_sensor_env_contract() -> None:
@@ -357,6 +372,13 @@ def test_build_release_succeeds_for_valid_default_bundle(tmp_path: Path) -> None
 
     assert "ids_ml_new/pyproject.toml" in archive_names
     assert "ids_ml_new/artifacts/final_model/catboost_full_data_v1/model_bundle.json" in archive_names
+
+
+def test_install_helper_next_checks_include_activation_status_for_full_stack() -> None:
+    install_script = (REPO_ROOT / "ops" / "install.sh").read_text(encoding="utf-8")
+
+    assert 'ids-model-bundle-manage --activation-path /var/lib/ids-live-sensor/active_bundle.json --json status' in install_script
+    assert '--json bootstrap --candidate-bundle-root <bundle-root>' not in install_script
 
 
 def test_build_release_fails_closed_for_invalid_default_bundle(tmp_path: Path) -> None:
