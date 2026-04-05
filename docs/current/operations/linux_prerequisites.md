@@ -34,16 +34,26 @@ dumpcap --version
 
 The default path is `/usr/bin/dumpcap`. Configurable via `--dumpcap-binary` in the installer and systemd unit environment.
 
-### CICFlowMeter
+### Packaged extractor default
 
-Network flow feature extractor. This is **not** an apt package — it must be installed separately.
+The canonical packaged extractor path is the installed module entrypoint created by the target-host virtual environment:
 
-Expected path: `/opt/cicflowmeter/Cmd` (configurable via `--extractor-command-prefix`).
+```bash
+/opt/ids_ml_new/.venv/bin/python -m ids.runtime.extractor.offline_window_extractor
+```
+
+No separate extractor package is required for the canonical `console-only` or `full-stack same-host` product paths.
+
+### CICFlowMeter compatibility override
+
+CICFlowMeter remains supported only as a compatibility override when an operator intentionally replaces the packaged extractor via `--extractor-command-prefix` or the equivalent live-sensor environment contract.
+
+Compatibility path: `/opt/cicflowmeter/Cmd`
 
 Refer to the CICFlowMeter project documentation for build and installation instructions. The binary must be executable by the `ids-sensor` system user.
 
 ```bash
-# Verify
+# Verify compatibility override only
 /opt/cicflowmeter/Cmd --help
 ```
 
@@ -58,7 +68,7 @@ which install chmod chown
 
 ### bash
 
-Required by systemd service units (`ExecStart` uses `/usr/bin/bash -lc`). Pre-installed on all standard distributions.
+Required by the release/install helper scripts in `ops/`. The packaged live-sensor startup contract is the installed Python/module path documented in the same-host operations docs, not a shell-wrapper startup surface.
 
 ```bash
 # Verify
