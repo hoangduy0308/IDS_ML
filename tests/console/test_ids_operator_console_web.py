@@ -109,7 +109,7 @@ def _build_test_app(
 
 
 def _build_family_contract_test_app(tmp_path: Path) -> tuple[TestClient, dict[str, int]]:
-    """Build canonical app-factory client with known/unknown/legacy family alerts."""
+    """Build canonical app-factory client with known/unknown/benign/legacy family alerts."""
     env = {
         "IDS_OPERATOR_CONSOLE_ENVIRONMENT": "development",
         "IDS_OPERATOR_CONSOLE_SECRET_KEY": "web-family-contract-secret",
@@ -155,6 +155,23 @@ def _build_family_contract_test_app(tmp_path: Path) -> tuple[TestClient, dict[st
                 "attack_family_margin": 0.02,
             },
         )
+        benign_id = store.upsert_alert(
+            source_event_id="web-family-benign-004",
+            event_ts="2026-04-01T09:07:00+00:00",
+            severity="medium",
+            src_ip="10.30.0.4",
+            dst_ip="192.168.60.13",
+            src_port=4444,
+            dst_port=443,
+            protocol="tcp",
+            fingerprint="fp-web-family-benign-004",
+            payload={
+                "family_status": "benign",
+                "attack_family": "mirai",
+                "attack_family_confidence": 0.33,
+                "attack_family_margin": 0.77,
+            },
+        )
         legacy_id = store.upsert_alert(
             source_event_id="web-family-legacy-003",
             event_ts="2026-04-01T09:10:00+00:00",
@@ -172,7 +189,7 @@ def _build_family_contract_test_app(tmp_path: Path) -> tuple[TestClient, dict[st
 
     app = create_operator_console_web_app(config)
     client = TestClient(app, base_url="http://testserver")
-    return client, {"known": known_id, "unknown": unknown_id, "legacy": legacy_id}
+    return client, {"known": known_id, "unknown": unknown_id, "benign": benign_id, "legacy": legacy_id}
 
 
 def _login(client: TestClient) -> None:
@@ -260,8 +277,8 @@ def test_alert_detail_and_sensor_aware_json_endpoints(tmp_path: Path) -> None:
     assert summaries.json()["sensor_id"] == "sensor-local"
 
 
-def test_alert_detail_route_pins_known_unknown_legacy_family_contract(tmp_path: Path) -> None:
-    """Route-level proof: detail page preserves known/unknown/legacy semantics."""
+def test_alert_detail_route_pins_known_unknown_benign_legacy_family_contract(tmp_path: Path) -> None:
+    """Route-level proof: detail page preserves known/unknown/benign/legacy semantics."""
     client, alert_ids = _build_family_contract_test_app(tmp_path)
     _login(client)
 
@@ -270,6 +287,7 @@ def test_alert_detail_route_pins_known_unknown_legacy_family_contract(tmp_path: 
     assert "family signal" in known.text.lower()
     assert "known family" in known.text.lower()
     assert "mirai" in known.text.lower()
+    assert "0.440" in known.text
     assert f"/alerts/{alert_ids['known']}/status" in known.text
     assert f"/alerts/{alert_ids['known']}/notes" in known.text
 
@@ -277,6 +295,16 @@ def test_alert_detail_route_pins_known_unknown_legacy_family_contract(tmp_path: 
     assert unknown.status_code == 200
     assert "unknown family" in unknown.text.lower()
     assert "binary stage still classified this event as an attack" in unknown.text.lower()
+    assert "45.0%" in unknown.text
+    assert "0.020" in unknown.text
+    assert "family label" not in unknown.text.lower()
+
+    benign = client.get(f"/alerts/{alert_ids['benign']}")
+    assert benign.status_code == 200
+    assert "benign alerts do not carry an attack-family label" in benign.text.lower()
+    assert "mirai" not in benign.text.lower()
+    assert "33.0%" not in benign.text
+    assert "0.770" not in benign.text
 
     legacy = client.get(f"/alerts/{alert_ids['legacy']}")
     assert legacy.status_code == 200

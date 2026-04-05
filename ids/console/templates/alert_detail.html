@@ -192,6 +192,14 @@
         </div>
       </div>
       {% endif %}
+      {% if family.get("attack_family_margin") is not none %}
+      <div style="margin-top:10px">
+        <div class="form-label">Margin</div>
+        <div style="font-family:var(--font-primary);font-size:13px;margin-top:4px">
+          {{ "%.3f"|format(family.get("attack_family_margin")) }}
+        </div>
+      </div>
+      {% endif %}
       {% elif family_state == "benign" %}
       <div style="margin-bottom:10px">
         <span class="badge badge--muted">benign</span>

@@ -162,7 +162,7 @@ def test_console_snapshot_keeps_alerts_anomalies_and_summaries_separate(tmp_path
         store.close()
 
 
-def test_alert_family_view_model_distinguishes_known_unknown_and_legacy(tmp_path: Path) -> None:
+def test_alert_family_view_model_distinguishes_known_unknown_benign_and_legacy(tmp_path: Path) -> None:
     store = _new_store(tmp_path)
     try:
         _seed_alert(
@@ -186,6 +186,17 @@ def test_alert_family_view_model_distinguishes_known_unknown_and_legacy(tmp_path
                 "attack_family_margin": 0.11,
             },
         )
+        _seed_alert(
+            store,
+            source_event_id="family-benign",
+            src_ip="10.0.0.24",
+            payload={
+                "family_status": "benign",
+                "attack_family": "stale-family",
+                "attack_family_confidence": 0.72,
+                "attack_family_margin": 0.31,
+            },
+        )
         _seed_alert(store, source_event_id="family-legacy", src_ip="10.0.0.23")
 
         triage_rows = list_alerts_for_triage(store, include_suppressed=True)
@@ -206,6 +217,14 @@ def test_alert_family_view_model_distinguishes_known_unknown_and_legacy(tmp_path
         assert unknown["attack_family"] is None
         assert unknown["attack_family_confidence"] == pytest.approx(0.61)
         assert unknown["attack_family_margin"] == pytest.approx(0.11)
+
+        benign = by_event["family-benign"]["family"]
+        assert benign["family_status"] == "benign"
+        assert benign["family_state"] == "benign"
+        assert benign["legacy_unavailable"] is False
+        assert benign["attack_family"] is None
+        assert benign["attack_family_confidence"] is None
+        assert benign["attack_family_margin"] is None
 
         legacy = by_event["family-legacy"]["family"]
         assert legacy["family_status"] is None

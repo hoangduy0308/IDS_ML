@@ -93,8 +93,8 @@ def _build_alerts_test_app(tmp_path: Path) -> tuple[TestClient, int, int]:
     return client, attack_id, ack_id
 
 
-def _build_family_detail_test_app(tmp_path: Path) -> tuple[TestClient, int, int, int]:
-    """Build test client with known/unknown/legacy family-state alerts."""
+def _build_family_detail_test_app(tmp_path: Path) -> tuple[TestClient, int, int, int, int]:
+    """Build test client with known/unknown/benign/legacy family-state alerts."""
     env = {
         "IDS_OPERATOR_CONSOLE_ENVIRONMENT": "development",
         "IDS_OPERATOR_CONSOLE_SECRET_KEY": "family-detail-test-secret",
@@ -107,6 +107,7 @@ def _build_family_detail_test_app(tmp_path: Path) -> tuple[TestClient, int, int,
     store = open_existing_operator_store(config.database_path)
     known_id: int = -1
     unknown_id: int = -1
+    benign_id: int = -1
     legacy_id: int = -1
     try:
         ensure_admin_user(store, username="admin", password="secret")
@@ -144,6 +145,23 @@ def _build_family_detail_test_app(tmp_path: Path) -> tuple[TestClient, int, int,
                 "attack_family_margin": 0.01,
             },
         )
+        benign_id = store.upsert_alert(
+            source_event_id="alerts-web-benign-006",
+            event_ts="2026-03-30T11:30:00+00:00",
+            severity="medium",
+            src_ip="10.20.0.6",
+            dst_ip="192.168.1.33",
+            src_port=6666,
+            dst_port=443,
+            protocol="tcp",
+            fingerprint="fp-benign-006",
+            payload={
+                "family_status": "benign",
+                "attack_family": "mirai",
+                "attack_family_confidence": 0.33,
+                "attack_family_margin": 0.77,
+            },
+        )
         legacy_id = store.upsert_alert(
             source_event_id="alerts-web-legacy-005",
             event_ts="2026-03-30T12:00:00+00:00",
@@ -161,7 +179,7 @@ def _build_family_detail_test_app(tmp_path: Path) -> tuple[TestClient, int, int,
 
     app = create_operator_console_web_app(config)
     client = TestClient(app, base_url="http://testserver")
-    return client, known_id, unknown_id, legacy_id
+    return client, known_id, unknown_id, benign_id, legacy_id
 
 
 def _login(client: TestClient) -> None:
@@ -362,7 +380,7 @@ def test_alert_detail_returns_404_for_unknown_id(tmp_path: Path) -> None:
 
 
 def test_alert_detail_known_family_explanation(tmp_path: Path) -> None:
-    client, known_id, _, _ = _build_family_detail_test_app(tmp_path)
+    client, known_id, _, _, _ = _build_family_detail_test_app(tmp_path)
     _login(client)
     response = client.get(f"/alerts/{known_id}")
     assert response.status_code == 200
@@ -371,20 +389,36 @@ def test_alert_detail_known_family_explanation(tmp_path: Path) -> None:
     assert "known family" in body.lower()
     assert "mirai" in body.lower()
     assert "97.0%" in body
+    assert "0.420" in body
 
 
 def test_alert_detail_unknown_family_explanation(tmp_path: Path) -> None:
-    client, _, unknown_id, _ = _build_family_detail_test_app(tmp_path)
+    client, _, unknown_id, _, _ = _build_family_detail_test_app(tmp_path)
     _login(client)
     response = client.get(f"/alerts/{unknown_id}")
     assert response.status_code == 200
     body = response.text
     assert "unknown family" in body.lower()
     assert "binary stage still classified this event as an attack" in body.lower()
+    assert "49.0%" in body
+    assert "0.010" in body
+    assert "family label" not in body.lower()
+
+
+def test_alert_detail_benign_family_explanation(tmp_path: Path) -> None:
+    client, _, _, benign_id, _ = _build_family_detail_test_app(tmp_path)
+    _login(client)
+    response = client.get(f"/alerts/{benign_id}")
+    assert response.status_code == 200
+    body = response.text
+    assert "benign alerts do not carry an attack-family label" in body.lower()
+    assert "mirai" not in body.lower()
+    assert "33.0%" not in body
+    assert "0.770" not in body
 
 
 def test_alert_detail_legacy_family_fallback(tmp_path: Path) -> None:
-    client, _, _, legacy_id = _build_family_detail_test_app(tmp_path)
+    client, _, _, _, legacy_id = _build_family_detail_test_app(tmp_path)
     _login(client)
     response = client.get(f"/alerts/{legacy_id}")
     assert response.status_code == 200
@@ -394,7 +428,7 @@ def test_alert_detail_legacy_family_fallback(tmp_path: Path) -> None:
 
 
 def test_alert_detail_family_block_keeps_triage_and_notes_controls(tmp_path: Path) -> None:
-    client, known_id, _, _ = _build_family_detail_test_app(tmp_path)
+    client, known_id, _, _, _ = _build_family_detail_test_app(tmp_path)
     _login(client)
     response = client.get(f"/alerts/{known_id}")
     assert response.status_code == 200

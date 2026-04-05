@@ -73,6 +73,10 @@ def build_alert_family_view(alert: dict[str, Any]) -> dict[str, Any]:
     if family_status in {"known", "unknown", "benign"}:
         family_state = family_status
         legacy_unavailable = False
+        if family_state == "benign":
+            attack_family = None
+            attack_family_confidence = None
+            attack_family_margin = None
     else:
         family_state = "legacy_unavailable"
         legacy_unavailable = True
