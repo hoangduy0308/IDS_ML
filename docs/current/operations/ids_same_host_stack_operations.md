@@ -74,13 +74,13 @@ ids-stack \
   --operator-env-file /etc/ids-operator-console/ids-operator-console.env \
   --activation-path /var/lib/ids-live-sensor/active_bundle.json \
   --dumpcap-binary /usr/bin/dumpcap \
-  --extractor-command-prefix /opt/cicflowmeter/Cmd \
+  --extractor-command-prefix /opt/ids_ml_new/.venv/bin/python -m ids.runtime.extractor.offline_window_extractor \
   --spool-dir /var/lib/ids-live-sensor \
   --alerts-output-path /var/log/ids-live-sensor/ids_live_alerts.jsonl \
   --quarantine-output-path /var/log/ids-live-sensor/ids_live_quarantine.jsonl \
   --summary-output-path /var/log/ids-live-sensor/ids_live_sensor_summary.jsonl \
   --json bootstrap \
-  --candidate-bundle-root /opt/ids_ml_new/artifacts/final_model/candidate_bundle \
+  --candidate-bundle-root /opt/ids_ml_new/artifacts/final_model/catboost_full_data_v1 \
   --admin-username admin \
   --admin-password-file /secure/admin.password
 ```
@@ -88,6 +88,14 @@ ids-stack \
 The canonical same-host interpreter contract is the Python binary inside the bootstrap-created installed environment at `/opt/ids_ml_new/.venv/bin/python`. Do not point the shipped services at host-global `/usr/bin/python3`; that would split the documented contract from the deployed one.
 
 Pass `--extractor-command-prefix` as separate argv tokens. Do not quote the prefix into a single shell word, or the live sensor service will collapse the extractor command structure.
+
+The packaged default helper path is:
+
+```bash
+/opt/ids_ml_new/.venv/bin/python -m ids.runtime.extractor.offline_window_extractor
+```
+
+`/opt/cicflowmeter/Cmd` is a compatibility override only.
 
 The bootstrap flow delegates to the existing component owners. It does not own bundle restore, console restore, or service-specific mutation logic.
 The same-host stack contract carries the live-sensor extractor command prefix explicitly and leaves deeper extractor/runtime validation to the live-sensor preflight owner.
@@ -249,7 +257,7 @@ ids-operator-console-manage \
 ids-model-bundle-manage \
   --activation-path /var/lib/ids-live-sensor/active_bundle.json \
   --json verify \
-  --bundle-root /opt/ids_ml_new/artifacts/final_model/candidate_bundle
+  --bundle-root /opt/ids_ml_new/artifacts/final_model/catboost_full_data_v1
 ```
 
 If stack `smoke`, `recover`, or `post-restore-check` returns degraded, treat that as a deployment blocker rather than a warning.

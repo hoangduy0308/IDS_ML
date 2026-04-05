@@ -109,15 +109,27 @@ def test_operations_quickstart_docs_are_portable_and_canonical() -> None:
     quickstart = (REPO_ROOT / "docs" / "current" / "operations" / "deployment_quickstart.md").read_text(
         encoding="utf-8"
     )
+    stack_ops = (REPO_ROOT / "docs" / "current" / "operations" / "ids_same_host_stack_operations.md").read_text(
+        encoding="utf-8"
+    )
 
     assert "[deployment_quickstart.md](" in operations_readme
     assert "F:/Work/IDS_ML_New" not in operations_readme
     assert "F:\\Work\\IDS_ML_New" not in operations_readme
     assert "ops/build_release.sh" in quickstart
     assert "ops/install.sh" in quickstart
+    assert "--mode console-only" in quickstart
+    assert "--mode full-stack-same-host" in quickstart
     assert "ids-stack" in quickstart
     assert "/opt/ids_ml_new/.venv/bin/python" in quickstart
     assert "pip install -e /opt/ids_ml_new" in quickstart
-    assert "/opt/ids_ml_new/artifacts/final_model/candidate_bundle" in quickstart
+    assert "candidate_bundle" not in quickstart
+    assert "catboost_full_data_v1" not in quickstart
     assert "F:/Work/IDS_ML_New" not in quickstart
     assert "F:\\Work\\IDS_ML_New" not in quickstart
+
+    assert "ids-stack" in stack_ops
+    assert "scripts/ids_same_host_stack_manage.py" in stack_ops
+    assert "/opt/ids_ml_new/.venv/bin/python" in stack_ops
+    assert "/opt/ids_ml_new/artifacts/final_model/catboost_full_data_v1" in stack_ops
+    assert "candidate_bundle" not in stack_ops

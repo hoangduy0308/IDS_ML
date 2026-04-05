@@ -50,7 +50,7 @@ Seed the env file first if you want to edit it before bootstrap:
 cp /opt/ids_ml_new/ops/ids-operator-console.env.example /etc/ids-operator-console/ids-operator-console.env
 ```
 
-Then install:
+Then install in the supported mode you need:
 
 ```bash
 sudo bash /opt/ids_ml_new/ops/install.sh --create-secrets
@@ -62,27 +62,23 @@ This creates a fresh target venv and installs the app via:
 pip install -e /opt/ids_ml_new
 ```
 
-If you already have:
-
-- a valid candidate bundle
-- operator env file
-- admin password file
-
-then run the full bootstrap in one shot:
+Console-only is the minimal supported path:
 
 ```bash
 sudo bash /opt/ids_ml_new/ops/install.sh \
-  --create-secrets \
-  --bootstrap \
-  --candidate-bundle-root /opt/ids_ml_new/artifacts/final_model/candidate_bundle \
-  --admin-password-file /secure/admin.password \
-  --proxy-public-url https://console.example
+  --mode console-only \
+  --create-secrets
 ```
 
-If you want to bootstrap directly from the bundle shipped in this checkout instead of a separately staged `candidate_bundle`, pass:
+Full-stack same-host installs bootstrap the shipped bundled default artifact automatically:
 
 ```bash
---candidate-bundle-root /opt/ids_ml_new/artifacts/final_model/catboost_full_data_v1
+sudo bash /opt/ids_ml_new/ops/install.sh \
+  --mode full-stack-same-host \
+  --create-secrets \
+  --bootstrap \
+  --admin-password-file /secure/admin.password \
+  --proxy-public-url https://console.example
 ```
 
 ## Telegram Notifications

@@ -30,9 +30,32 @@ The release bundle is built using `git archive`, which exports only tracked file
 
 `ops/install.sh` is intentionally an in-place installer. It recreates `/opt/ids_ml_new/.venv`, installs pinned dependencies, then installs the app from the extracted checkout with `pip install -e /opt/ids_ml_new`. The installer also hardens the operator env file permissions (`0640 root:ids-operator`) regardless of how the file was originally created, and enables the notification worker service alongside the base services.
 
-## Target-host bootstrap
+## Target-host install
 
-The canonical target-host bootstrap still goes through `ids-stack`:
+`ops/install.sh` is the canonical installer. It has one supported path per mode.
+
+Console-only install:
+
+```bash
+sudo bash /opt/ids_ml_new/ops/install.sh \
+  --mode console-only \
+  --create-secrets
+```
+
+Full-stack same-host install:
+
+```bash
+sudo bash /opt/ids_ml_new/ops/install.sh \
+  --mode full-stack-same-host \
+  --create-secrets \
+  --bootstrap \
+  --admin-password-file /secure/admin.password \
+  --proxy-public-url https://console.example
+```
+
+The full-stack path bootstraps through the shipped bundled default artifact and keeps `ids-stack` as the canonical operator-facing bootstrap/readiness surface.
+
+The same-host bootstrap surface underneath the installer remains `ids-stack`:
 
 ```bash
 ids-stack \
@@ -41,21 +64,27 @@ ids-stack \
   --operator-env-file /etc/ids-operator-console/ids-operator-console.env \
   --activation-path /var/lib/ids-live-sensor/active_bundle.json \
   --dumpcap-binary /usr/bin/dumpcap \
-  --extractor-command-prefix /opt/cicflowmeter/Cmd \
+  --extractor-command-prefix /opt/ids_ml_new/.venv/bin/python -m ids.runtime.extractor.offline_window_extractor \
   --spool-dir /var/lib/ids-live-sensor \
   --alerts-output-path /var/log/ids-live-sensor/ids_live_alerts.jsonl \
   --quarantine-output-path /var/log/ids-live-sensor/ids_live_quarantine.jsonl \
   --summary-output-path /var/log/ids-live-sensor/ids_live_sensor_summary.jsonl \
   --proxy-public-url https://console.example \
   --json bootstrap \
-  --candidate-bundle-root /opt/ids_ml_new/artifacts/final_model/candidate_bundle \
   --admin-username admin \
   --admin-password-file /secure/admin.password
 ```
 
-`ops/install.sh --bootstrap` is a convenience wrapper around this contract. It does not replace `ids-stack` as the canonical operator path.
+The exact bundled-default artifact path for the canonical same-host bootstrap example lives in
+`docs/current/operations/ids_same_host_stack_operations.md`.
 
-If the host is bootstrapping directly from the bundle currently shipped in this repo checkout instead of a separately staged `candidate_bundle`, pass `--candidate-bundle-root /opt/ids_ml_new/artifacts/final_model/catboost_full_data_v1` explicitly.
+The packaged live-sensor helper default is the repository-backed extractor module:
+
+```bash
+/opt/ids_ml_new/.venv/bin/python -m ids.runtime.extractor.offline_window_extractor
+```
+
+`/opt/cicflowmeter/Cmd` remains a compatibility override, not the default install path.
 
 ## Telegram Notifications
 
