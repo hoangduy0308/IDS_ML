@@ -261,6 +261,22 @@ def test_install_helper_defaults_full_stack_bootstrap_to_shipped_bundle_root() -
     assert 'Cannot run --bootstrap without --candidate-bundle-root.' not in install_script
 
 
+def test_install_helper_explicit_override_stays_fail_closed() -> None:
+    install_script = (REPO_ROOT / "ops" / "install.sh").read_text(encoding="utf-8")
+
+    candidate_index = install_script.index('local selected_bundle_root="${CANDIDATE_BUNDLE_ROOT}"')
+    fallback_index = install_script.index('selected_bundle_root="${DEFAULT_BUNDLED_BUNDLE_ROOT}"')
+    require_index = install_script.index('require_dir "${selected_bundle_root}"')
+    bootstrap_index = install_script.index('--candidate-bundle-root "${selected_bundle_root}"')
+
+    assert 'if [[ -z "${selected_bundle_root}" ]]; then' in install_script
+    assert candidate_index < fallback_index < require_index < bootstrap_index
+    assert 'selected_bundle_root="${CANDIDATE_BUNDLE_ROOT}"' in install_script
+    assert 'selected_bundle_root="${DEFAULT_BUNDLED_BUNDLE_ROOT}"' in install_script
+    assert 'require_dir "${selected_bundle_root}"' in install_script
+    assert '--candidate-bundle-root "${selected_bundle_root}"' in install_script
+
+
 def test_install_helper_seeds_live_sensor_env_contract() -> None:
     install_script = (REPO_ROOT / "ops" / "install.sh").read_text(encoding="utf-8")
     env_text = (REPO_ROOT / "ops" / "ids-live-sensor.env.example").read_text(encoding="utf-8")

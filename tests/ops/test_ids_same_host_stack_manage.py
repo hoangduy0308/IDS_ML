@@ -760,6 +760,50 @@ def test_run_stack_bootstrap_bootstrap_or_preflight_stops_on_degraded_preflight(
     assert executed == []
 
 
+def test_run_stack_bootstrap_bootstrap_or_preflight_aborts_on_failed_candidate_bundle_verification(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _build_config(tmp_path)
+    validated_operator_config = stack.load_stack_operator_config(config)
+
+    executed: list[list[str]] = []
+
+    def fake_runner(argv: list[str] | tuple[str, ...]) -> str:
+        command = [str(part) for part in argv]
+        executed.append(command)
+        if "--bundle-root" in command:
+            bundle_root = command[command.index("--bundle-root") + 1]
+            assert bundle_root == str(config.candidate_bundle_root.resolve()), (
+                "bootstrap must use the explicit override bundle root exactly once"
+            )
+            raise RuntimeError("Bundle feature schema digest mismatch for explicit override")
+        raise AssertionError("bootstrap must stop after candidate bundle verification fails")
+
+    monkeypatch.setattr(
+        stack,
+        "_validate_stack_preflight_with_operator_config",
+        lambda current_config: (
+            {
+                "ready": True,
+                "bootstrap_gate_ready": True,
+                "command": "preflight",
+                "status": "ok",
+            },
+            validated_operator_config,
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="Bundle feature schema digest mismatch for explicit override"):
+        stack.run_stack_bootstrap(config, command_runner=fake_runner)
+
+    assert len(executed) == 1
+    assert executed[0][executed[0].index("--bundle-root") + 1] == str(
+        config.candidate_bundle_root.resolve()
+    )
+    assert executed[0][executed[0].index("--json") + 1] == "verify"
+
+
 def test_run_stack_bootstrap_bootstrap_or_preflight_reports_degraded_post_start_verification(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
