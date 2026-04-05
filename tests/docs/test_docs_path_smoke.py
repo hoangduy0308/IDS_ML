@@ -84,6 +84,8 @@ def test_packaged_operator_docs_keep_canonical_command_surface() -> None:
     assert "/opt/ids_ml_new/.venv/bin/ids-offline-window-extractor" in prereq_doc
     assert "/opt/cicflowmeter/Cmd" in prereq_doc
     assert "compatibility override" in prereq_doc
+    assert "installer persists into `/etc/ids-live-sensor/ids-live-sensor.env`" in prereq_doc
+    assert "expects `IDS_LIVE_SENSOR_EXTRACTOR_COMMAND_PREFIX` to be one executable path" in prereq_doc
     assert "/usr/bin/bash -lc" not in prereq_doc
 
     assert "ids-live-sensor-preflight" in live_sensor_doc
@@ -128,14 +130,17 @@ def test_operations_quickstart_docs_are_portable_and_canonical() -> None:
     assert "ops/install.sh" in quickstart
     assert "--mode console-only" in quickstart
     assert "--mode full-stack-same-host" in quickstart
+    assert "sudo bash /opt/ids_ml_new/ops/install.sh --create-secrets" not in quickstart
     assert "ids-stack" in quickstart
     assert "ids-operator-console-manage" in quickstart
     assert "admin.password" in quickstart
     assert "/opt/ids_ml_new/.venv/bin/python" in quickstart
     assert "/opt/ids_ml_new/.venv/bin/ids-offline-window-extractor" in quickstart
+    assert "--interface eth0" in quickstart
     assert "pip install -e /opt/ids_ml_new" in quickstart
+    assert "mode-specific checks shown below" in quickstart
     assert "candidate_bundle" not in quickstart
-    assert "catboost_full_data_v1" not in quickstart
+    assert "/opt/ids_ml_new/artifacts/final_model/catboost_full_data_v1" in quickstart
     assert "F:/Work/IDS_ML_New" not in quickstart
     assert "F:\\Work\\IDS_ML_New" not in quickstart
 
@@ -143,9 +148,14 @@ def test_operations_quickstart_docs_are_portable_and_canonical() -> None:
     assert "scripts/ids_same_host_stack_manage.py" in stack_ops
     assert "/opt/ids_ml_new/.venv/bin/python" in stack_ops
     assert "/opt/ids_ml_new/.venv/bin/ids-offline-window-extractor" in stack_ops
+    assert "--interface eth0" in stack_ops
     assert "/opt/ids_ml_new/artifacts/final_model/catboost_full_data_v1" in stack_ops
     assert "candidate_bundle" not in stack_ops
 
     deploy_readme = (REPO_ROOT / "ops" / "README-deploy.md").read_text(encoding="utf-8")
+    assert "sudo bash /opt/ids_ml_new/ops/install.sh --create-secrets" not in deploy_readme
     assert "ids-operator-console-manage" in deploy_readme
     assert "admin.password" in deploy_readme
+    assert "### Console-only" in deploy_readme
+    assert "### Full-stack same-host" in deploy_readme
+    assert "--interface eth0" in deploy_readme

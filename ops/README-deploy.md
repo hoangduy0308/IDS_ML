@@ -50,11 +50,7 @@ Seed the env file first if you want to edit it before bootstrap:
 cp /opt/ids_ml_new/ops/ids-operator-console.env.example /etc/ids-operator-console/ids-operator-console.env
 ```
 
-Then install in the supported mode you need:
-
-```bash
-sudo bash /opt/ids_ml_new/ops/install.sh --create-secrets
-```
+Then install in the supported mode you need. The installer now requires an explicit `--mode`.
 
 This creates a fresh target venv and installs the app via:
 
@@ -82,6 +78,8 @@ sudo bash /opt/ids_ml_new/ops/install.sh \
   --admin-password-file /secure/admin.password \
   --proxy-public-url https://console.example
 ```
+
+The canonical packaged full-stack path does not support `--skip-service-enable`, because bootstrap verifies the started services before it reports success.
 
 ## Telegram Notifications
 
@@ -122,25 +120,44 @@ Settings saved via the Settings UI (stored in the database) take precedence over
 
 ## Canonical verification
 
-After install or bootstrap, use the installed `ids-*` commands:
+### Console-only
+
+```bash
+/opt/ids_ml_new/.venv/bin/ids-operator-console-manage \
+  --database-path /var/lib/ids-operator-console/operator_console.db \
+  --json status
+
+/opt/ids_ml_new/.venv/bin/ids-operator-console-manage \
+  --database-path /var/lib/ids-operator-console/operator_console.db \
+  --json smoke
+
+/opt/ids_ml_new/.venv/bin/ids-operator-console-manage \
+  --database-path /var/lib/ids-operator-console/operator_console.db \
+  --json notify-status
+```
+
+### Full-stack same-host
 
 ```bash
 /opt/ids_ml_new/.venv/bin/ids-stack \
   --repo-root /opt/ids_ml_new \
   --operator-env-file /etc/ids-operator-console/ids-operator-console.env \
   --activation-path /var/lib/ids-live-sensor/active_bundle.json \
+  --interface eth0 \
   --json preflight
 
 /opt/ids_ml_new/.venv/bin/ids-stack \
   --repo-root /opt/ids_ml_new \
   --operator-env-file /etc/ids-operator-console/ids-operator-console.env \
   --activation-path /var/lib/ids-live-sensor/active_bundle.json \
+  --interface eth0 \
   --json status
 
 /opt/ids_ml_new/.venv/bin/ids-stack \
   --repo-root /opt/ids_ml_new \
   --operator-env-file /etc/ids-operator-console/ids-operator-console.env \
   --activation-path /var/lib/ids-live-sensor/active_bundle.json \
+  --interface eth0 \
   --proxy-public-url https://console.example \
   --json smoke
 ```

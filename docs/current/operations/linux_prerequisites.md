@@ -32,7 +32,7 @@ which dumpcap
 dumpcap --version
 ```
 
-The default path is `/usr/bin/dumpcap`. Configurable via `--dumpcap-binary` in the installer and systemd unit environment.
+The default path is `/usr/bin/dumpcap`. Configurable via `--dumpcap-binary`, which the installer persists into `/etc/ids-live-sensor/ids-live-sensor.env` before bootstrap and steady-state runtime.
 
 ### Packaged extractor default
 
@@ -47,6 +47,8 @@ No separate extractor package is required for the canonical `console-only` or `f
 ### CICFlowMeter compatibility override
 
 CICFlowMeter remains supported only as a compatibility override when an operator intentionally replaces the packaged extractor via `--extractor-command-prefix` or the equivalent live-sensor environment contract.
+
+The packaged service/env contract expects `IDS_LIVE_SENSOR_EXTRACTOR_COMMAND_PREFIX` to be one executable path. Multi-token prefixes such as `python -m ...` are not part of the canonical installed runtime contract.
 
 Compatibility path: `/opt/cicflowmeter/Cmd`
 

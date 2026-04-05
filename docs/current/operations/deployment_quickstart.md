@@ -23,8 +23,8 @@ Recommended flow:
 1. Run `bash ./ops/build_release.sh` on the source/build machine.
 2. Copy the resulting `ids_ml_new-<timestamp>.tar.gz` to the target host.
 3. Extract it so the checkout lands at `/opt/ids_ml_new`.
-4. Run `sudo bash /opt/ids_ml_new/ops/install.sh`.
-5. Verify with `ids-stack --json preflight`, `status`, and `smoke`.
+4. Run the mode-specific installer command shown below.
+5. Verify with the mode-specific checks shown below: `ids-operator-console-manage` for `console-only`, or `ids-stack` for `full-stack same-host`.
 
 The release bundle is built using `git archive`, which exports only tracked files from the repository. Untracked and gitignored local files (secrets, credentials, `.claude/`, etc.) are excluded by construction. The only generated artifact added post-export is `wheelhouse/` for dependency wheels.
 
@@ -66,6 +66,7 @@ ids-stack \
   --python-binary /opt/ids_ml_new/.venv/bin/python \
   --operator-env-file /etc/ids-operator-console/ids-operator-console.env \
   --activation-path /var/lib/ids-live-sensor/active_bundle.json \
+  --interface eth0 \
   --dumpcap-binary /usr/bin/dumpcap \
   --extractor-command-prefix /opt/ids_ml_new/.venv/bin/ids-offline-window-extractor \
   --spool-dir /var/lib/ids-live-sensor \
@@ -74,12 +75,10 @@ ids-stack \
   --summary-output-path /var/log/ids-live-sensor/ids_live_sensor_summary.jsonl \
   --proxy-public-url https://console.example \
   --json bootstrap \
+  --candidate-bundle-root /opt/ids_ml_new/artifacts/final_model/catboost_full_data_v1 \
   --admin-username admin \
   --admin-password-file /secure/admin.password
 ```
-
-The exact bundled-default artifact path for the canonical same-host bootstrap example lives in
-`docs/current/operations/ids_same_host_stack_operations.md`.
 
 The console-only readiness checks after install use the canonical console manage surface:
 
@@ -97,13 +96,31 @@ ids-operator-console-manage \
   --json notify-status
 ```
 
-The packaged live-sensor helper default is the repository-backed extractor module:
+The packaged live-sensor helper default is the installed single-token executable already present inside the target-host virtual environment:
 
 ```bash
 /opt/ids_ml_new/.venv/bin/ids-offline-window-extractor
 ```
 
 `/opt/cicflowmeter/Cmd` remains a compatibility override, not the default install path. Compatibility overrides on the packaged service contract are bounded to one exact executable path; multi-token extractor wrappers are outside the canonical `ops/install.sh` path.
+
+For direct `ids-stack` recovery or manual bootstrap, keep the capture interface explicit so the raw command matches the packaged live-sensor env contract:
+
+```bash
+ids-stack \
+  --repo-root /opt/ids_ml_new \
+  --python-binary /opt/ids_ml_new/.venv/bin/python \
+  --operator-env-file /etc/ids-operator-console/ids-operator-console.env \
+  --activation-path /var/lib/ids-live-sensor/active_bundle.json \
+  --interface eth0 \
+  --dumpcap-binary /usr/bin/dumpcap \
+  --extractor-command-prefix /opt/ids_ml_new/.venv/bin/ids-offline-window-extractor \
+  --spool-dir /var/lib/ids-live-sensor \
+  --alerts-output-path /var/log/ids-live-sensor/ids_live_alerts.jsonl \
+  --quarantine-output-path /var/log/ids-live-sensor/ids_live_quarantine.jsonl \
+  --summary-output-path /var/log/ids-live-sensor/ids_live_sensor_summary.jsonl \
+  --json preflight
+```
 
 ## Telegram Notifications
 

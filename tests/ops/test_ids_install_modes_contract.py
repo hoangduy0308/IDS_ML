@@ -75,7 +75,9 @@ def test_install_mode_next_checks_document_mode_specific_readiness() -> None:
     assert "--json status" in install_script
     assert "--json smoke" in install_script
     assert "--json notify-status" in install_script
-    assert "ids-model-bundle-manage --activation-path /var/lib/ids-live-sensor/active_bundle.json --json status" in install_script
+    assert 'SENSOR_STATE_DIR="/var/lib/ids-live-sensor"' in install_script
+    assert 'SENSOR_STATE_DIR="${IDS_INSTALL_SENSOR_STATE_DIR:-${SENSOR_STATE_DIR}}"' in install_script
+    assert "ids-model-bundle-manage --activation-path ${SENSOR_STATE_DIR}/active_bundle.json --json status" in install_script
     next_checks_start = install_script.index("printf 'Next checks:\\n'")
     console_branch_start = install_script.index('if [[ "${MODE}" == "console-only" ]]; then', next_checks_start)
     console_branch_end = install_script.index('else', console_branch_start)

@@ -1,24 +1,39 @@
 STATUS: reviewing-complete
-EPIC: ids_ml_new-3rc7 (CLOSED)
-FEATURE: ids-multiclass-two-stage-operator-surfaces
+EPIC: ids_ml_new-1u8h (CLOSED)
+FEATURE: ids-install-ready-linux-productization
 HANDOFF: complete
 
 ## Current State
 
 - Skill: reviewing
-- Feature: ids-multiclass-two-stage-operator-surfaces
+- Feature: ids-install-ready-linux-productization
+- Companion Feature: ids-two-stage-default-production-bundle
 - Plan Gate: approved
 - Approved Phase Plan: yes
-- Current Phase: Phase 2 - Bring The Same Meaning Into The Triage Queue And Docs
-- Validation Status: PASS, execution complete
-- Structural Verification: 8/8 dimensions PASS after plan-space repairs
-- Polishing: dependency `.12 -> .11` added; bead scope/state matrix tightened for `.10` / `.11` / `.12`
-- Phase 1 Status: clean after review-fix rerun (`ids_ml_new-3rc7.9` closed, final rerun 0 findings)
-- Current Phase Outcome: Phase 2 execution complete; review rerun clean; epic closed
-- Coordinator: FuchsiaDog
+- Current Phase: Phase 3 - Prove The Product Path End To End
+- Locked decisions (primary): D1-D13
+- Locked decisions (companion): D1-D12
+- Recommended planning order: packaging/install-ready Linux first, then default two-stage production bundle
+- Current Phase Beads: ids_ml_new-1u8h.10, ids_ml_new-1u8h.11, ids_ml_new-1u8h.12 (all closed)
+- Validation Outcome: PASS for Phase 3 after structural graph check; dependency chain tightened to keep proof ahead of docs and compatibility seams, with no new HIGH-risk spike needed
+- Validated At: 2026-04-06T01:11:00+07:00
+- Swarm Started At: 2026-04-06T01:11:00+07:00
+- Coordinator: BronzeHawk
+- Thread: ids_ml_new-1u8h
+- Topic: epic-ids_ml_new-1u8h
+- Next: reviewing loop complete with 0 actionable findings; companion feature can proceed when desired
 
 ## Artifacts Written
 
+- history/ids-install-ready-linux-productization/CONTEXT.md
+- history/ids-install-ready-linux-productization/discovery.md
+- history/ids-install-ready-linux-productization/approach.md
+- history/ids-install-ready-linux-productization/phase-plan.md
+- history/ids-install-ready-linux-productization/phase-1-contract.md
+- history/ids-install-ready-linux-productization/phase-1-story-map.md
+- history/ids-install-ready-linux-productization/phase-2-contract.md
+- history/ids-install-ready-linux-productization/phase-2-story-map.md
+- history/ids-two-stage-default-production-bundle/CONTEXT.md
 - history/ids-multiclass-two-stage-operator-surfaces/CONTEXT.md
 - history/ids-multiclass-two-stage-operator-surfaces/discovery.md
 - history/ids-multiclass-two-stage-operator-surfaces/approach.md
@@ -36,12 +51,13 @@ HANDOFF: complete
 - Closed Prior Beads: ids_ml_new-3rc7.6, ids_ml_new-3rc7.7, ids_ml_new-3rc7.8, ids_ml_new-3rc7.9
 - Phase 2 Closed Beads: ids_ml_new-3rc7.10, ids_ml_new-3rc7.11, ids_ml_new-3rc7.12
 - Review Outcome: 0 actionable findings after review synthesis and contract verification
+- Planning Summary (current lane): Phase 1 prepared with 3 stories and 5 executable beads under epic ids_ml_new-1u8h
 
 ## Risk Summary
 
-- HIGH-risk components in current phase: none
-- Current validation focus: queue triage semantics, unknown/legacy guidance, and queue/detail/docs parity
-- Review Intent: completed; queue family/status semantics, fallback wording, and tests/docs parity verified for Phase 2
+- HIGH-risk components in current phase: bundled-default auto activation during install and the bundle/root trust boundary between release, install, and bootstrap
+- Current validating result: spike `ids_ml_new-uxak` returned YES provided install only selects bundle roots, bootstrap remains the sole mutation path, and precedence stays `override > bundled default > abort`
+- Execution guardrail: no Phase 2 bead may introduce a second bundle/activation implementation outside canonical `ids-stack bootstrap` and `ids-model-bundle-manage`
 
 ## Active Workers
 

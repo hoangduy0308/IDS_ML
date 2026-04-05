@@ -13,7 +13,6 @@ Options:
   --python-bin PATH             Python binary used to create the target venv (default: python3.11)
   --operator-env-src PATH       Template env file to seed (default: ops/ids-operator-console.env.example)
   --operator-env-dest PATH      Host env file path (default: /etc/ids-operator-console/ids-operator-console.env)
-  --live-sensor-env PATH       Host live-sensor env file path (default: /etc/ids-live-sensor/ids-live-sensor.env)
   --console-secret-file PATH    Host secret key file path (default: /etc/ids-operator-console/console.secret)
   --telegram-token-file PATH    Host Telegram token file path (default: /etc/ids-operator-console/telegram-bot-token.secret)
   --dumpcap-binary PATH         Exact dumpcap path written into the live-sensor env before bootstrap/runtime (default: /usr/bin/dumpcap)
@@ -39,11 +38,27 @@ EOF
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 INSTALL_ROOT=$(cd -- "${SCRIPT_DIR}/.." && pwd)
+INSTALL_TEST_MODE="${IDS_INSTALL_TEST_MODE:-0}"
+EXPECTED_INSTALL_ROOT="/opt/ids_ml_new"
 MODE=""
 PYTHON_BIN="python3.11"
 SERVICE_DIR="/etc/systemd/system"
 OPS_CONFIG_DIR="/etc/ids-operator-console"
 LIVE_SENSOR_CONFIG_DIR="/etc/ids-live-sensor"
+SENSOR_STATE_DIR="/var/lib/ids-live-sensor"
+SENSOR_LOG_DIR="/var/log/ids-live-sensor"
+OPERATOR_STATE_DIR="/var/lib/ids-operator-console"
+OPERATOR_BACKUP_DIR="/var/backups/ids-operator-console"
+if [[ "${INSTALL_TEST_MODE}" == "1" ]]; then
+  EXPECTED_INSTALL_ROOT="${IDS_INSTALL_EXPECTED_ROOT:-${EXPECTED_INSTALL_ROOT}}"
+  SERVICE_DIR="${IDS_INSTALL_SERVICE_DIR:-${SERVICE_DIR}}"
+  OPS_CONFIG_DIR="${IDS_INSTALL_OPS_CONFIG_DIR:-${OPS_CONFIG_DIR}}"
+  LIVE_SENSOR_CONFIG_DIR="${IDS_INSTALL_LIVE_SENSOR_CONFIG_DIR:-${LIVE_SENSOR_CONFIG_DIR}}"
+  SENSOR_STATE_DIR="${IDS_INSTALL_SENSOR_STATE_DIR:-${SENSOR_STATE_DIR}}"
+  SENSOR_LOG_DIR="${IDS_INSTALL_SENSOR_LOG_DIR:-${SENSOR_LOG_DIR}}"
+  OPERATOR_STATE_DIR="${IDS_INSTALL_OPERATOR_STATE_DIR:-${OPERATOR_STATE_DIR}}"
+  OPERATOR_BACKUP_DIR="${IDS_INSTALL_OPERATOR_BACKUP_DIR:-${OPERATOR_BACKUP_DIR}}"
+fi
 OPERATOR_ENV_SRC="${INSTALL_ROOT}/ops/ids-operator-console.env.example"
 OPERATOR_ENV_DEST="${OPS_CONFIG_DIR}/ids-operator-console.env"
 LIVE_SENSOR_ENV_SRC="${INSTALL_ROOT}/ops/ids-live-sensor.env.example"
@@ -80,10 +95,6 @@ while [[ $# -gt 0 ]]; do
       ;;
     --operator-env-dest)
       OPERATOR_ENV_DEST=$2
-      shift 2
-      ;;
-    --live-sensor-env)
-      LIVE_SENSOR_ENV_DEST=$2
       shift 2
       ;;
     --console-secret-file)
@@ -144,13 +155,13 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ ${EUID} -ne 0 ]]; then
+if [[ ! ( "${INSTALL_TEST_MODE}" == "1" && "${IDS_INSTALL_SKIP_ROOT_CHECK:-0}" == "1" ) && ${EUID} -ne 0 ]]; then
   printf 'This script must run as root.\n' >&2
   exit 1
 fi
 
-if [[ "${INSTALL_ROOT}" != "/opt/ids_ml_new" ]]; then
-  printf 'This installer must run from the canonical checkout root /opt/ids_ml_new.\n' >&2
+if [[ "${INSTALL_ROOT}" != "${EXPECTED_INSTALL_ROOT}" ]]; then
+  printf 'This installer must run from the canonical checkout root %s.\n' "${EXPECTED_INSTALL_ROOT}" >&2
   printf 'Current checkout root: %s\n' "${INSTALL_ROOT}" >&2
   exit 1
 fi
@@ -217,6 +228,11 @@ ensure_mode_contract() {
     exit 1
   fi
 
+  if [[ "${MODE}" == "full-stack-same-host" && ${SKIP_SERVICE_ENABLE} -eq 1 ]]; then
+    printf 'full-stack-same-host does not support --skip-service-enable because bootstrap verifies the started packaged services.\n' >&2
+    exit 1
+  fi
+
   if [[ "${MODE}" == "full-stack-same-host" && "${EXTRACTOR_COMMAND_PREFIX}" =~ [[:space:]] ]]; then
     printf 'full-stack-same-host uses one exact extractor helper path in %s; multi-token overrides are compatibility-only and not accepted by ops/install.sh.\n' "${LIVE_SENSOR_ENV_DEST}" >&2
     exit 1
@@ -226,8 +242,80 @@ ensure_mode_contract() {
 require_mode
 ensure_mode_contract
 
+copy_file_with_mode() {
+  local mode=$1
+  local src=$2
+  local dest=$3
+
+  mkdir -p "$(dirname -- "${dest}")"
+  if [[ "${INSTALL_TEST_MODE}" == "1" ]]; then
+    cp "${src}" "${dest}"
+    chmod "${mode}" "${dest}" 2>/dev/null || true
+    return
+  fi
+
+  install -m "${mode}" "${src}" "${dest}"
+}
+
+copy_file_with_owner_mode() {
+  local mode=$1
+  local owner=$2
+  local group=$3
+  local src=$4
+  local dest=$5
+
+  mkdir -p "$(dirname -- "${dest}")"
+  if [[ "${INSTALL_TEST_MODE}" == "1" ]]; then
+    cp "${src}" "${dest}"
+    chmod "${mode}" "${dest}" 2>/dev/null || true
+    return
+  fi
+
+  install -m "${mode}" -o "${owner}" -g "${group}" "${src}" "${dest}"
+}
+
+ensure_dir_with_owner_mode() {
+  local mode=$1
+  local owner=$2
+  local group=$3
+  local path=$4
+
+  if [[ "${INSTALL_TEST_MODE}" == "1" ]]; then
+    mkdir -p "${path}"
+    chmod "${mode}" "${path}" 2>/dev/null || true
+    return
+  fi
+
+  install -d -m "${mode}" -o "${owner}" -g "${group}" "${path}"
+}
+
+set_owner_group() {
+  local owner_group=$1
+  local path=$2
+
+  if [[ "${INSTALL_TEST_MODE}" == "1" ]]; then
+    return
+  fi
+
+  chown "${owner_group}" "${path}"
+}
+
+run_systemctl() {
+  if [[ "${INSTALL_TEST_MODE}" == "1" ]]; then
+    if [[ -n "${IDS_TEST_INSTALL_LOG:-}" ]]; then
+      printf 'systemctl %s\n' "$*" >> "${IDS_TEST_INSTALL_LOG}"
+    fi
+    return
+  fi
+
+  systemctl "$@"
+}
+
 ensure_system_user() {
   local user=$1
+  if [[ "${INSTALL_TEST_MODE}" == "1" && "${IDS_INSTALL_SKIP_SYSTEM_USER_SETUP:-0}" == "1" ]]; then
+    return
+  fi
   if ! id -u "$user" >/dev/null 2>&1; then
     useradd --system --home /nonexistent --shell /usr/sbin/nologin "$user"
   fi
@@ -281,14 +369,14 @@ require_single_token_value() {
 seed_operator_env() {
   mkdir -p "$(dirname -- "${OPERATOR_ENV_DEST}")"
   if [[ ! -f "${OPERATOR_ENV_DEST}" ]]; then
-    install -m 0640 -o root -g ids-operator "${OPERATOR_ENV_SRC}" "${OPERATOR_ENV_DEST}"
+    copy_file_with_owner_mode 0640 root ids-operator "${OPERATOR_ENV_SRC}" "${OPERATOR_ENV_DEST}"
   else
     # Harden a pre-seeded env file that may contain secrets (e.g. Telegram bot token).
     # The documented install path allows operators to copy the env example before
     # running the installer, so we must ensure safe ownership and permissions
     # regardless of how the file was created.
     chmod 0640 "${OPERATOR_ENV_DEST}"
-    chown root:ids-operator "${OPERATOR_ENV_DEST}"
+    set_owner_group root:ids-operator "${OPERATOR_ENV_DEST}"
   fi
 }
 
@@ -302,11 +390,16 @@ seed_live_sensor_env() {
   fi
   mkdir -p "$(dirname -- "${LIVE_SENSOR_ENV_DEST}")"
   if [[ ! -f "${LIVE_SENSOR_ENV_DEST}" ]]; then
-    install -m 0640 -o root -g ids-sensor "${LIVE_SENSOR_ENV_SRC}" "${LIVE_SENSOR_ENV_DEST}"
+    copy_file_with_owner_mode 0640 root ids-sensor "${LIVE_SENSOR_ENV_SRC}" "${LIVE_SENSOR_ENV_DEST}"
   else
     chmod 0640 "${LIVE_SENSOR_ENV_DEST}"
-    chown root:ids-sensor "${LIVE_SENSOR_ENV_DEST}"
+    set_owner_group root:ids-sensor "${LIVE_SENSOR_ENV_DEST}"
   fi
+  set_env_value "${LIVE_SENSOR_ENV_DEST}" IDS_LIVE_SENSOR_SPOOL_DIR "${SENSOR_STATE_DIR}"
+  set_env_value "${LIVE_SENSOR_ENV_DEST}" IDS_LIVE_SENSOR_ALERTS_OUTPUT "${SENSOR_LOG_DIR}/ids_live_alerts.jsonl"
+  set_env_value "${LIVE_SENSOR_ENV_DEST}" IDS_LIVE_SENSOR_QUARANTINE_OUTPUT "${SENSOR_LOG_DIR}/ids_live_quarantine.jsonl"
+  set_env_value "${LIVE_SENSOR_ENV_DEST}" IDS_LIVE_SENSOR_SUMMARY_OUTPUT "${SENSOR_LOG_DIR}/ids_live_sensor_summary.jsonl"
+  set_env_value "${LIVE_SENSOR_ENV_DEST}" IDS_LIVE_SENSOR_ACTIVE_BUNDLE_PATH "${SENSOR_STATE_DIR}/active_bundle.json"
   if [[ ${DUMPCAP_BINARY_WAS_SET} -eq 1 ]]; then
     set_env_value "${LIVE_SENSOR_ENV_DEST}" IDS_LIVE_SENSOR_DUMPCAP_BINARY "${DUMPCAP_BINARY}"
   fi
@@ -314,7 +407,7 @@ seed_live_sensor_env() {
     set_env_value "${LIVE_SENSOR_ENV_DEST}" IDS_LIVE_SENSOR_EXTRACTOR_COMMAND_PREFIX "${EXTRACTOR_COMMAND_PREFIX}"
   fi
   chmod 0640 "${LIVE_SENSOR_ENV_DEST}"
-  chown root:ids-sensor "${LIVE_SENSOR_ENV_DEST}"
+  set_owner_group root:ids-sensor "${LIVE_SENSOR_ENV_DEST}"
   require_single_token_value IDS_LIVE_SENSOR_INTERFACE "$(live_sensor_env_value IDS_LIVE_SENSOR_INTERFACE)"
   require_single_token_value IDS_LIVE_SENSOR_DUMPCAP_BINARY "$(live_sensor_env_value IDS_LIVE_SENSOR_DUMPCAP_BINARY)"
   require_single_token_value IDS_LIVE_SENSOR_EXTRACTOR_COMMAND_PREFIX "$(live_sensor_env_value IDS_LIVE_SENSOR_EXTRACTOR_COMMAND_PREFIX)"
@@ -333,8 +426,8 @@ seed_console_admin_password() {
   fi
 
   if [[ -f "${admin_password_file}" ]]; then
-    chmod 0640 "${admin_password_file}"
-    chown root:ids-operator "${admin_password_file}"
+    chmod 0600 "${admin_password_file}"
+    set_owner_group root:root "${admin_password_file}"
     return
   fi
 
@@ -348,14 +441,14 @@ seed_console_admin_password() {
 import secrets
 print(secrets.token_hex(24))
 PY
-  chmod 0640 "${admin_password_file}"
-  chown root:ids-operator "${admin_password_file}"
+  chmod 0600 "${admin_password_file}"
+  set_owner_group root:root "${admin_password_file}"
 }
 
 seed_console_secret() {
   if [[ -f "${CONSOLE_SECRET_FILE}" ]]; then
     chmod 0640 "${CONSOLE_SECRET_FILE}"
-    chown root:ids-operator "${CONSOLE_SECRET_FILE}"
+    set_owner_group root:ids-operator "${CONSOLE_SECRET_FILE}"
     return
   fi
   if [[ ${CREATE_SECRETS} -ne 1 ]]; then
@@ -367,23 +460,23 @@ import secrets
 print(secrets.token_hex(32))
 PY
   chmod 0640 "${CONSOLE_SECRET_FILE}"
-  chown root:ids-operator "${CONSOLE_SECRET_FILE}"
+  set_owner_group root:ids-operator "${CONSOLE_SECRET_FILE}"
 }
 
 install_service_units() {
-  install -m 0644 "${INSTALL_ROOT}/deploy/systemd/ids-live-sensor.service" "${SERVICE_DIR}/ids-live-sensor.service"
-  install -m 0644 "${INSTALL_ROOT}/deploy/systemd/ids-operator-console.service" "${SERVICE_DIR}/ids-operator-console.service"
-  install -m 0644 "${INSTALL_ROOT}/deploy/systemd/ids-operator-console-notify.service" "${SERVICE_DIR}/ids-operator-console-notify.service"
-  systemctl daemon-reload
+  copy_file_with_mode 0644 "${INSTALL_ROOT}/deploy/systemd/ids-live-sensor.service" "${SERVICE_DIR}/ids-live-sensor.service"
+  copy_file_with_mode 0644 "${INSTALL_ROOT}/deploy/systemd/ids-operator-console.service" "${SERVICE_DIR}/ids-operator-console.service"
+  copy_file_with_mode 0644 "${INSTALL_ROOT}/deploy/systemd/ids-operator-console-notify.service" "${SERVICE_DIR}/ids-operator-console-notify.service"
+  run_systemctl daemon-reload
 }
 
 enable_mode_services() {
   if [[ "${MODE}" == "console-only" ]]; then
-    systemctl enable ids-operator-console.service ids-operator-console-notify.service >/dev/null
+    run_systemctl enable ids-operator-console.service ids-operator-console-notify.service >/dev/null
     return
   fi
 
-  systemctl enable ids-live-sensor.service ids-operator-console.service ids-operator-console-notify.service >/dev/null
+  run_systemctl enable ids-live-sensor.service ids-operator-console.service ids-operator-console-notify.service >/dev/null
 }
 
 install_python_product() {
@@ -410,8 +503,10 @@ run_bootstrap() {
 
     operator_db_path=$(operator_env_value IDS_OPERATOR_CONSOLE_DATABASE_PATH)
     if [[ -z "${operator_db_path}" ]]; then
-      printf 'console-only mode requires IDS_OPERATOR_CONSOLE_DATABASE_PATH in %s.\n' "${OPERATOR_ENV_DEST}" >&2
-      exit 1
+      operator_db_path="${OPERATOR_STATE_DIR}/operator_console.db"
+      set_env_value "${OPERATOR_ENV_DEST}" IDS_OPERATOR_CONSOLE_DATABASE_PATH "${operator_db_path}"
+      chmod 0640 "${OPERATOR_ENV_DEST}"
+      set_owner_group root:ids-operator "${OPERATOR_ENV_DEST}"
     fi
 
     console_admin_password_file="${ADMIN_PASSWORD_FILE}"
@@ -434,7 +529,7 @@ run_bootstrap() {
       --username "${ADMIN_USERNAME}" \
       --password-file "${console_admin_password_file}"
     if [[ ${SKIP_SERVICE_ENABLE} -ne 1 ]]; then
-      systemctl start ids-operator-console.service ids-operator-console-notify.service >/dev/null
+      run_systemctl start ids-operator-console.service ids-operator-console-notify.service >/dev/null
     fi
     "${console_manage_cmd[@]}" --json status
     "${console_manage_cmd[@]}" --json smoke
@@ -522,12 +617,12 @@ require_dir "${INSTALL_ROOT}/ids"
 require_dir "${INSTALL_ROOT}/ops"
 
 printf '[2/6] Creating host directories...\n'
-install -d -m 0750 -o ids-sensor -g ids-sensor /var/lib/ids-live-sensor
-install -d -m 0750 -o ids-sensor -g ids-sensor /var/log/ids-live-sensor
-install -d -m 0750 -o root -g ids-sensor "${LIVE_SENSOR_CONFIG_DIR}"
-install -d -m 0750 -o ids-operator -g ids-operator /var/lib/ids-operator-console
-install -d -m 0750 -o ids-operator -g ids-operator /var/backups/ids-operator-console
-install -d -m 0750 -o root -g ids-operator "${OPS_CONFIG_DIR}"
+ensure_dir_with_owner_mode 0750 ids-sensor ids-sensor "${SENSOR_STATE_DIR}"
+ensure_dir_with_owner_mode 0750 ids-sensor ids-sensor "${SENSOR_LOG_DIR}"
+ensure_dir_with_owner_mode 0750 root ids-sensor "${LIVE_SENSOR_CONFIG_DIR}"
+ensure_dir_with_owner_mode 0750 ids-operator ids-operator "${OPERATOR_STATE_DIR}"
+ensure_dir_with_owner_mode 0750 ids-operator ids-operator "${OPERATOR_BACKUP_DIR}"
+ensure_dir_with_owner_mode 0750 root ids-operator "${OPS_CONFIG_DIR}"
 
 printf '[3/6] Creating target virtual environment...\n'
 install_python_product
@@ -537,7 +632,7 @@ seed_operator_env
 seed_live_sensor_env
 seed_console_secret
 if [[ ! -f "${TELEGRAM_TOKEN_FILE}" ]]; then
-  install -m 0640 -o root -g ids-operator /dev/null "${TELEGRAM_TOKEN_FILE}"
+  copy_file_with_owner_mode 0640 root ids-operator /dev/null "${TELEGRAM_TOKEN_FILE}"
 fi
 
 printf '[5/6] Installing systemd units...\n'
@@ -559,8 +654,8 @@ run_bootstrap
 
 # Harden SQLite DB file permissions if it exists (the DB now contains
 # the Telegram bot token stored via the Settings UI).
-chmod 0640 /var/lib/ids-operator-console/operator_console.db 2>/dev/null || true
-chown root:ids-operator /var/lib/ids-operator-console/operator_console.db 2>/dev/null || true
+chmod 0640 "${OPERATOR_STATE_DIR}/operator_console.db" 2>/dev/null || true
+set_owner_group root:ids-operator "${OPERATOR_STATE_DIR}/operator_console.db" 2>/dev/null || true
 
 printf '\nInstall complete.\n'
 printf 'Next checks:\n'
@@ -570,8 +665,8 @@ if [[ "${MODE}" == "console-only" ]]; then
   printf '  %s\n' "${INSTALL_ROOT}/.venv/bin/python -m ids.ops.operator_console_manage --database-path ${console_db_path} --json smoke"
   printf '  %s\n' "${INSTALL_ROOT}/.venv/bin/python -m ids.ops.operator_console_manage --database-path ${console_db_path} --json notify-status"
 else
-  printf '  %s\n' "${INSTALL_ROOT}/.venv/bin/ids-model-bundle-manage --activation-path /var/lib/ids-live-sensor/active_bundle.json --json status"
-  printf '  %s\n' "${INSTALL_ROOT}/.venv/bin/ids-stack --repo-root ${INSTALL_ROOT} --operator-env-file ${OPERATOR_ENV_DEST} --activation-path /var/lib/ids-live-sensor/active_bundle.json --json preflight"
-  printf '  %s\n' "${INSTALL_ROOT}/.venv/bin/ids-stack --repo-root ${INSTALL_ROOT} --operator-env-file ${OPERATOR_ENV_DEST} --activation-path /var/lib/ids-live-sensor/active_bundle.json --json status"
-  printf '  %s\n' "${INSTALL_ROOT}/.venv/bin/ids-stack --repo-root ${INSTALL_ROOT} --operator-env-file ${OPERATOR_ENV_DEST} --activation-path /var/lib/ids-live-sensor/active_bundle.json --proxy-public-url https://console.example --json smoke"
+  printf '  %s\n' "${INSTALL_ROOT}/.venv/bin/ids-model-bundle-manage --activation-path ${SENSOR_STATE_DIR}/active_bundle.json --json status"
+  printf '  %s\n' "${INSTALL_ROOT}/.venv/bin/ids-stack --repo-root ${INSTALL_ROOT} --operator-env-file ${OPERATOR_ENV_DEST} --activation-path ${SENSOR_STATE_DIR}/active_bundle.json --json preflight"
+  printf '  %s\n' "${INSTALL_ROOT}/.venv/bin/ids-stack --repo-root ${INSTALL_ROOT} --operator-env-file ${OPERATOR_ENV_DEST} --activation-path ${SENSOR_STATE_DIR}/active_bundle.json --json status"
+  printf '  %s\n' "${INSTALL_ROOT}/.venv/bin/ids-stack --repo-root ${INSTALL_ROOT} --operator-env-file ${OPERATOR_ENV_DEST} --activation-path ${SENSOR_STATE_DIR}/active_bundle.json --proxy-public-url https://console.example --json smoke"
 fi

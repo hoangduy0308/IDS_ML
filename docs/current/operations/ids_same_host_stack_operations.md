@@ -73,6 +73,7 @@ ids-stack \
   --python-binary /opt/ids_ml_new/.venv/bin/python \
   --operator-env-file /etc/ids-operator-console/ids-operator-console.env \
   --activation-path /var/lib/ids-live-sensor/active_bundle.json \
+  --interface eth0 \
   --dumpcap-binary /usr/bin/dumpcap \
   --extractor-command-prefix /opt/ids_ml_new/.venv/bin/ids-offline-window-extractor \
   --spool-dir /var/lib/ids-live-sensor \
@@ -110,6 +111,7 @@ ids-stack \
   --repo-root /opt/ids_ml_new \
   --operator-env-file /etc/ids-operator-console/ids-operator-console.env \
   --activation-path /var/lib/ids-live-sensor/active_bundle.json \
+  --interface eth0 \
   --json preflight
 ```
 
@@ -120,12 +122,14 @@ ids-stack \
   --repo-root /opt/ids_ml_new \
   --operator-env-file /etc/ids-operator-console/ids-operator-console.env \
   --activation-path /var/lib/ids-live-sensor/active_bundle.json \
+  --interface eth0 \
   --json status
 
 ids-stack \
   --repo-root /opt/ids_ml_new \
   --operator-env-file /etc/ids-operator-console/ids-operator-console.env \
   --activation-path /var/lib/ids-live-sensor/active_bundle.json \
+  --interface eth0 \
   --proxy-public-url https://console.example \
   --json smoke
 ```

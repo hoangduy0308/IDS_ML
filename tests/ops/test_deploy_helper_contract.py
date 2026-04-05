@@ -216,6 +216,239 @@ def _rewrite_working_tree_bundle_contract(repo_root: Path, *, valid: bool) -> No
     _write_release_bundle_contract(bundle_root, valid=valid)
 
 
+def _write_executable(path: Path, body: str) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body, encoding="utf-8", newline="\n")
+    path.chmod(path.stat().st_mode | 0o111)
+    return path
+
+
+def _copy_install_surface(repo_root: Path) -> None:
+    for relative_path in [
+        Path("ops/install.sh"),
+        Path("ops/ids-operator-console.env.example"),
+        Path("ops/ids-live-sensor.env.example"),
+        Path("deploy/systemd/ids-live-sensor.service"),
+        Path("deploy/systemd/ids-operator-console.service"),
+        Path("deploy/systemd/ids-operator-console-notify.service"),
+        Path("pyproject.toml"),
+        Path("requirements.txt"),
+    ]:
+        source = REPO_ROOT / relative_path
+        target = repo_root / relative_path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8", newline="\n")
+    ids_dir = repo_root / "ids"
+    ids_dir.mkdir(parents=True, exist_ok=True)
+    (ids_dir / "__init__.py").write_text("", encoding="utf-8")
+
+
+def _write_install_fakes(fake_bin: Path, *, log_path: Path) -> Path:
+    _write_executable(
+        fake_bin / "python3.11",
+        f"""#!/usr/bin/env bash
+set -euo pipefail
+log_file="{_to_bash_path(log_path)}"
+if [[ "${{1-}}" == "-c" ]]; then
+  if [[ "${{2-}}" == *"sys.version_info"* ]]; then
+    printf '3.11\\n'
+  fi
+  exit 0
+fi
+if [[ "${{1-}}" == "-m" && "${{2-}}" == "venv" ]]; then
+  target="${{@: -1}}"
+  mkdir -p "${{target}}/bin"
+  cat > "${{target}}/bin/python" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'venv-python %s\\n' "$*" >> "${{IDS_TEST_INSTALL_LOG}}"
+if [[ "${{1-}}" == "-c" && "${{2-}}" == *"sysconfig.get_path('scripts')"* ]]; then
+  printf '%s\\n' "$(cd -- "$(dirname -- "$0")" && pwd)"
+fi
+exit 0
+EOF
+  chmod +x "${{target}}/bin/python"
+  cat > "${{target}}/bin/ids-stack" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'ids-stack %s\\n' "$*" >> "${{IDS_TEST_INSTALL_LOG}}"
+exit 0
+EOF
+  chmod +x "${{target}}/bin/ids-stack"
+  cat > "${{target}}/bin/ids-offline-window-extractor" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+  chmod +x "${{target}}/bin/ids-offline-window-extractor"
+  exit 0
+fi
+if [[ "${{1-}}" == "-" ]]; then
+  printf 'generated-value\\n'
+  exit 0
+fi
+printf 'root-python %s\\n' "$*" >> "${{log_file}}"
+exit 0
+""",
+    )
+    _write_executable(
+        fake_bin / "systemctl",
+        """#!/usr/bin/env bash
+set -euo pipefail
+printf 'systemctl %s\n' "$*" >> "${IDS_TEST_INSTALL_LOG}"
+exit 0
+""",
+    )
+    _write_executable(
+        fake_bin / "id",
+        """#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1-}" == "-u" ]]; then
+  exit 1
+fi
+exit 0
+""",
+    )
+    _write_executable(
+        fake_bin / "useradd",
+        """#!/usr/bin/env bash
+set -euo pipefail
+printf 'useradd %s\n' "$*" >> "${IDS_TEST_INSTALL_LOG}"
+exit 0
+""",
+    )
+    _write_executable(
+        fake_bin / "install",
+        """#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1-}" == "-d" ]]; then
+  mkdir -p "${@: -1}"
+  exit 0
+fi
+src="${@: -2:1}"
+dest="${@: -1}"
+mkdir -p "$(dirname -- "${dest}")"
+cp "${src}" "${dest}"
+""",
+    )
+    _write_executable(fake_bin / "chmod", "#!/usr/bin/env bash\nexit 0\n")
+    _write_executable(fake_bin / "chown", "#!/usr/bin/env bash\nexit 0\n")
+    return fake_bin
+
+
+def _write_install_shell_overrides(path: Path) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        """id() {
+  if [[ "${1-}" == "-u" ]]; then
+    return 1
+  fi
+  return 0
+}
+
+useradd() {
+  printf 'useradd %s\n' "$*" >> "${IDS_TEST_INSTALL_LOG}"
+}
+
+systemctl() {
+  printf 'systemctl %s\n' "$*" >> "${IDS_TEST_INSTALL_LOG}"
+}
+
+install() {
+  if [[ "${1-}" == "-d" ]]; then
+    mkdir -p "${@: -1}"
+    return 0
+  fi
+  local src="${@: -2:1}"
+  local dest="${@: -1}"
+  mkdir -p "$(dirname -- "${dest}")"
+  cp "${src}" "${dest}"
+}
+
+chmod() {
+  return 0
+}
+
+chown() {
+  return 0
+}
+""",
+        encoding="utf-8",
+        newline="\n",
+    )
+    return path
+
+
+def _write_operator_env_template(
+    path: Path,
+    *,
+    database_path: Path,
+    alerts_output_path: Path,
+    quarantine_output_path: Path,
+    summary_output_path: Path,
+    secret_key_file: Path,
+) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "\n".join(
+            [
+                "IDS_OPERATOR_CONSOLE_ENVIRONMENT=production",
+                "IDS_OPERATOR_CONSOLE_PUBLIC_BASE_URL=https://console.example",
+                f"IDS_OPERATOR_CONSOLE_DATABASE_PATH={database_path}",
+                f"IDS_OPERATOR_CONSOLE_ALERTS_INPUT_PATH={alerts_output_path}",
+                f"IDS_OPERATOR_CONSOLE_QUARANTINE_INPUT_PATH={quarantine_output_path}",
+                f"IDS_OPERATOR_CONSOLE_SUMMARY_INPUT_PATH={summary_output_path}",
+                f"IDS_OPERATOR_CONSOLE_SECRET_KEY_FILE={secret_key_file}",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def _install_helper_env(repo_root: Path, fake_bin: Path, paths: dict[str, Path], log_path: Path) -> dict[str, str]:
+    env = os.environ.copy()
+    env["PATH"] = f"{_to_bash_path(fake_bin)}:/usr/bin:/bin"
+    env["IDS_TEST_INSTALL_LOG"] = str(log_path)
+    env["IDS_INSTALL_TEST_MODE"] = "1"
+    env["BASH_ENV"] = str(_write_install_shell_overrides(log_path.parent / "install-shell-overrides.sh"))
+    return env
+
+
+def _run_install_helper(
+    repo_root: Path,
+    *,
+    env: dict[str, str],
+    paths: dict[str, Path],
+    args: list[str],
+) -> subprocess.CompletedProcess[str]:
+    exports = {
+        "IDS_INSTALL_SKIP_ROOT_CHECK": "1",
+        "IDS_INSTALL_SKIP_SYSTEM_USER_SETUP": "1",
+        "IDS_INSTALL_TEST_MODE": "1",
+        "IDS_TEST_INSTALL_LOG": _to_bash_path(env["IDS_TEST_INSTALL_LOG"]),
+        "IDS_INSTALL_EXPECTED_ROOT": _to_bash_path(repo_root),
+        "IDS_INSTALL_SERVICE_DIR": _to_bash_path(paths["service_dir"]),
+        "IDS_INSTALL_OPS_CONFIG_DIR": _to_bash_path(paths["ops_config_dir"]),
+        "IDS_INSTALL_LIVE_SENSOR_CONFIG_DIR": _to_bash_path(paths["live_sensor_config_dir"]),
+        "IDS_INSTALL_SENSOR_STATE_DIR": _to_bash_path(paths["sensor_state_dir"]),
+        "IDS_INSTALL_SENSOR_LOG_DIR": _to_bash_path(paths["sensor_log_dir"]),
+        "IDS_INSTALL_OPERATOR_STATE_DIR": _to_bash_path(paths["operator_state_dir"]),
+        "IDS_INSTALL_OPERATOR_BACKUP_DIR": _to_bash_path(paths["operator_backup_dir"]),
+    }
+    export_prefix = " ".join(f'{key}="{value}"' for key, value in exports.items())
+    arg_string = " ".join(f'"{arg}"' for arg in args)
+    script_path = _to_bash_path(repo_root / "ops" / "install.sh")
+    return subprocess.run(
+        ["bash", "-c", f"{export_prefix} bash \"{script_path}\" {arg_string}"],
+        cwd=repo_root,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
 def test_install_helper_keeps_in_place_editable_checkout_contract() -> None:
     install_script = (REPO_ROOT / "ops" / "install.sh").read_text(encoding="utf-8")
 
@@ -225,16 +458,21 @@ def test_install_helper_keeps_in_place_editable_checkout_contract() -> None:
     assert "--mode MODE" in install_script
     assert "console-only" in install_script
     assert "full-stack-same-host" in install_script
-    assert "--live-sensor-env PATH" in install_script
+    assert "--live-sensor-env PATH" not in install_script
     assert "ids-offline-window-extractor" in install_script
     assert 'INSTALL_ROOT=$(cd -- "${SCRIPT_DIR}/.." && pwd)' in install_script
-    assert 'if [[ "${INSTALL_ROOT}" != "/opt/ids_ml_new" ]]' in install_script
+    assert 'INSTALL_TEST_MODE="${IDS_INSTALL_TEST_MODE:-0}"' in install_script
+    assert 'EXPECTED_INSTALL_ROOT="/opt/ids_ml_new"' in install_script
+    assert 'if [[ "${INSTALL_TEST_MODE}" == "1" ]]; then' in install_script
+    assert 'EXPECTED_INSTALL_ROOT="${IDS_INSTALL_EXPECTED_ROOT:-${EXPECTED_INSTALL_ROOT}}"' in install_script
+    assert 'if [[ "${INSTALL_ROOT}" != "${EXPECTED_INSTALL_ROOT}" ]]' in install_script
     assert '"${PYTHON_BIN}" -m venv --clear "${INSTALL_ROOT}/.venv"' in install_script
     assert '"${INSTALL_ROOT}/.venv/bin/python" -m pip install --no-deps -e "${INSTALL_ROOT}"' in install_script
     assert 'Missing required --mode. Use console-only or full-stack-same-host.' in install_script
     assert 'console-only mode does not accept bootstrap or bundle inputs.' in install_script
     assert 'console-only mode requires --create-secrets or --admin-password-file.' in install_script
     assert 'full-stack-same-host mode requires --bootstrap.' in install_script
+    assert 'full-stack-same-host does not support --skip-service-enable because bootstrap verifies the started packaged services.' in install_script
     assert 'DEFAULT_BUNDLED_BUNDLE_ROOT="${INSTALL_ROOT}/artifacts/final_model/catboost_full_data_v1"' in install_script
     assert 'DEFAULT_CONSOLE_ADMIN_PASSWORD_FILE="${OPS_CONFIG_DIR}/admin.password"' in install_script
     assert 'LIVE_SENSOR_ENV_SRC="${INSTALL_ROOT}/ops/ids-live-sensor.env.example"' in install_script
@@ -247,6 +485,9 @@ def test_install_helper_keeps_in_place_editable_checkout_contract() -> None:
     assert '--extractor-command-prefix "${live_sensor_extractor}"' in install_script
     assert 'selected_bundle_root="${DEFAULT_BUNDLED_BUNDLE_ROOT}"' in install_script
     assert '--candidate-bundle-root "${selected_bundle_root}"' in install_script
+    assert 'copy_file_with_owner_mode()' in install_script
+    assert 'ensure_dir_with_owner_mode()' in install_script
+    assert 'set_owner_group()' in install_script
 
 
 def test_install_helper_routes_service_enable_by_mode() -> None:
@@ -287,6 +528,64 @@ def test_install_helper_explicit_override_stays_fail_closed() -> None:
     assert '--candidate-bundle-root "${selected_bundle_root}"' in install_script
 
 
+def test_install_helper_full_stack_defaults_to_shipped_bundle_root(tmp_path: Path) -> None:
+    repo_root = tmp_path / "opt" / "ids_ml_new"
+    _copy_install_surface(repo_root)
+    log_path = tmp_path / "install.log"
+    fake_bin = _write_install_fakes(tmp_path / "fake-bin", log_path=log_path)
+    fake_python = _to_bash_path(fake_bin / "python3.11")
+    paths = {
+        "service_dir": tmp_path / "service-dir",
+        "ops_config_dir": tmp_path / "etc" / "ids-operator-console",
+        "live_sensor_config_dir": tmp_path / "etc" / "ids-live-sensor",
+        "sensor_state_dir": tmp_path / "var" / "lib" / "ids-live-sensor",
+        "sensor_log_dir": tmp_path / "var" / "log" / "ids-live-sensor",
+        "operator_state_dir": tmp_path / "var" / "lib" / "ids-operator-console",
+        "operator_backup_dir": tmp_path / "var" / "backups" / "ids-operator-console",
+    }
+    operator_env_dest = paths["ops_config_dir"] / "ids-operator-console.env"
+    operator_env_src = _write_operator_env_template(
+        tmp_path / "fixtures" / "operator.env",
+        database_path=paths["operator_state_dir"] / "operator_console.db",
+        alerts_output_path=paths["sensor_log_dir"] / "ids_live_alerts.jsonl",
+        quarantine_output_path=paths["sensor_log_dir"] / "ids_live_quarantine.jsonl",
+        summary_output_path=paths["sensor_log_dir"] / "ids_live_sensor_summary.jsonl",
+        secret_key_file=paths["ops_config_dir"] / "console.secret",
+    )
+    admin_password_file = tmp_path / "secrets" / "admin.password"
+    admin_password_file.parent.mkdir(parents=True, exist_ok=True)
+    admin_password_file.write_text("secret-password\n", encoding="utf-8")
+    bundled_root = repo_root / "artifacts" / "final_model" / "catboost_full_data_v1"
+    bundled_root.mkdir(parents=True, exist_ok=True)
+    env = _install_helper_env(repo_root, fake_bin, paths, log_path)
+
+    completed = _run_install_helper(
+        repo_root,
+        env=env,
+        paths=paths,
+        args=[
+            "--mode",
+            "full-stack-same-host",
+            "--create-secrets",
+            "--bootstrap",
+            "--python-bin",
+            fake_python,
+            "--operator-env-src",
+            _to_bash_path(operator_env_src),
+            "--operator-env-dest",
+            _to_bash_path(operator_env_dest),
+            "--admin-password-file",
+            _to_bash_path(admin_password_file),
+        ],
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert (
+        f"--candidate-bundle-root {_to_bash_path(bundled_root)}"
+        in log_path.read_text(encoding="utf-8")
+    )
+
+
 def test_install_helper_seeds_live_sensor_env_contract() -> None:
     install_script = (REPO_ROOT / "ops" / "install.sh").read_text(encoding="utf-8")
     env_text = (REPO_ROOT / "ops" / "ids-live-sensor.env.example").read_text(encoding="utf-8")
@@ -309,14 +608,14 @@ def test_install_helper_seeds_live_sensor_env_contract() -> None:
     assert "IDS_LIVE_SENSOR_ACTIVE_BUNDLE_PATH=/var/lib/ids-live-sensor/active_bundle.json" in env_text
     assert '--extractor-command-prefix ${IDS_LIVE_SENSOR_EXTRACTOR_COMMAND_PREFIX}' in live_sensor_service
     assert 'require_file "${LIVE_SENSOR_ENV_SRC}"' in install_script
-    assert 'install -d -m 0750 -o root -g ids-sensor "${LIVE_SENSOR_CONFIG_DIR}"' in install_script
-    assert 'install -m 0640 -o root -g ids-sensor "${LIVE_SENSOR_ENV_SRC}" "${LIVE_SENSOR_ENV_DEST}"' in install_script
+    assert 'ensure_dir_with_owner_mode 0750 root ids-sensor "${LIVE_SENSOR_CONFIG_DIR}"' in install_script
+    assert 'copy_file_with_owner_mode 0640 root ids-sensor "${LIVE_SENSOR_ENV_SRC}" "${LIVE_SENSOR_ENV_DEST}"' in install_script
     assert 'set_env_value "${LIVE_SENSOR_ENV_DEST}" IDS_LIVE_SENSOR_DUMPCAP_BINARY "${DUMPCAP_BINARY}"' in install_script
     assert 'set_env_value "${LIVE_SENSOR_ENV_DEST}" IDS_LIVE_SENSOR_EXTRACTOR_COMMAND_PREFIX "${EXTRACTOR_COMMAND_PREFIX}"' in install_script
     assert 'live_sensor_dumpcap=$(live_sensor_env_value IDS_LIVE_SENSOR_DUMPCAP_BINARY)' in install_script
     assert 'live_sensor_extractor=$(live_sensor_env_value IDS_LIVE_SENSOR_EXTRACTOR_COMMAND_PREFIX)' in install_script
     assert 'chmod 0640 "${LIVE_SENSOR_ENV_DEST}"' in install_script
-    assert 'chown root:ids-sensor "${LIVE_SENSOR_ENV_DEST}"' in install_script
+    assert 'set_owner_group root:ids-sensor "${LIVE_SENSOR_ENV_DEST}"' in install_script
     assert 'seed_live_sensor_env' in install_script
 
 
@@ -326,6 +625,57 @@ def test_install_helper_rejects_multi_token_live_sensor_extractor_contract() -> 
     assert '--extractor-command-prefix-token' not in install_script
     assert 'multi-token overrides are compatibility-only and not accepted by ops/install.sh.' in install_script
     assert 'if [[ "${MODE}" == "full-stack-same-host" && "${EXTRACTOR_COMMAND_PREFIX}" =~ [[:space:]] ]]; then' in install_script
+
+
+def test_install_helper_full_stack_rejects_multi_token_extractor_override(tmp_path: Path) -> None:
+    repo_root = tmp_path / "opt" / "ids_ml_new"
+    _copy_install_surface(repo_root)
+    log_path = tmp_path / "install.log"
+    fake_bin = _write_install_fakes(tmp_path / "fake-bin", log_path=log_path)
+    fake_python = _to_bash_path(fake_bin / "python3.11")
+    paths = {
+        "service_dir": tmp_path / "service-dir",
+        "ops_config_dir": tmp_path / "etc" / "ids-operator-console",
+        "live_sensor_config_dir": tmp_path / "etc" / "ids-live-sensor",
+        "sensor_state_dir": tmp_path / "var" / "lib" / "ids-live-sensor",
+        "sensor_log_dir": tmp_path / "var" / "log" / "ids-live-sensor",
+        "operator_state_dir": tmp_path / "var" / "lib" / "ids-operator-console",
+        "operator_backup_dir": tmp_path / "var" / "backups" / "ids-operator-console",
+    }
+    operator_env_src = _write_operator_env_template(
+        tmp_path / "fixtures" / "operator.env",
+        database_path=paths["operator_state_dir"] / "operator_console.db",
+        alerts_output_path=paths["sensor_log_dir"] / "ids_live_alerts.jsonl",
+        quarantine_output_path=paths["sensor_log_dir"] / "ids_live_quarantine.jsonl",
+        summary_output_path=paths["sensor_log_dir"] / "ids_live_sensor_summary.jsonl",
+        secret_key_file=paths["ops_config_dir"] / "console.secret",
+    )
+    admin_password_file = tmp_path / "secrets" / "admin.password"
+    admin_password_file.parent.mkdir(parents=True, exist_ok=True)
+    admin_password_file.write_text("secret-password\n", encoding="utf-8")
+    env = _install_helper_env(repo_root, fake_bin, paths, log_path)
+
+    completed = _run_install_helper(
+        repo_root,
+        env=env,
+        paths=paths,
+        args=[
+            "--mode",
+            "full-stack-same-host",
+            "--bootstrap",
+            "--python-bin",
+            fake_python,
+            "--operator-env-src",
+            _to_bash_path(operator_env_src),
+            "--admin-password-file",
+            _to_bash_path(admin_password_file),
+            "--extractor-command-prefix",
+            "/usr/bin/env python",
+        ],
+    )
+
+    assert completed.returncode == 1
+    assert "multi-token overrides are compatibility-only and not accepted by ops/install.sh." in completed.stderr
 
 
 def test_install_helper_hardens_preseeded_env_file() -> None:
@@ -342,9 +692,16 @@ def test_install_helper_hardens_preseeded_env_file() -> None:
     assert 'chmod 0640 "${OPERATOR_ENV_DEST}"' in install_script, (
         "install.sh must chmod existing env file to 0640"
     )
-    assert 'chown root:ids-operator "${OPERATOR_ENV_DEST}"' in install_script, (
+    assert 'set_owner_group root:ids-operator "${OPERATOR_ENV_DEST}"' in install_script, (
         "install.sh must chown existing env file to root:ids-operator"
     )
+
+
+def test_install_helper_keeps_console_admin_password_root_only() -> None:
+    install_script = (REPO_ROOT / "ops" / "install.sh").read_text(encoding="utf-8")
+
+    assert 'chmod 0600 "${admin_password_file}"' in install_script
+    assert 'set_owner_group root:root "${admin_password_file}"' in install_script
 
 
 def test_install_helper_enables_notify_worker_service() -> None:
@@ -366,6 +723,181 @@ def test_install_helper_enables_notify_worker_service() -> None:
     ), (
         "install.sh must enable ids-operator-console-notify.service alongside the base services"
     )
+
+
+def test_install_helper_console_only_mode_executes_console_lifecycle(tmp_path: Path) -> None:
+    repo_root = tmp_path / "opt" / "ids_ml_new"
+    _copy_install_surface(repo_root)
+    log_path = tmp_path / "install.log"
+    fake_bin = _write_install_fakes(tmp_path / "fake-bin", log_path=log_path)
+    fake_python = _to_bash_path(fake_bin / "python3.11")
+    paths = {
+        "service_dir": tmp_path / "service-dir",
+        "ops_config_dir": tmp_path / "etc" / "ids-operator-console",
+        "live_sensor_config_dir": tmp_path / "etc" / "ids-live-sensor",
+        "sensor_state_dir": tmp_path / "var" / "lib" / "ids-live-sensor",
+        "sensor_log_dir": tmp_path / "var" / "log" / "ids-live-sensor",
+        "operator_state_dir": tmp_path / "var" / "lib" / "ids-operator-console",
+        "operator_backup_dir": tmp_path / "var" / "backups" / "ids-operator-console",
+    }
+    operator_env_dest = paths["ops_config_dir"] / "ids-operator-console.env"
+    operator_env_src = _write_operator_env_template(
+        tmp_path / "fixtures" / "operator.env",
+        database_path=paths["operator_state_dir"] / "operator_console.db",
+        alerts_output_path=paths["sensor_log_dir"] / "ids_live_alerts.jsonl",
+        quarantine_output_path=paths["sensor_log_dir"] / "ids_live_quarantine.jsonl",
+        summary_output_path=paths["sensor_log_dir"] / "ids_live_sensor_summary.jsonl",
+        secret_key_file=paths["ops_config_dir"] / "console.secret",
+    )
+    env = _install_helper_env(repo_root, fake_bin, paths, log_path)
+
+    completed = _run_install_helper(
+        repo_root,
+        env=env,
+        paths=paths,
+        args=[
+            "--mode",
+            "console-only",
+            "--create-secrets",
+            "--python-bin",
+            fake_python,
+            "--operator-env-src",
+            _to_bash_path(operator_env_src),
+            "--operator-env-dest",
+            _to_bash_path(operator_env_dest),
+        ],
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    log_text = log_path.read_text(encoding="utf-8")
+    assert "ids-stack " not in log_text
+    assert "systemctl enable ids-operator-console.service ids-operator-console-notify.service" in log_text
+    assert "systemctl start ids-operator-console.service ids-operator-console-notify.service" in log_text
+    assert "venv-python -m ids.ops.operator_console_manage --database-path" in log_text
+    assert "--json migrate --allow-bootstrap" in log_text
+    assert "--json bootstrap-admin --username admin --password-file" in log_text
+    assert "--json status" in log_text
+    assert "--json smoke" in log_text
+    assert "--json notify-status" in log_text
+    assert (paths["ops_config_dir"] / "admin.password").exists()
+
+
+def test_install_helper_full_stack_mode_writes_env_backed_runtime_contract(tmp_path: Path) -> None:
+    repo_root = tmp_path / "opt" / "ids_ml_new"
+    _copy_install_surface(repo_root)
+    log_path = tmp_path / "install.log"
+    fake_bin = _write_install_fakes(tmp_path / "fake-bin", log_path=log_path)
+    fake_python = _to_bash_path(fake_bin / "python3.11")
+    paths = {
+        "service_dir": tmp_path / "service-dir",
+        "ops_config_dir": tmp_path / "etc" / "ids-operator-console",
+        "live_sensor_config_dir": tmp_path / "etc" / "ids-live-sensor",
+        "sensor_state_dir": tmp_path / "var" / "lib" / "ids-live-sensor",
+        "sensor_log_dir": tmp_path / "var" / "log" / "ids-live-sensor",
+        "operator_state_dir": tmp_path / "var" / "lib" / "ids-operator-console",
+        "operator_backup_dir": tmp_path / "var" / "backups" / "ids-operator-console",
+    }
+    operator_env_dest = paths["ops_config_dir"] / "ids-operator-console.env"
+    operator_env_src = _write_operator_env_template(
+        tmp_path / "fixtures" / "operator.env",
+        database_path=paths["operator_state_dir"] / "operator_console.db",
+        alerts_output_path=paths["sensor_log_dir"] / "ids_live_alerts.jsonl",
+        quarantine_output_path=paths["sensor_log_dir"] / "ids_live_quarantine.jsonl",
+        summary_output_path=paths["sensor_log_dir"] / "ids_live_sensor_summary.jsonl",
+        secret_key_file=paths["ops_config_dir"] / "console.secret",
+    )
+    admin_password_file = tmp_path / "secrets" / "admin.password"
+    admin_password_file.parent.mkdir(parents=True, exist_ok=True)
+    admin_password_file.write_text("secret-password\n", encoding="utf-8")
+    candidate_bundle_root = tmp_path / "bundles" / "candidate"
+    candidate_bundle_root.mkdir(parents=True, exist_ok=True)
+    env = _install_helper_env(repo_root, fake_bin, paths, log_path)
+
+    completed = _run_install_helper(
+        repo_root,
+        env=env,
+        paths=paths,
+        args=[
+            "--mode",
+            "full-stack-same-host",
+            "--create-secrets",
+            "--bootstrap",
+            "--python-bin",
+            fake_python,
+            "--operator-env-src",
+            _to_bash_path(operator_env_src),
+            "--operator-env-dest",
+            _to_bash_path(operator_env_dest),
+            "--admin-password-file",
+            _to_bash_path(admin_password_file),
+            "--candidate-bundle-root",
+            _to_bash_path(candidate_bundle_root),
+            "--dumpcap-binary",
+            "/custom/dumpcap",
+            "--extractor-command-prefix",
+            "/custom/extractor",
+            "--proxy-public-url",
+            "https://console.example",
+        ],
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    live_sensor_env = (paths["live_sensor_config_dir"] / "ids-live-sensor.env").read_text(encoding="utf-8")
+    assert "IDS_LIVE_SENSOR_DUMPCAP_BINARY=/custom/dumpcap" in live_sensor_env
+    assert "IDS_LIVE_SENSOR_EXTRACTOR_COMMAND_PREFIX=/custom/extractor" in live_sensor_env
+
+    log_text = log_path.read_text(encoding="utf-8")
+    assert "systemctl enable ids-live-sensor.service ids-operator-console.service ids-operator-console-notify.service" in log_text
+    assert "ids-stack --repo-root" in log_text
+    assert "--activation-path" in log_text
+    assert _to_bash_path(paths["sensor_state_dir"] / "active_bundle.json") in log_text
+    assert "--dumpcap-binary /custom/dumpcap" in log_text
+    assert "--extractor-command-prefix /custom/extractor" in log_text
+
+
+def test_install_helper_full_stack_rejects_skip_service_enable(tmp_path: Path) -> None:
+    repo_root = tmp_path / "opt" / "ids_ml_new"
+    _copy_install_surface(repo_root)
+    log_path = tmp_path / "install.log"
+    fake_bin = _write_install_fakes(tmp_path / "fake-bin", log_path=log_path)
+    fake_python = _to_bash_path(fake_bin / "python3.11")
+    paths = {
+        "service_dir": tmp_path / "service-dir",
+        "ops_config_dir": tmp_path / "etc" / "ids-operator-console",
+        "live_sensor_config_dir": tmp_path / "etc" / "ids-live-sensor",
+        "sensor_state_dir": tmp_path / "var" / "lib" / "ids-live-sensor",
+        "sensor_log_dir": tmp_path / "var" / "log" / "ids-live-sensor",
+        "operator_state_dir": tmp_path / "var" / "lib" / "ids-operator-console",
+        "operator_backup_dir": tmp_path / "var" / "backups" / "ids-operator-console",
+    }
+    operator_env_src = _write_operator_env_template(
+        tmp_path / "fixtures" / "operator.env",
+        database_path=paths["operator_state_dir"] / "operator_console.db",
+        alerts_output_path=paths["sensor_log_dir"] / "ids_live_alerts.jsonl",
+        quarantine_output_path=paths["sensor_log_dir"] / "ids_live_quarantine.jsonl",
+        summary_output_path=paths["sensor_log_dir"] / "ids_live_sensor_summary.jsonl",
+        secret_key_file=paths["ops_config_dir"] / "console.secret",
+    )
+    env = _install_helper_env(repo_root, fake_bin, paths, log_path)
+
+    completed = _run_install_helper(
+        repo_root,
+        env=env,
+        paths=paths,
+        args=[
+            "--mode",
+            "full-stack-same-host",
+            "--bootstrap",
+            "--skip-service-enable",
+            "--python-bin",
+            fake_python,
+            "--operator-env-src",
+            _to_bash_path(operator_env_src),
+        ],
+    )
+
+    assert completed.returncode == 1
+    assert "full-stack-same-host does not support --skip-service-enable" in completed.stderr
 
 
 def test_build_release_uses_git_archive_not_manual_excludes() -> None:
@@ -416,7 +948,7 @@ def test_build_release_succeeds_for_valid_default_bundle(tmp_path: Path) -> None
 def test_install_helper_next_checks_include_activation_status_for_full_stack() -> None:
     install_script = (REPO_ROOT / "ops" / "install.sh").read_text(encoding="utf-8")
 
-    assert 'ids-model-bundle-manage --activation-path /var/lib/ids-live-sensor/active_bundle.json --json status' in install_script
+    assert 'ids-model-bundle-manage --activation-path ${SENSOR_STATE_DIR}/active_bundle.json --json status' in install_script
     assert '--json bootstrap --candidate-bundle-root <bundle-root>' not in install_script
 
 
@@ -683,7 +1215,7 @@ def test_deploy_surface_closure_proof() -> None:
     # ── 2. Install-time hardening ─────────────────────────────────────��─
     # Pre-seeded env file gets hardened
     assert 'chmod 0640 "${OPERATOR_ENV_DEST}"' in install_script
-    assert 'chown root:ids-operator "${OPERATOR_ENV_DEST}"' in install_script
+    assert 'set_owner_group root:ids-operator "${OPERATOR_ENV_DEST}"' in install_script
     # Notify worker is enabled with the base services
     assert re.search(
         r"systemctl enable.*ids-operator-console-notify\.service",
@@ -748,10 +1280,12 @@ def test_install_helper_hardens_db_file_permissions() -> None:
     """
     install_script = (REPO_ROOT / "ops" / "install.sh").read_text(encoding="utf-8")
 
-    assert "chmod 0640 /var/lib/ids-operator-console/operator_console.db" in install_script, (
+    assert 'OPERATOR_STATE_DIR="/var/lib/ids-operator-console"' in install_script
+    assert 'OPERATOR_STATE_DIR="${IDS_INSTALL_OPERATOR_STATE_DIR:-${OPERATOR_STATE_DIR}}"' in install_script
+    assert 'chmod 0640 "${OPERATOR_STATE_DIR}/operator_console.db"' in install_script, (
         "install.sh must chmod the DB file to 0640"
     )
-    assert "chown root:ids-operator /var/lib/ids-operator-console/operator_console.db" in install_script, (
+    assert 'set_owner_group root:ids-operator "${OPERATOR_STATE_DIR}/operator_console.db"' in install_script, (
         "install.sh must chown the DB file to root:ids-operator"
     )
 
