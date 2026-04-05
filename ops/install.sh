@@ -155,9 +155,6 @@ if [[ "${INSTALL_ROOT}" != "/opt/ids_ml_new" ]]; then
   exit 1
 fi
 
-require_mode
-ensure_mode_contract
-
 # Verify Python binary exists and meets minimum version requirement (3.11+)
 if ! command -v "${PYTHON_BIN}" >/dev/null 2>&1; then
   printf 'Python binary not found: %s\nPython 3.11+ is required.\n' "${PYTHON_BIN}" >&2
@@ -220,6 +217,9 @@ ensure_mode_contract() {
     exit 1
   fi
 }
+
+require_mode
+ensure_mode_contract
 
 ensure_system_user() {
   local user=$1

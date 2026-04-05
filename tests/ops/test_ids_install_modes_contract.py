@@ -22,11 +22,17 @@ def test_install_help_exposes_explicit_mode_selection() -> None:
 def test_install_mode_validation_distinguishes_console_only_from_full_stack() -> None:
     install_script = _install_script_text()
 
+    require_mode_def = install_script.index("require_mode() {")
+    ensure_mode_def = install_script.index("ensure_mode_contract() {")
+    call_site = install_script.index("require_mode\nensure_mode_contract")
+
     assert "require_mode" in install_script
     assert "ensure_mode_contract" in install_script
     assert 'console-only mode does not accept bootstrap or bundle inputs.' in install_script
     assert 'full-stack-same-host mode requires --bootstrap.' in install_script
     assert 'Missing required --mode. Use console-only or full-stack-same-host.' in install_script
+    assert require_mode_def < call_site
+    assert ensure_mode_def < call_site
 
 
 def test_install_mode_services_are_routed_by_product_shape() -> None:
