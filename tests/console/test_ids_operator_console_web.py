@@ -202,6 +202,13 @@ def _login(client: TestClient) -> None:
     assert response.headers["location"] == "/overview"
 
 
+def _queue_row_text(body: str, source_event_id: str) -> str:
+    marker = f">{source_event_id}<"
+    start = body.index(marker)
+    end = body.index("</tr>", start)
+    return body[start:end]
+
+
 def test_overview_and_legacy_dashboard_redirect_to_login_when_unauthenticated(tmp_path: Path) -> None:
     client, _, _ = _build_test_app(tmp_path)
     for path in ("/overview", "/dashboard"):
@@ -321,10 +328,24 @@ def test_alerts_queue_renders_compact_family_signal_column(tmp_path: Path) -> No
     assert response.status_code == 200
     body = response.text
     assert "Family Signal" in body
-    assert "known family" in body.lower()
-    assert "mirai" in body.lower()
-    assert "no attack-family label" in body.lower()
-    assert f"/alerts/{alert_ids['known']}" in body
+    known_row = _queue_row_text(body, "web-family-known-001")
+    assert "known family" in known_row.lower()
+    assert "mirai" in known_row.lower()
+    assert "known" in known_row.lower()
+
+    unknown_row = _queue_row_text(body, "web-family-unknown-002")
+    assert "unknown family" in unknown_row.lower()
+    assert "attack, no confident family assigned" in unknown_row.lower()
+
+    benign_row = _queue_row_text(body, "web-family-benign-004")
+    assert "known family" not in benign_row.lower()
+    assert "unknown family" not in benign_row.lower()
+    assert "family unavailable" not in benign_row.lower()
+    assert "—" in benign_row
+
+    legacy_row = _queue_row_text(body, "web-family-legacy-003")
+    assert "family unavailable" in legacy_row.lower()
+    assert "legacy alert from before family enrichment" in legacy_row.lower()
 
 
 def test_production_login_sets_secure_session_cookie(tmp_path: Path) -> None:

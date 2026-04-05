@@ -229,6 +229,14 @@ Template:
 
 - `alerts.html`
 
+Queue family contract:
+
+- `Family Signal` stays compact and table-first.
+- `known` renders as `known family` plus the family label.
+- `unknown` renders as `unknown family` plus a short attack/no-family note.
+- `legacy_unavailable` renders as `family unavailable` plus a legacy note.
+- `benign` stays neutral with a dash and no attack-family label.
+
 UI obligations:
 
 - hiển thị full queue sau filter
@@ -597,6 +605,13 @@ Notes:
 - suppression không làm thay đổi record gốc trong DB
 - suppressed row có thể bị ẩn hoặc hiện tùy endpoint/flag
 
+Family fields:
+
+- `family.family_state: known | unknown | benign | legacy_unavailable`
+- `family.attack_family: str | null`
+- `family.attack_family_confidence: float | null`
+- `family.attack_family_margin: float | null`
+
 ## 7.2 Alert detail timeline
 
 ### Status history item
@@ -873,6 +888,10 @@ Field matrix:
 - `alerts[*].triage_status`
 - `alerts[*].severity`
 - `alerts[*].suppressed`
+- `alerts[*].family.family_state`
+- `alerts[*].family.attack_family`
+- `alerts[*].family.attack_family_confidence`
+- `alerts[*].family.attack_family_margin`
 - `alerts[*].protocol|payload.protocol`
 - `alerts[*].payload.score`
 - `alerts[*].event_ts`
