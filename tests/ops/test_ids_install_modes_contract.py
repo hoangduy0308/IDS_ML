@@ -39,6 +39,25 @@ def test_install_mode_services_are_routed_by_product_shape() -> None:
     assert 'Finalizing %s install path...' in install_script
 
 
+def test_install_mode_service_routing_keeps_console_only_bundle_free() -> None:
+    install_script = _install_script_text()
+    enable_start = install_script.index("enable_mode_services() {")
+    install_python_start = install_script.index("install_python_product()")
+    enable_block = install_script[enable_start:install_python_start]
+
+    assert 'if [[ "${MODE}" == "console-only" ]]; then' in enable_block
+    assert 'systemctl enable --now ids-operator-console.service ids-operator-console-notify.service >/dev/null' in enable_block
+    assert 'systemctl enable ids-live-sensor.service ids-operator-console.service ids-operator-console-notify.service >/dev/null' in enable_block
+    assert 'return' in enable_block
+
+    console_only_block = enable_block.split('if [[ "${MODE}" == "console-only" ]]; then', 1)[1].split('return', 1)[0]
+    full_stack_block = enable_block.split('return', 1)[1]
+
+    assert 'ids-live-sensor.service' not in console_only_block
+    assert 'ids-operator-console-notify.service' in console_only_block
+    assert 'ids-live-sensor.service' in full_stack_block
+
+
 def test_install_mode_next_checks_document_mode_specific_readiness() -> None:
     install_script = _install_script_text()
 
