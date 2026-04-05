@@ -108,6 +108,73 @@ def _build_test_app(
     return client, config.database_path, alert_id
 
 
+def _build_family_contract_test_app(tmp_path: Path) -> tuple[TestClient, dict[str, int]]:
+    """Build canonical app-factory client with known/unknown/legacy family alerts."""
+    env = {
+        "IDS_OPERATOR_CONSOLE_ENVIRONMENT": "development",
+        "IDS_OPERATOR_CONSOLE_SECRET_KEY": "web-family-contract-secret",
+        "IDS_OPERATOR_CONSOLE_DATABASE_PATH": str(tmp_path / "operator_console_family_contract.db"),
+        "IDS_OPERATOR_CONSOLE_TEMPLATES_DIR": str(REPO_ROOT / "ids/console/templates"),
+        "IDS_OPERATOR_CONSOLE_STATIC_DIR": str(REPO_ROOT / "ids/console/static"),
+    }
+    config = load_operator_console_config(environ=env, repo_root=REPO_ROOT)
+    migrate_operator_store(config.database_path, allow_bootstrap=True)
+    store = open_existing_operator_store(config.database_path)
+    try:
+        ensure_admin_user(store, username="admin", password="correct-password")
+        known_id = store.upsert_alert(
+            source_event_id="web-family-known-001",
+            event_ts="2026-04-01T09:00:00+00:00",
+            severity="high",
+            src_ip="10.30.0.1",
+            dst_ip="192.168.60.10",
+            src_port=1111,
+            dst_port=443,
+            protocol="tcp",
+            fingerprint="fp-web-family-known-001",
+            payload={
+                "family_status": "known",
+                "attack_family": "mirai",
+                "attack_family_confidence": 0.98,
+                "attack_family_margin": 0.44,
+            },
+        )
+        unknown_id = store.upsert_alert(
+            source_event_id="web-family-unknown-002",
+            event_ts="2026-04-01T09:05:00+00:00",
+            severity="high",
+            src_ip="10.30.0.2",
+            dst_ip="192.168.60.11",
+            src_port=2222,
+            dst_port=443,
+            protocol="tcp",
+            fingerprint="fp-web-family-unknown-002",
+            payload={
+                "family_status": "unknown",
+                "attack_family_confidence": 0.45,
+                "attack_family_margin": 0.02,
+            },
+        )
+        legacy_id = store.upsert_alert(
+            source_event_id="web-family-legacy-003",
+            event_ts="2026-04-01T09:10:00+00:00",
+            severity="medium",
+            src_ip="10.30.0.3",
+            dst_ip="192.168.60.12",
+            src_port=3333,
+            dst_port=443,
+            protocol="tcp",
+            fingerprint="fp-web-family-legacy-003",
+            payload={"score": 0.77},
+        )
+    finally:
+        store.close()
+
+    app = create_operator_console_web_app(config)
+    client = TestClient(app, base_url="http://testserver")
+    return client, {"known": known_id, "unknown": unknown_id, "legacy": legacy_id}
+
+
 def _login(client: TestClient) -> None:
     response = client.post(
         "/login",
@@ -191,6 +258,30 @@ def test_alert_detail_and_sensor_aware_json_endpoints(tmp_path: Path) -> None:
     assert alerts.json()["sensor_id"] == "sensor-local"
     assert anomalies.json()["sensor_id"] == "sensor-local"
     assert summaries.json()["sensor_id"] == "sensor-local"
+
+
+def test_alert_detail_route_pins_known_unknown_legacy_family_contract(tmp_path: Path) -> None:
+    """Route-level proof: detail page preserves known/unknown/legacy semantics."""
+    client, alert_ids = _build_family_contract_test_app(tmp_path)
+    _login(client)
+
+    known = client.get(f"/alerts/{alert_ids['known']}")
+    assert known.status_code == 200
+    assert "family signal" in known.text.lower()
+    assert "known family" in known.text.lower()
+    assert "mirai" in known.text.lower()
+    assert f"/alerts/{alert_ids['known']}/status" in known.text
+    assert f"/alerts/{alert_ids['known']}/notes" in known.text
+
+    unknown = client.get(f"/alerts/{alert_ids['unknown']}")
+    assert unknown.status_code == 200
+    assert "unknown family" in unknown.text.lower()
+    assert "binary stage still classified this event as an attack" in unknown.text.lower()
+
+    legacy = client.get(f"/alerts/{alert_ids['legacy']}")
+    assert legacy.status_code == 200
+    assert "family unavailable" in legacy.text.lower()
+    assert "predates family enrichment rollout" in legacy.text.lower()
 
 
 def test_production_login_sets_secure_session_cookie(tmp_path: Path) -> None:
