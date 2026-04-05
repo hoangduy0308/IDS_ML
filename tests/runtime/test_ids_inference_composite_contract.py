@@ -184,6 +184,33 @@ def test_composite_bundle_fails_closed_when_stage2_scoring_raises(
         inferencer.predict(frame, include_input=False)
 
 
+def test_composite_bundle_only_requires_stage2_columns_for_attack_rows(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    bundle_root = _write_composite_bundle(tmp_path / "composite")
+    monkeypatch.setattr("ids.runtime.inference.CatBoostClassifier", CompositeDummyCatBoost)
+
+    inferencer = IDSInferencer(IDSModelConfig.from_bundle(bundle_root))
+    frame = pd.DataFrame(
+        [
+            {"f1": 0.1, "f2": 0.2},
+            {"f1": 0.9, "f2": 0.2, "f3": 1.0},
+        ]
+    )
+
+    result = inferencer.predict(frame, include_input=False)
+
+    assert result["predicted_label"].tolist() == ["Benign", "Attack"]
+    assert result["family_status"].tolist() == ["benign", "known"]
+    assert result.loc[0, "attack_family"] is None or pd.isna(result.loc[0, "attack_family"])
+    assert result.loc[1, "attack_family"] == "DDoS"
+    assert pd.isna(result.loc[0, "attack_family_confidence"])
+    assert pd.isna(result.loc[0, "attack_family_margin"])
+    assert result.loc[1, "attack_family_confidence"] == pytest.approx(0.6)
+    assert result.loc[1, "attack_family_margin"] == pytest.approx(0.35)
+
+
 def test_legacy_binary_bundle_stays_binary_only(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

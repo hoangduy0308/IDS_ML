@@ -208,14 +208,17 @@ class IDSInferencer:
         )
         if self.family_model is None or self.family_feature_columns is None:
             return result
-        family_frame = self._align_features(frame, self.family_feature_columns)
         family_score_index = np.flatnonzero(alerts.to_numpy() if hasattr(alerts, "to_numpy") else np.asarray(alerts))
         family_attack_family = [None] * len(frame)
         family_attack_confidence = [None] * len(frame)
         family_attack_margin = [None] * len(frame)
         family_status = ["benign" if not is_alert else "unknown" for is_alert in alerts]
         if family_score_index.size:
-            family_probabilities = np.asarray(self.family_model.predict_proba(family_frame.iloc[family_score_index]))
+            family_frame = self._align_features(
+                frame.iloc[family_score_index].copy(),
+                self.family_feature_columns,
+            )
+            family_probabilities = np.asarray(self.family_model.predict_proba(family_frame))
             if family_probabilities.ndim != 2 or family_probabilities.shape[0] != family_score_index.size:
                 raise ValueError("Stage 2 family model returned an unexpected probability matrix shape")
             top1_indices = np.argmax(family_probabilities, axis=1)

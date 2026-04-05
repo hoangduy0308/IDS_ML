@@ -124,7 +124,7 @@ C) End session and write HANDOFF.json
 ## Runtime Contract Lane
 
 - Feature: ids-multiclass-two-stage-runtime-contract
-- Local status: review complete after review-fix pass 1; compounding complete
+- Local status: complete; follow-up review passed clean after review-fix pass 2
 
 ### Last Compounding Run (Runtime Contract Lane)
 
@@ -153,7 +153,7 @@ C) End session and write HANDOFF.json
 - Thread: ids_ml_new-d90e
 - Topic: epic-ids_ml_new-d90e
 - Swarm status: Phase 1 complete via commit cfb45f5; Phase 2 complete via commits 022486d, 452f1be, 1a21d97
-- Current phase: Review Fix Pass 1
+- Current phase: Complete
 - phase-2-contract.md: history/ids-multiclass-two-stage-runtime-contract/phase-2-contract.md
 - phase-2-story-map.md: history/ids-multiclass-two-stage-runtime-contract/phase-2-story-map.md
 - Phase 2 beads closed: ids_ml_new-d90e.4, ids_ml_new-d90e.5, ids_ml_new-d90e.6
@@ -163,12 +163,12 @@ C) End session and write HANDOFF.json
 - Phase 3 spike: ids_ml_new-d90e.11 (CLOSED, YES)
 - review-fix-1-contract.md: history/ids-multiclass-two-stage-runtime-contract/review-fix-1-contract.md
 - review-fix-1-story-map.md: history/ids-multiclass-two-stage-runtime-contract/review-fix-1-story-map.md
-- Review-fix beads: ids_ml_new-d90e.12 (CLOSED via 107f9e3), ids_ml_new-d90e.13 (CLOSED via 284d74c)
-- Follow-up review: clean rerun, 126 passed / 0 failed on the targeted suite
-- Learnings file: history/learnings/20260405-composite-runtime-review-contracts.md
-- Critical promotions: 2
-- Proposed next skill: none for this lane; feature complete
+- Review-fix beads: ids_ml_new-d90e.12 (CLOSED via 107f9e3), ids_ml_new-d90e.13 (CLOSED via 284d74c), ids_ml_new-d90e.14 (CLOSED in review-fix pass 2)
+- review-fix-2-contract.md: history/ids-multiclass-two-stage-runtime-contract/review-fix-2-contract.md
+- review-fix-2-story-map.md: history/ids-multiclass-two-stage-runtime-contract/review-fix-2-story-map.md
+- Follow-up review: pass-1 rerun found a remaining stage-2 alignment bug in mixed benign/attack batches; pass-2 fix and rerun closed it cleanly
+- Proposed next skill: khuym:compounding or next feature planning
 
 ## Active Workers
 
-- no active workers for this lane; runtime contract feature is complete
+- none
