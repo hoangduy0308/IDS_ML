@@ -13,10 +13,11 @@ Options:
   --python-bin PATH             Python binary used to create the target venv (default: python3.11)
   --operator-env-src PATH       Template env file to seed (default: ops/ids-operator-console.env.example)
   --operator-env-dest PATH      Host env file path (default: /etc/ids-operator-console/ids-operator-console.env)
+  --live-sensor-env PATH       Host live-sensor env file path (default: /etc/ids-live-sensor/ids-live-sensor.env)
   --console-secret-file PATH    Host secret key file path (default: /etc/ids-operator-console/console.secret)
   --telegram-token-file PATH    Host Telegram token file path (default: /etc/ids-operator-console/telegram-bot-token.secret)
   --dumpcap-binary PATH         dumpcap path passed to ids-stack bootstrap (default: /usr/bin/dumpcap)
-  --extractor-command-prefix P  Single-token flow extractor command prefix (default: /opt/cicflowmeter/Cmd)
+  --extractor-command-prefix P  Packaged replacement extractor helper prefix (default: /opt/ids_ml_new/.venv/bin/ids-offline-window-extractor)
   --extractor-command-prefix-token P
                                Repeat to pass a multi-token extractor command prefix
   --candidate-bundle-root PATH  Bundle root for ids-stack bootstrap (required with --bootstrap)
@@ -43,12 +44,15 @@ MODE=""
 PYTHON_BIN="python3.11"
 SERVICE_DIR="/etc/systemd/system"
 OPS_CONFIG_DIR="/etc/ids-operator-console"
+LIVE_SENSOR_CONFIG_DIR="/etc/ids-live-sensor"
 OPERATOR_ENV_SRC="${INSTALL_ROOT}/ops/ids-operator-console.env.example"
 OPERATOR_ENV_DEST="${OPS_CONFIG_DIR}/ids-operator-console.env"
+LIVE_SENSOR_ENV_SRC="${INSTALL_ROOT}/ops/ids-live-sensor.env.example"
+LIVE_SENSOR_ENV_DEST="${LIVE_SENSOR_CONFIG_DIR}/ids-live-sensor.env"
 CONSOLE_SECRET_FILE="${OPS_CONFIG_DIR}/console.secret"
 TELEGRAM_TOKEN_FILE="${OPS_CONFIG_DIR}/telegram-bot-token.secret"
 DUMPCAP_BINARY="/usr/bin/dumpcap"
-EXTRACTOR_COMMAND_PREFIX=("/opt/cicflowmeter/Cmd")
+EXTRACTOR_COMMAND_PREFIX=("/opt/ids_ml_new/.venv/bin/ids-offline-window-extractor")
 ADMIN_USERNAME="admin"
 ADMIN_PASSWORD_FILE=""
 PROXY_PUBLIC_URL=""
@@ -73,6 +77,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --operator-env-dest)
       OPERATOR_ENV_DEST=$2
+      shift 2
+      ;;
+    --live-sensor-env)
+      LIVE_SENSOR_ENV_DEST=$2
       shift 2
       ;;
     --console-secret-file)
@@ -233,6 +241,19 @@ seed_operator_env() {
   fi
 }
 
+seed_live_sensor_env() {
+  if [[ "${MODE}" != "full-stack-same-host" ]]; then
+    return
+  fi
+  mkdir -p "$(dirname -- "${LIVE_SENSOR_ENV_DEST}")"
+  if [[ ! -f "${LIVE_SENSOR_ENV_DEST}" ]]; then
+    install -m 0640 -o root -g ids-sensor "${LIVE_SENSOR_ENV_SRC}" "${LIVE_SENSOR_ENV_DEST}"
+  else
+    chmod 0640 "${LIVE_SENSOR_ENV_DEST}"
+    chown root:ids-sensor "${LIVE_SENSOR_ENV_DEST}"
+  fi
+}
+
 seed_console_secret() {
   if [[ -f "${CONSOLE_SECRET_FILE}" ]]; then
     chmod 0640 "${CONSOLE_SECRET_FILE}"
@@ -329,6 +350,7 @@ require_file "${INSTALL_ROOT}/deploy/systemd/ids-live-sensor.service"
 require_file "${INSTALL_ROOT}/deploy/systemd/ids-operator-console.service"
 require_file "${INSTALL_ROOT}/deploy/systemd/ids-operator-console-notify.service"
 require_file "${OPERATOR_ENV_SRC}"
+require_file "${LIVE_SENSOR_ENV_SRC}"
 
 ensure_system_user ids-sensor
 ensure_system_user ids-operator
@@ -340,6 +362,7 @@ require_dir "${INSTALL_ROOT}/ops"
 printf '[2/6] Creating host directories...\n'
 install -d -m 0750 -o ids-sensor -g ids-sensor /var/lib/ids-live-sensor
 install -d -m 0750 -o ids-sensor -g ids-sensor /var/log/ids-live-sensor
+install -d -m 0750 -o root -g ids-sensor "${LIVE_SENSOR_CONFIG_DIR}"
 install -d -m 0750 -o ids-operator -g ids-operator /var/lib/ids-operator-console
 install -d -m 0750 -o ids-operator -g ids-operator /var/backups/ids-operator-console
 install -d -m 0750 -o root -g ids-operator "${OPS_CONFIG_DIR}"
@@ -349,6 +372,7 @@ install_python_product
 
 printf '[4/6] Seeding operator env and secrets...\n'
 seed_operator_env
+seed_live_sensor_env
 seed_console_secret
 if [[ ! -f "${TELEGRAM_TOKEN_FILE}" ]]; then
   install -m 0640 -o root -g ids-operator /dev/null "${TELEGRAM_TOKEN_FILE}"

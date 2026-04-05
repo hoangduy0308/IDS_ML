@@ -20,6 +20,7 @@ def test_install_helper_keeps_in_place_editable_checkout_contract() -> None:
     assert "console-only" in install_script
     assert "full-stack-same-host" in install_script
     assert "--live-sensor-env PATH" in install_script
+    assert "ids-offline-window-extractor" in install_script
     assert 'INSTALL_ROOT=$(cd -- "${SCRIPT_DIR}/.." && pwd)' in install_script
     assert 'if [[ "${INSTALL_ROOT}" != "/opt/ids_ml_new" ]]' in install_script
     assert '"${PYTHON_BIN}" -m venv --clear "${INSTALL_ROOT}/.venv"' in install_script
@@ -62,7 +63,7 @@ def test_install_helper_seeds_live_sensor_env_contract() -> None:
     assert "IDS_LIVE_SENSOR_QUARANTINE_OUTPUT=/var/log/ids-live-sensor/ids_live_quarantine.jsonl" in env_text
     assert "IDS_LIVE_SENSOR_SUMMARY_OUTPUT=/var/log/ids-live-sensor/ids_live_sensor_summary.jsonl" in env_text
     assert "IDS_LIVE_SENSOR_DUMPCAP_BINARY=/usr/bin/dumpcap" in env_text
-    assert "IDS_LIVE_SENSOR_EXTRACTOR_COMMAND_PREFIX=/opt/cicflowmeter/Cmd" in env_text
+    assert "IDS_LIVE_SENSOR_EXTRACTOR_COMMAND_PREFIX=/opt/ids_ml_new/.venv/bin/ids-offline-window-extractor" in env_text
     assert "IDS_LIVE_SENSOR_ACTIVE_BUNDLE_PATH=/var/lib/ids-live-sensor/active_bundle.json" in env_text
     assert '--extractor-command-prefix ${IDS_LIVE_SENSOR_EXTRACTOR_COMMAND_PREFIX}' in live_sensor_service
     assert 'require_file "${LIVE_SENSOR_ENV_SRC}"' in install_script

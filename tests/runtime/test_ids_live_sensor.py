@@ -509,7 +509,7 @@ def test_service_unit_keeps_preflight_and_stdout_journal_contract() -> None:
     content = service_path.read_text(encoding="utf-8")
 
     assert "IDS_LIVE_SENSOR_DUMPCAP_BINARY=" in env_text
-    assert "IDS_LIVE_SENSOR_EXTRACTOR_COMMAND_PREFIX=" in env_text
+    assert "IDS_LIVE_SENSOR_EXTRACTOR_COMMAND_PREFIX=/opt/ids_ml_new/.venv/bin/ids-offline-window-extractor" in env_text
     assert "IDS_LIVE_SENSOR_ACTIVE_BUNDLE_PATH=" in env_text
     assert "-m ids.ops.live_sensor_preflight" in content
     assert '--dumpcap-binary ${IDS_LIVE_SENSOR_DUMPCAP_BINARY}' in content

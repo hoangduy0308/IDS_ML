@@ -4,7 +4,6 @@ import csv
 import json
 import struct
 from pathlib import Path
-import sys
 
 import pytest
 
@@ -211,28 +210,33 @@ def test_bridge_can_drive_the_offline_replacement_extractor_cli(tmp_path: Path) 
     window = make_window(tmp_path)
     _build_sample_pcap(window.path)
 
+    observed: dict[str, object] = {}
+
+    def fake_runner(
+        command: list[str] | tuple[str, ...],
+        window_arg: ClosedCaptureWindow,
+        output_path: Path,
+    ) -> ExtractorRunResult:
+        observed["command"] = tuple(command)
+        observed["window_path"] = window_arg.path
+        observed["output_path"] = output_path
+        write_csv_output(output_path, [load_primary_sample_row()])
+        return ExtractorRunResult(returncode=0, stdout="ok", stderr="")
+
     bridge = LiveFlowBridge(
         LiveFlowBridgeConfig(
-            extractor_command_prefix=(
-                sys.executable,
-                "-m",
-                "scripts.ids_offline_window_extractor",
-                "--profile-id",
-                PRIMARY_PROFILE_ID,
-            ),
+            extractor_command_prefix=("ids-offline-window-extractor",),
             adapter_profile_id=PRIMARY_PROFILE_ID,
         ),
+        extractor_runner=fake_runner,
     )
 
     result = bridge.bridge_window(window, output_dir=tmp_path / "flows")
 
-    assert result.command[:5] == (
-        sys.executable,
-        "-m",
-        "scripts.ids_offline_window_extractor",
-        "--profile-id",
-        PRIMARY_PROFILE_ID,
-    )
+    assert result.command[:1] == ("ids-offline-window-extractor",)
+    assert observed["command"] == result.command
+    assert observed["window_path"] == window.path
+    assert observed["output_path"] == result.extractor_output_path
     assert result.command[-2] == str(window.path)
     assert result.command[-1] == str(tmp_path / "flows")
     assert result.extractor_output_path.name == "capture-00001_Flow.csv"
@@ -244,10 +248,10 @@ def test_bridge_can_drive_the_offline_replacement_extractor_cli(tmp_path: Path) 
     assert emitted["event_type"] == "bridge_record"
     assert emitted["profile"] == PRIMARY_PROFILE_ID
     assert emitted["record"]["adapter_profile"] == PRIMARY_PROFILE_ID
-    assert emitted["record"]["Flow Duration"] == 900.0
-    assert emitted["record"]["flow_family"] == "bidirectional"
-    assert emitted["record"]["transport_family"] == "tcp"
-    assert emitted["record"]["capture_mode"] == "closed-window"
+    assert emitted["record"]["Flow Duration"] == 80.0
+    assert emitted["record"]["flow_family"] == "flow_family-value"
+    assert emitted["record"]["transport_family"] == "transport_family-value"
+    assert emitted["record"]["capture_mode"] == "capture_mode-value"
 
 
 def test_bridge_surfaces_window_stage_error_when_extractor_fails(tmp_path: Path) -> None:

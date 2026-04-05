@@ -147,6 +147,7 @@ def test_pyproject_console_scripts_map_to_canonical_modules() -> None:
     assert scripts["ids-stack"] == "ids.ops.same_host_stack_manage:main"
     assert scripts["ids-model-bundle-manage"] == "ids.ops.model_bundle_manage:main"
     assert scripts["ids-live-sensor"] == "ids.runtime.live_sensor:main"
+    assert scripts["ids-offline-window-extractor"] == "ids.runtime.extractor.offline_window_extractor:main"
     assert scripts["ids-operator-console-server"] == "ids.console.server:main"
     assert scripts["ids-package-final-model"] == "ml_pipeline.packaging.package_final_model:main"
     assert all(not target.startswith("scripts.") for target in scripts.values())
