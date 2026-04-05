@@ -56,6 +56,7 @@ sudo bash /opt/ids_ml_new/ops/install.sh \
 `console-only` seeds `/etc/ids-operator-console/admin.password` when the file is absent and `--create-secrets` is set, then runs console migration, admin bootstrap, and service start through `ids-operator-console-manage` before it reports success.
 
 The full-stack path bootstraps through the shipped bundled default artifact and keeps `ids-stack` as the canonical operator-facing bootstrap/readiness surface.
+`ops/install.sh` writes the live-sensor dumpcap and extractor values into `/etc/ids-live-sensor/ids-live-sensor.env` before bootstrap runs, and the packaged `ids-live-sensor.service` restarts from that same file. Install-time validation and steady-state runtime therefore share one exact live-sensor contract.
 
 The same-host bootstrap surface underneath the installer remains `ids-stack`:
 
@@ -66,7 +67,7 @@ ids-stack \
   --operator-env-file /etc/ids-operator-console/ids-operator-console.env \
   --activation-path /var/lib/ids-live-sensor/active_bundle.json \
   --dumpcap-binary /usr/bin/dumpcap \
-  --extractor-command-prefix /opt/ids_ml_new/.venv/bin/python -m ids.runtime.extractor.offline_window_extractor \
+  --extractor-command-prefix /opt/ids_ml_new/.venv/bin/ids-offline-window-extractor \
   --spool-dir /var/lib/ids-live-sensor \
   --alerts-output-path /var/log/ids-live-sensor/ids_live_alerts.jsonl \
   --quarantine-output-path /var/log/ids-live-sensor/ids_live_quarantine.jsonl \
@@ -99,10 +100,10 @@ ids-operator-console-manage \
 The packaged live-sensor helper default is the repository-backed extractor module:
 
 ```bash
-/opt/ids_ml_new/.venv/bin/python -m ids.runtime.extractor.offline_window_extractor
+/opt/ids_ml_new/.venv/bin/ids-offline-window-extractor
 ```
 
-`/opt/cicflowmeter/Cmd` remains a compatibility override, not the default install path.
+`/opt/cicflowmeter/Cmd` remains a compatibility override, not the default install path. Compatibility overrides on the packaged service contract are bounded to one exact executable path; multi-token extractor wrappers are outside the canonical `ops/install.sh` path.
 
 ## Telegram Notifications
 

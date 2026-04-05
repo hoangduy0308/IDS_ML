@@ -242,8 +242,9 @@ def test_install_helper_keeps_in_place_editable_checkout_contract() -> None:
     assert 'seed_live_sensor_env()' in install_script
     assert 'operator_env_value()' in install_script
     assert 'seed_console_admin_password()' in install_script
-    assert '--extractor-command-prefix-token P' in install_script
-    assert '--extractor-command-prefix "${EXTRACTOR_COMMAND_PREFIX[@]}"' in install_script
+    assert '--extractor-command-prefix P' in install_script
+    assert 'single-token extractor helper path written into the live-sensor env before bootstrap/runtime' in install_script
+    assert '--extractor-command-prefix "${live_sensor_extractor}"' in install_script
     assert 'selected_bundle_root="${DEFAULT_BUNDLED_BUNDLE_ROOT}"' in install_script
     assert '--candidate-bundle-root "${selected_bundle_root}"' in install_script
 
@@ -310,9 +311,21 @@ def test_install_helper_seeds_live_sensor_env_contract() -> None:
     assert 'require_file "${LIVE_SENSOR_ENV_SRC}"' in install_script
     assert 'install -d -m 0750 -o root -g ids-sensor "${LIVE_SENSOR_CONFIG_DIR}"' in install_script
     assert 'install -m 0640 -o root -g ids-sensor "${LIVE_SENSOR_ENV_SRC}" "${LIVE_SENSOR_ENV_DEST}"' in install_script
+    assert 'set_env_value "${LIVE_SENSOR_ENV_DEST}" IDS_LIVE_SENSOR_DUMPCAP_BINARY "${DUMPCAP_BINARY}"' in install_script
+    assert 'set_env_value "${LIVE_SENSOR_ENV_DEST}" IDS_LIVE_SENSOR_EXTRACTOR_COMMAND_PREFIX "${EXTRACTOR_COMMAND_PREFIX}"' in install_script
+    assert 'live_sensor_dumpcap=$(live_sensor_env_value IDS_LIVE_SENSOR_DUMPCAP_BINARY)' in install_script
+    assert 'live_sensor_extractor=$(live_sensor_env_value IDS_LIVE_SENSOR_EXTRACTOR_COMMAND_PREFIX)' in install_script
     assert 'chmod 0640 "${LIVE_SENSOR_ENV_DEST}"' in install_script
     assert 'chown root:ids-sensor "${LIVE_SENSOR_ENV_DEST}"' in install_script
     assert 'seed_live_sensor_env' in install_script
+
+
+def test_install_helper_rejects_multi_token_live_sensor_extractor_contract() -> None:
+    install_script = (REPO_ROOT / "ops" / "install.sh").read_text(encoding="utf-8")
+
+    assert '--extractor-command-prefix-token' not in install_script
+    assert 'multi-token overrides are compatibility-only and not accepted by ops/install.sh.' in install_script
+    assert 'if [[ "${MODE}" == "full-stack-same-host" && "${EXTRACTOR_COMMAND_PREFIX}" =~ [[:space:]] ]]; then' in install_script
 
 
 def test_install_helper_hardens_preseeded_env_file() -> None:

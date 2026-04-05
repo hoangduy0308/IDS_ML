@@ -16,10 +16,8 @@ Options:
   --live-sensor-env PATH       Host live-sensor env file path (default: /etc/ids-live-sensor/ids-live-sensor.env)
   --console-secret-file PATH    Host secret key file path (default: /etc/ids-operator-console/console.secret)
   --telegram-token-file PATH    Host Telegram token file path (default: /etc/ids-operator-console/telegram-bot-token.secret)
-  --dumpcap-binary PATH         dumpcap path passed to ids-stack bootstrap (default: /usr/bin/dumpcap)
-  --extractor-command-prefix P  Packaged replacement extractor helper prefix (default: /opt/ids_ml_new/.venv/bin/ids-offline-window-extractor)
-  --extractor-command-prefix-token P
-                               Repeat to pass a multi-token extractor command prefix
+  --dumpcap-binary PATH         Exact dumpcap path written into the live-sensor env before bootstrap/runtime (default: /usr/bin/dumpcap)
+  --extractor-command-prefix P  Exact single-token extractor helper path written into the live-sensor env before bootstrap/runtime (default: /opt/ids_ml_new/.venv/bin/ids-offline-window-extractor)
   --candidate-bundle-root PATH  Bundle root override for ids-stack bootstrap (default: /opt/ids_ml_new/artifacts/final_model/catboost_full_data_v1)
   --admin-username NAME         Admin username for console/bootstrap lifecycle (default: admin)
   --admin-password-file PATH    Admin password file for console/bootstrap lifecycle
@@ -35,6 +33,7 @@ Notes:
   - If wheelhouse/ is present under the checkout, the script prefers it for dependency installation only.
   - console-only runs console schema migration + admin bootstrap through ids-operator-console-manage, then starts the operator console + notification worker on the canonical packaged services.
   - full-stack-same-host auto-runs ids-stack bootstrap with the bundled default artifact unless --candidate-bundle-root overrides it.
+  - packaged live-sensor runtime values come from /etc/ids-live-sensor/ids-live-sensor.env; multi-token extractor prefixes are not part of that packaged service contract.
 EOF
 }
 
@@ -52,7 +51,9 @@ LIVE_SENSOR_ENV_DEST="${LIVE_SENSOR_CONFIG_DIR}/ids-live-sensor.env"
 CONSOLE_SECRET_FILE="${OPS_CONFIG_DIR}/console.secret"
 TELEGRAM_TOKEN_FILE="${OPS_CONFIG_DIR}/telegram-bot-token.secret"
 DUMPCAP_BINARY="/usr/bin/dumpcap"
-EXTRACTOR_COMMAND_PREFIX=("/opt/ids_ml_new/.venv/bin/ids-offline-window-extractor")
+EXTRACTOR_COMMAND_PREFIX="/opt/ids_ml_new/.venv/bin/ids-offline-window-extractor"
+DUMPCAP_BINARY_WAS_SET=0
+EXTRACTOR_COMMAND_PREFIX_WAS_SET=0
 ADMIN_USERNAME="admin"
 ADMIN_PASSWORD_FILE=""
 PROXY_PUBLIC_URL=""
@@ -95,14 +96,12 @@ while [[ $# -gt 0 ]]; do
       ;;
     --dumpcap-binary)
       DUMPCAP_BINARY=$2
+      DUMPCAP_BINARY_WAS_SET=1
       shift 2
       ;;
     --extractor-command-prefix)
-      EXTRACTOR_COMMAND_PREFIX=("$2")
-      shift 2
-      ;;
-    --extractor-command-prefix-token)
-      EXTRACTOR_COMMAND_PREFIX+=("$2")
+      EXTRACTOR_COMMAND_PREFIX=$2
+      EXTRACTOR_COMMAND_PREFIX_WAS_SET=1
       shift 2
       ;;
     --candidate-bundle-root)
@@ -217,6 +216,11 @@ ensure_mode_contract() {
     printf 'full-stack-same-host mode requires --bootstrap.\n' >&2
     exit 1
   fi
+
+  if [[ "${MODE}" == "full-stack-same-host" && "${EXTRACTOR_COMMAND_PREFIX}" =~ [[:space:]] ]]; then
+    printf 'full-stack-same-host uses one exact extractor helper path in %s; multi-token overrides are compatibility-only and not accepted by ops/install.sh.\n' "${LIVE_SENSOR_ENV_DEST}" >&2
+    exit 1
+  fi
 }
 
 require_mode
@@ -232,6 +236,46 @@ ensure_system_user() {
 operator_env_value() {
   local key=$1
   sed -n "s/^${key}=//p" "${OPERATOR_ENV_DEST}" | tail -n 1
+}
+
+live_sensor_env_value() {
+  local key=$1
+  sed -n "s/^${key}=//p" "${LIVE_SENSOR_ENV_DEST}" | tail -n 1
+}
+
+set_env_value() {
+  local env_file=$1
+  local key=$2
+  local value=$3
+  local tmp_file
+  tmp_file=$(mktemp)
+  awk -v key="${key}" -v value="${value}" '
+    BEGIN { updated = 0 }
+    index($0, key "=") == 1 { print key "=" value; updated = 1; next }
+    { print }
+    END { if (updated == 0) print key "=" value }
+  ' "${env_file}" > "${tmp_file}"
+  cat "${tmp_file}" > "${env_file}"
+  rm -f "${tmp_file}"
+}
+
+require_nonempty_env_value() {
+  local key=$1
+  local value=$2
+  if [[ -z "${value}" ]]; then
+    printf '%s must be set in %s before full-stack bootstrap runs.\n' "${key}" "${LIVE_SENSOR_ENV_DEST}" >&2
+    exit 1
+  fi
+}
+
+require_single_token_value() {
+  local key=$1
+  local value=$2
+  require_nonempty_env_value "${key}" "${value}"
+  if [[ "${value}" =~ [[:space:]] ]]; then
+    printf '%s in %s must be one executable path. Multi-token extractor prefixes are not part of the packaged live-sensor env/service contract.\n' "${key}" "${LIVE_SENSOR_ENV_DEST}" >&2
+    exit 1
+  fi
 }
 
 seed_operator_env() {
@@ -252,6 +296,10 @@ seed_live_sensor_env() {
   if [[ "${MODE}" != "full-stack-same-host" ]]; then
     return
   fi
+  if [[ "${EXTRACTOR_COMMAND_PREFIX}" =~ [[:space:]] ]]; then
+    printf 'full-stack-same-host install requires --extractor-command-prefix to be one executable path so bootstrap and systemd keep the same live-sensor contract.\n' >&2
+    exit 1
+  fi
   mkdir -p "$(dirname -- "${LIVE_SENSOR_ENV_DEST}")"
   if [[ ! -f "${LIVE_SENSOR_ENV_DEST}" ]]; then
     install -m 0640 -o root -g ids-sensor "${LIVE_SENSOR_ENV_SRC}" "${LIVE_SENSOR_ENV_DEST}"
@@ -259,6 +307,22 @@ seed_live_sensor_env() {
     chmod 0640 "${LIVE_SENSOR_ENV_DEST}"
     chown root:ids-sensor "${LIVE_SENSOR_ENV_DEST}"
   fi
+  if [[ ${DUMPCAP_BINARY_WAS_SET} -eq 1 ]]; then
+    set_env_value "${LIVE_SENSOR_ENV_DEST}" IDS_LIVE_SENSOR_DUMPCAP_BINARY "${DUMPCAP_BINARY}"
+  fi
+  if [[ ${EXTRACTOR_COMMAND_PREFIX_WAS_SET} -eq 1 ]]; then
+    set_env_value "${LIVE_SENSOR_ENV_DEST}" IDS_LIVE_SENSOR_EXTRACTOR_COMMAND_PREFIX "${EXTRACTOR_COMMAND_PREFIX}"
+  fi
+  chmod 0640 "${LIVE_SENSOR_ENV_DEST}"
+  chown root:ids-sensor "${LIVE_SENSOR_ENV_DEST}"
+  require_single_token_value IDS_LIVE_SENSOR_INTERFACE "$(live_sensor_env_value IDS_LIVE_SENSOR_INTERFACE)"
+  require_single_token_value IDS_LIVE_SENSOR_DUMPCAP_BINARY "$(live_sensor_env_value IDS_LIVE_SENSOR_DUMPCAP_BINARY)"
+  require_single_token_value IDS_LIVE_SENSOR_EXTRACTOR_COMMAND_PREFIX "$(live_sensor_env_value IDS_LIVE_SENSOR_EXTRACTOR_COMMAND_PREFIX)"
+  require_nonempty_env_value IDS_LIVE_SENSOR_SPOOL_DIR "$(live_sensor_env_value IDS_LIVE_SENSOR_SPOOL_DIR)"
+  require_nonempty_env_value IDS_LIVE_SENSOR_ALERTS_OUTPUT "$(live_sensor_env_value IDS_LIVE_SENSOR_ALERTS_OUTPUT)"
+  require_nonempty_env_value IDS_LIVE_SENSOR_QUARANTINE_OUTPUT "$(live_sensor_env_value IDS_LIVE_SENSOR_QUARANTINE_OUTPUT)"
+  require_nonempty_env_value IDS_LIVE_SENSOR_SUMMARY_OUTPUT "$(live_sensor_env_value IDS_LIVE_SENSOR_SUMMARY_OUTPUT)"
+  require_nonempty_env_value IDS_LIVE_SENSOR_ACTIVE_BUNDLE_PATH "$(live_sensor_env_value IDS_LIVE_SENSOR_ACTIVE_BUNDLE_PATH)"
 }
 
 seed_console_admin_password() {
@@ -387,30 +451,54 @@ run_bootstrap() {
   fi
   require_file "${ADMIN_PASSWORD_FILE}"
 
-  local selected_bundle_root="${CANDIDATE_BUNDLE_ROOT}"
-  if [[ -z "${selected_bundle_root}" ]]; then
-    selected_bundle_root="${DEFAULT_BUNDLED_BUNDLE_ROOT}"
-  fi
-  require_dir "${selected_bundle_root}"
+    local selected_bundle_root="${CANDIDATE_BUNDLE_ROOT}"
+    local live_sensor_interface
+    local live_sensor_dumpcap
+    local live_sensor_extractor
+    local live_sensor_spool_dir
+    local live_sensor_alerts_output
+    local live_sensor_quarantine_output
+    local live_sensor_summary_output
+    local activation_path
+    if [[ -z "${selected_bundle_root}" ]]; then
+      selected_bundle_root="${DEFAULT_BUNDLED_BUNDLE_ROOT}"
+    fi
+    require_dir "${selected_bundle_root}"
+    live_sensor_interface=$(live_sensor_env_value IDS_LIVE_SENSOR_INTERFACE)
+    live_sensor_dumpcap=$(live_sensor_env_value IDS_LIVE_SENSOR_DUMPCAP_BINARY)
+    live_sensor_extractor=$(live_sensor_env_value IDS_LIVE_SENSOR_EXTRACTOR_COMMAND_PREFIX)
+    live_sensor_spool_dir=$(live_sensor_env_value IDS_LIVE_SENSOR_SPOOL_DIR)
+    live_sensor_alerts_output=$(live_sensor_env_value IDS_LIVE_SENSOR_ALERTS_OUTPUT)
+    live_sensor_quarantine_output=$(live_sensor_env_value IDS_LIVE_SENSOR_QUARANTINE_OUTPUT)
+    live_sensor_summary_output=$(live_sensor_env_value IDS_LIVE_SENSOR_SUMMARY_OUTPUT)
+    activation_path=$(live_sensor_env_value IDS_LIVE_SENSOR_ACTIVE_BUNDLE_PATH)
+    require_single_token_value IDS_LIVE_SENSOR_INTERFACE "${live_sensor_interface}"
+    require_single_token_value IDS_LIVE_SENSOR_DUMPCAP_BINARY "${live_sensor_dumpcap}"
+    require_single_token_value IDS_LIVE_SENSOR_EXTRACTOR_COMMAND_PREFIX "${live_sensor_extractor}"
+    require_nonempty_env_value IDS_LIVE_SENSOR_SPOOL_DIR "${live_sensor_spool_dir}"
+    require_nonempty_env_value IDS_LIVE_SENSOR_ALERTS_OUTPUT "${live_sensor_alerts_output}"
+    require_nonempty_env_value IDS_LIVE_SENSOR_QUARANTINE_OUTPUT "${live_sensor_quarantine_output}"
+    require_nonempty_env_value IDS_LIVE_SENSOR_SUMMARY_OUTPUT "${live_sensor_summary_output}"
+    require_nonempty_env_value IDS_LIVE_SENSOR_ACTIVE_BUNDLE_PATH "${activation_path}"
 
-  local stack_cmd="${INSTALL_ROOT}/.venv/bin/ids-stack"
-  local activation_path="/var/lib/ids-live-sensor/active_bundle.json"
-  local smoke_url="${PROXY_PUBLIC_URL}"
+    local stack_cmd="${INSTALL_ROOT}/.venv/bin/ids-stack"
+    local smoke_url="${PROXY_PUBLIC_URL}"
   if [[ -z "${smoke_url}" ]]; then
     smoke_url=$(sed -n 's/^IDS_OPERATOR_CONSOLE_PUBLIC_BASE_URL=//p' "${OPERATOR_ENV_DEST}" | tail -n 1)
   fi
 
   "${stack_cmd}" \
     --repo-root "${INSTALL_ROOT}" \
-    --python-binary "${INSTALL_ROOT}/.venv/bin/python" \
-    --operator-env-file "${OPERATOR_ENV_DEST}" \
-    --activation-path "${activation_path}" \
-    --dumpcap-binary "${DUMPCAP_BINARY}" \
-    --extractor-command-prefix "${EXTRACTOR_COMMAND_PREFIX[@]}" \
-    --spool-dir /var/lib/ids-live-sensor \
-    --alerts-output-path /var/log/ids-live-sensor/ids_live_alerts.jsonl \
-    --quarantine-output-path /var/log/ids-live-sensor/ids_live_quarantine.jsonl \
-    --summary-output-path /var/log/ids-live-sensor/ids_live_sensor_summary.jsonl \
+      --python-binary "${INSTALL_ROOT}/.venv/bin/python" \
+      --operator-env-file "${OPERATOR_ENV_DEST}" \
+      --activation-path "${activation_path}" \
+      --interface "${live_sensor_interface}" \
+      --dumpcap-binary "${live_sensor_dumpcap}" \
+      --extractor-command-prefix "${live_sensor_extractor}" \
+      --spool-dir "${live_sensor_spool_dir}" \
+      --alerts-output-path "${live_sensor_alerts_output}" \
+      --quarantine-output-path "${live_sensor_quarantine_output}" \
+      --summary-output-path "${live_sensor_summary_output}" \
     --proxy-public-url "${smoke_url}" \
     --json bootstrap \
     --candidate-bundle-root "${selected_bundle_root}" \

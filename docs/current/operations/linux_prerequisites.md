@@ -39,7 +39,7 @@ The default path is `/usr/bin/dumpcap`. Configurable via `--dumpcap-binary` in t
 The canonical packaged extractor path is the installed module entrypoint created by the target-host virtual environment:
 
 ```bash
-/opt/ids_ml_new/.venv/bin/python -m ids.runtime.extractor.offline_window_extractor
+/opt/ids_ml_new/.venv/bin/ids-offline-window-extractor
 ```
 
 No separate extractor package is required for the canonical `console-only` or `full-stack same-host` product paths.
@@ -49,6 +49,8 @@ No separate extractor package is required for the canonical `console-only` or `f
 CICFlowMeter remains supported only as a compatibility override when an operator intentionally replaces the packaged extractor via `--extractor-command-prefix` or the equivalent live-sensor environment contract.
 
 Compatibility path: `/opt/cicflowmeter/Cmd`
+
+The packaged service contract accepts one exact executable path in `IDS_LIVE_SENSOR_EXTRACTOR_COMMAND_PREFIX`; multi-token extractor wrappers are outside the canonical installer/runtime path.
 
 Refer to the CICFlowMeter project documentation for build and installation instructions. The binary must be executable by the `ids-sensor` system user.
 

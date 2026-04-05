@@ -74,7 +74,7 @@ ids-stack \
   --operator-env-file /etc/ids-operator-console/ids-operator-console.env \
   --activation-path /var/lib/ids-live-sensor/active_bundle.json \
   --dumpcap-binary /usr/bin/dumpcap \
-  --extractor-command-prefix /opt/ids_ml_new/.venv/bin/python -m ids.runtime.extractor.offline_window_extractor \
+  --extractor-command-prefix /opt/ids_ml_new/.venv/bin/ids-offline-window-extractor \
   --spool-dir /var/lib/ids-live-sensor \
   --alerts-output-path /var/log/ids-live-sensor/ids_live_alerts.jsonl \
   --quarantine-output-path /var/log/ids-live-sensor/ids_live_quarantine.jsonl \
@@ -87,15 +87,15 @@ ids-stack \
 
 The canonical same-host interpreter contract is the Python binary inside the bootstrap-created installed environment at `/opt/ids_ml_new/.venv/bin/python`. Do not point the shipped services at host-global `/usr/bin/python3`; that would split the documented contract from the deployed one.
 
-Pass `--extractor-command-prefix` as separate argv tokens. Do not quote the prefix into a single shell word, or the live sensor service will collapse the extractor command structure.
+For the packaged same-host product path, `--extractor-command-prefix` is one exact executable path that must match `IDS_LIVE_SENSOR_EXTRACTOR_COMMAND_PREFIX` in `/etc/ids-live-sensor/ids-live-sensor.env`. The installer writes that env file before bootstrap and the systemd service restarts from the same file, so install-time validation and steady-state runtime share one source of truth.
 
 The packaged default helper path is:
 
 ```bash
-/opt/ids_ml_new/.venv/bin/python -m ids.runtime.extractor.offline_window_extractor
+/opt/ids_ml_new/.venv/bin/ids-offline-window-extractor
 ```
 
-`/opt/cicflowmeter/Cmd` is a compatibility override only.
+`/opt/cicflowmeter/Cmd` is a compatibility override only. Compatibility overrides on the packaged service contract are bounded to one exact executable path; multi-token wrappers belong to manual legacy recovery flows, not the canonical installer/runtime contract.
 
 The bootstrap flow delegates to the existing component owners. It does not own bundle restore, console restore, or service-specific mutation logic.
 The same-host stack contract carries the live-sensor extractor command prefix explicitly and leaves deeper extractor/runtime validation to the live-sensor preflight owner.

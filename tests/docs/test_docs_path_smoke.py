@@ -81,7 +81,7 @@ def test_packaged_operator_docs_keep_canonical_command_surface() -> None:
     assert "scripts/ids_same_host_stack_manage.py" in stack_doc
     assert "/opt/ids_ml_new/.venv/bin/python" in stack_doc
 
-    assert "/opt/ids_ml_new/.venv/bin/python -m ids.runtime.extractor.offline_window_extractor" in prereq_doc
+    assert "/opt/ids_ml_new/.venv/bin/ids-offline-window-extractor" in prereq_doc
     assert "/opt/cicflowmeter/Cmd" in prereq_doc
     assert "compatibility override" in prereq_doc
     assert "/usr/bin/bash -lc" not in prereq_doc
@@ -132,6 +132,7 @@ def test_operations_quickstart_docs_are_portable_and_canonical() -> None:
     assert "ids-operator-console-manage" in quickstart
     assert "admin.password" in quickstart
     assert "/opt/ids_ml_new/.venv/bin/python" in quickstart
+    assert "/opt/ids_ml_new/.venv/bin/ids-offline-window-extractor" in quickstart
     assert "pip install -e /opt/ids_ml_new" in quickstart
     assert "candidate_bundle" not in quickstart
     assert "catboost_full_data_v1" not in quickstart
@@ -141,6 +142,7 @@ def test_operations_quickstart_docs_are_portable_and_canonical() -> None:
     assert "ids-stack" in stack_ops
     assert "scripts/ids_same_host_stack_manage.py" in stack_ops
     assert "/opt/ids_ml_new/.venv/bin/python" in stack_ops
+    assert "/opt/ids_ml_new/.venv/bin/ids-offline-window-extractor" in stack_ops
     assert "/opt/ids_ml_new/artifacts/final_model/catboost_full_data_v1" in stack_ops
     assert "candidate_bundle" not in stack_ops
 
