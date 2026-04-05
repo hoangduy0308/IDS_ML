@@ -43,7 +43,11 @@ def test_install_mode_next_checks_document_mode_specific_readiness() -> None:
     install_script = _install_script_text()
 
     assert "Next checks:" in install_script
-    assert "--json bootstrap --candidate-bundle-root <bundle-root>" in install_script
-    assert "--proxy-public-url https://console.example --json smoke" in install_script
+    assert "if [[ \"${MODE}\" == \"console-only\" ]]; then" in install_script
     assert "console-only" in install_script
+    assert "--json preflight" in install_script
+    assert "--json status" in install_script
+    assert "--proxy-public-url https://console.example --json smoke" in install_script
+    assert "--json bootstrap --candidate-bundle-root <bundle-root>" in install_script
     assert "full-stack-same-host" in install_script
+    assert "console-only" in install_script
