@@ -66,28 +66,28 @@ command -v "${PYTHON_BIN}" >/dev/null 2>&1 || {
   exit 1
 }
 
-DEFAULT_BUNDLE_ROOT="${REPO_ROOT}/artifacts/final_model/catboost_full_data_v1"
 TIMESTAMP=$("${PYTHON_BIN}" -c "from datetime import datetime, timezone; print(datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ'))")
 STAGING_DIR="${OUTPUT_DIR}/staging-${TIMESTAMP}"
 BUNDLE_DIR="${STAGING_DIR}/ids_ml_new"
 WHEELHOUSE_DIR="${BUNDLE_DIR}/wheelhouse"
 ARCHIVE_PATH="${OUTPUT_DIR}/ids_ml_new-${TIMESTAMP}.tar.gz"
+DEFAULT_BUNDLE_ROOT="${BUNDLE_DIR}/artifacts/final_model/catboost_full_data_v1"
 
-printf '[1/4] Validating bundled default production artifact...\n'
-"${PYTHON_BIN}" -c "import sys; from pathlib import Path; repo_root = Path(sys.argv[1]); bundle_root = Path(sys.argv[2]); sys.path.insert(0, str(repo_root)); from ids.core.model_bundle import load_model_bundle_manifest; load_model_bundle_manifest(bundle_root)" "${REPO_ROOT}" "${DEFAULT_BUNDLE_ROOT}"
-
-mkdir -p "${WHEELHOUSE_DIR}"
-
-printf '[2/4] Building dependency wheelhouse...\n'
-"${PYTHON_BIN}" -m pip wheel setuptools wheel --wheel-dir "${WHEELHOUSE_DIR}"
-"${PYTHON_BIN}" -m pip wheel -r "${REPO_ROOT}/requirements.txt" --wheel-dir "${WHEELHOUSE_DIR}"
-
-printf '[3/4] Exporting tracked files via git archive...\n'
+printf '[1/4] Exporting tracked files via git archive...\n'
 mkdir -p "${BUNDLE_DIR}"
 # Safety: use git archive so only committed/tracked files are exported.
 # This prevents untracked secrets, credentials, .claude/, and other local-only
 # files from leaking into the release artifact.
 git -C "${REPO_ROOT}" archive HEAD | tar -C "${BUNDLE_DIR}" -xf -
+
+printf '[2/4] Validating staged bundled default production artifact...\n'
+"${PYTHON_BIN}" -c "import sys; from pathlib import Path; repo_root = Path(sys.argv[1]); bundle_root = Path(sys.argv[2]); sys.path.insert(0, str(repo_root)); from ids.core.model_bundle import load_model_bundle_manifest; load_model_bundle_manifest(bundle_root)" "${BUNDLE_DIR}" "${DEFAULT_BUNDLE_ROOT}"
+
+mkdir -p "${WHEELHOUSE_DIR}"
+
+printf '[3/4] Building dependency wheelhouse...\n'
+"${PYTHON_BIN}" -m pip wheel setuptools wheel --wheel-dir "${WHEELHOUSE_DIR}"
+"${PYTHON_BIN}" -m pip wheel -r "${REPO_ROOT}/requirements.txt" --wheel-dir "${WHEELHOUSE_DIR}"
 
 printf '[4/4] Writing archive...\n'
 mkdir -p "${OUTPUT_DIR}"

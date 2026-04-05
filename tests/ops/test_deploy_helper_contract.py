@@ -211,6 +211,11 @@ def _run_build_release(repo_root: Path, output_dir: Path, python_bin: Path) -> s
     )
 
 
+def _rewrite_working_tree_bundle_contract(repo_root: Path, *, valid: bool) -> None:
+    bundle_root = repo_root / "artifacts" / "final_model" / "catboost_full_data_v1"
+    _write_release_bundle_contract(bundle_root, valid=valid)
+
+
 def test_install_helper_keeps_in_place_editable_checkout_contract() -> None:
     install_script = (REPO_ROOT / "ops" / "install.sh").read_text(encoding="utf-8")
 
@@ -356,7 +361,7 @@ def test_build_release_uses_git_archive_not_manual_excludes() -> None:
     )
     assert 'git -C "${REPO_ROOT}" archive HEAD' in build_script
     assert "load_model_bundle_manifest" in build_script
-    assert "artifacts/final_model/catboost_full_data_v1" in build_script
+    assert 'DEFAULT_BUNDLE_ROOT="${BUNDLE_DIR}/artifacts/final_model/catboost_full_data_v1"' in build_script
 
     # Must NOT fall back to the old manual-exclude tar approach
     assert "tar -cf - ." not in build_script, (
@@ -380,7 +385,8 @@ def test_build_release_succeeds_for_valid_default_bundle(tmp_path: Path) -> None
 
     archive_path = output_dir / f"ids_ml_new-{FIXED_RELEASE_TIMESTAMP}.tar.gz"
     assert completed.returncode == 0, completed.stderr
-    assert "[1/4] Validating bundled default production artifact..." in completed.stdout
+    assert "[1/4] Exporting tracked files via git archive..." in completed.stdout
+    assert "[2/4] Validating staged bundled default production artifact..." in completed.stdout
     assert archive_path.is_file(), completed.stdout
 
     with tarfile.open(archive_path, "r:gz") as handle:
@@ -404,7 +410,33 @@ def test_build_release_fails_closed_for_invalid_default_bundle(tmp_path: Path) -
 
     archive_path = output_dir / f"ids_ml_new-{FIXED_RELEASE_TIMESTAMP}.tar.gz"
     assert completed.returncode != 0
-    assert "[1/4] Validating bundled default production artifact..." in completed.stdout
+    assert "[1/4] Exporting tracked files via git archive..." in completed.stdout
+    assert "[2/4] Validating staged bundled default production artifact..." in completed.stdout
+    assert "Bundle feature schema digest mismatch" in completed.stderr
+    assert not archive_path.exists()
+
+
+def test_build_release_ignores_uncommitted_invalid_working_tree_bundle_when_head_is_valid(tmp_path: Path) -> None:
+    repo_root, output_dir, fake_python = _make_release_fixture_repo(tmp_path, valid_bundle=True)
+    _rewrite_working_tree_bundle_contract(repo_root, valid=False)
+
+    completed = _run_build_release(repo_root, output_dir, fake_python)
+
+    archive_path = output_dir / f"ids_ml_new-{FIXED_RELEASE_TIMESTAMP}.tar.gz"
+    assert completed.returncode == 0, completed.stderr
+    assert "[2/4] Validating staged bundled default production artifact..." in completed.stdout
+    assert archive_path.is_file(), completed.stdout
+
+
+def test_build_release_fails_when_head_bundle_is_invalid_even_if_working_tree_is_fixed(tmp_path: Path) -> None:
+    repo_root, output_dir, fake_python = _make_release_fixture_repo(tmp_path, valid_bundle=False)
+    _rewrite_working_tree_bundle_contract(repo_root, valid=True)
+
+    completed = _run_build_release(repo_root, output_dir, fake_python)
+
+    archive_path = output_dir / f"ids_ml_new-{FIXED_RELEASE_TIMESTAMP}.tar.gz"
+    assert completed.returncode != 0
+    assert "[2/4] Validating staged bundled default production artifact..." in completed.stdout
     assert "Bundle feature schema digest mismatch" in completed.stderr
     assert not archive_path.exists()
 
