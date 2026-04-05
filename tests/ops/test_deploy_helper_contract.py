@@ -233,11 +233,15 @@ def test_install_helper_keeps_in_place_editable_checkout_contract() -> None:
     assert '"${INSTALL_ROOT}/.venv/bin/python" -m pip install --no-deps -e "${INSTALL_ROOT}"' in install_script
     assert 'Missing required --mode. Use console-only or full-stack-same-host.' in install_script
     assert 'console-only mode does not accept bootstrap or bundle inputs.' in install_script
+    assert 'console-only mode requires --create-secrets or --admin-password-file.' in install_script
     assert 'full-stack-same-host mode requires --bootstrap.' in install_script
     assert 'DEFAULT_BUNDLED_BUNDLE_ROOT="${INSTALL_ROOT}/artifacts/final_model/catboost_full_data_v1"' in install_script
+    assert 'DEFAULT_CONSOLE_ADMIN_PASSWORD_FILE="${OPS_CONFIG_DIR}/admin.password"' in install_script
     assert 'LIVE_SENSOR_ENV_SRC="${INSTALL_ROOT}/ops/ids-live-sensor.env.example"' in install_script
     assert 'LIVE_SENSOR_ENV_DEST="${LIVE_SENSOR_CONFIG_DIR}/ids-live-sensor.env"' in install_script
     assert 'seed_live_sensor_env()' in install_script
+    assert 'operator_env_value()' in install_script
+    assert 'seed_console_admin_password()' in install_script
     assert '--extractor-command-prefix-token P' in install_script
     assert '--extractor-command-prefix "${EXTRACTOR_COMMAND_PREFIX[@]}"' in install_script
     assert 'selected_bundle_root="${DEFAULT_BUNDLED_BUNDLE_ROOT}"' in install_script
@@ -248,7 +252,7 @@ def test_install_helper_routes_service_enable_by_mode() -> None:
     install_script = (REPO_ROOT / "ops" / "install.sh").read_text(encoding="utf-8")
 
     assert "enable_mode_services" in install_script
-    assert "systemctl enable --now ids-operator-console.service ids-operator-console-notify.service" in install_script
+    assert "systemctl enable ids-operator-console.service ids-operator-console-notify.service" in install_script
     assert "systemctl enable ids-live-sensor.service ids-operator-console.service ids-operator-console-notify.service" in install_script
     assert "Finalizing %s install path" in install_script
 
@@ -401,6 +405,24 @@ def test_install_helper_next_checks_include_activation_status_for_full_stack() -
 
     assert 'ids-model-bundle-manage --activation-path /var/lib/ids-live-sensor/active_bundle.json --json status' in install_script
     assert '--json bootstrap --candidate-bundle-root <bundle-root>' not in install_script
+
+
+def test_install_helper_console_only_next_checks_use_operator_console_manage() -> None:
+    install_script = (REPO_ROOT / "ops" / "install.sh").read_text(encoding="utf-8")
+
+    next_checks_start = install_script.index("printf '\\nInstall complete.\\n'")
+    console_only_branch_start = install_script.index(
+        'if [[ "${MODE}" == "console-only" ]]; then',
+        next_checks_start,
+    )
+    console_only_branch_end = install_script.index('else', console_only_branch_start)
+    console_only_block = install_script[console_only_branch_start:console_only_branch_end]
+
+    assert 'ids-stack --repo-root' not in console_only_block
+    assert 'ids.ops.operator_console_manage' in console_only_block
+    assert '--json status' in console_only_block
+    assert '--json smoke' in console_only_block
+    assert '--json notify-status' in console_only_block
 
 
 def test_build_release_fails_closed_for_invalid_default_bundle(tmp_path: Path) -> None:

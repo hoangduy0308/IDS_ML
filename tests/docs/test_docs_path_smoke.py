@@ -129,6 +129,8 @@ def test_operations_quickstart_docs_are_portable_and_canonical() -> None:
     assert "--mode console-only" in quickstart
     assert "--mode full-stack-same-host" in quickstart
     assert "ids-stack" in quickstart
+    assert "ids-operator-console-manage" in quickstart
+    assert "admin.password" in quickstart
     assert "/opt/ids_ml_new/.venv/bin/python" in quickstart
     assert "pip install -e /opt/ids_ml_new" in quickstart
     assert "candidate_bundle" not in quickstart
@@ -141,3 +143,7 @@ def test_operations_quickstart_docs_are_portable_and_canonical() -> None:
     assert "/opt/ids_ml_new/.venv/bin/python" in stack_ops
     assert "/opt/ids_ml_new/artifacts/final_model/catboost_full_data_v1" in stack_ops
     assert "candidate_bundle" not in stack_ops
+
+    deploy_readme = (REPO_ROOT / "ops" / "README-deploy.md").read_text(encoding="utf-8")
+    assert "ids-operator-console-manage" in deploy_readme
+    assert "admin.password" in deploy_readme

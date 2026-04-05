@@ -70,6 +70,8 @@ sudo bash /opt/ids_ml_new/ops/install.sh \
   --create-secrets
 ```
 
+That path seeds `/etc/ids-operator-console/admin.password` when the file is absent, runs console schema migration and admin bootstrap through `ids-operator-console-manage`, then starts the console and notification services.
+
 Full-stack same-host installs bootstrap the shipped bundled default artifact automatically:
 
 ```bash

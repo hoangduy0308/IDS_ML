@@ -53,6 +53,8 @@ sudo bash /opt/ids_ml_new/ops/install.sh \
   --proxy-public-url https://console.example
 ```
 
+`console-only` seeds `/etc/ids-operator-console/admin.password` when the file is absent and `--create-secrets` is set, then runs console migration, admin bootstrap, and service start through `ids-operator-console-manage` before it reports success.
+
 The full-stack path bootstraps through the shipped bundled default artifact and keeps `ids-stack` as the canonical operator-facing bootstrap/readiness surface.
 
 The same-host bootstrap surface underneath the installer remains `ids-stack`:
@@ -77,6 +79,22 @@ ids-stack \
 
 The exact bundled-default artifact path for the canonical same-host bootstrap example lives in
 `docs/current/operations/ids_same_host_stack_operations.md`.
+
+The console-only readiness checks after install use the canonical console manage surface:
+
+```bash
+ids-operator-console-manage \
+  --database-path /var/lib/ids-operator-console/operator_console.db \
+  --json status
+
+ids-operator-console-manage \
+  --database-path /var/lib/ids-operator-console/operator_console.db \
+  --json smoke
+
+ids-operator-console-manage \
+  --database-path /var/lib/ids-operator-console/operator_console.db \
+  --json notify-status
+```
 
 The packaged live-sensor helper default is the repository-backed extractor module:
 

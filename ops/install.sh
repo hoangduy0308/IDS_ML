@@ -21,11 +21,11 @@ Options:
   --extractor-command-prefix-token P
                                Repeat to pass a multi-token extractor command prefix
   --candidate-bundle-root PATH  Bundle root override for ids-stack bootstrap (default: /opt/ids_ml_new/artifacts/final_model/catboost_full_data_v1)
-  --admin-username NAME         Admin username for bootstrap (default: admin)
-  --admin-password-file PATH    Admin password file for bootstrap
+  --admin-username NAME         Admin username for console/bootstrap lifecycle (default: admin)
+  --admin-password-file PATH    Admin password file for console/bootstrap lifecycle
   --proxy-public-url URL        Public console URL used for smoke checks
   --bootstrap                   Run ids-stack bootstrap after installation
-  --create-secrets              Generate a console secret file if one does not exist yet
+  --create-secrets              Generate console/admin secret files if they do not exist yet
   --skip-service-enable         Install files but do not enable/start systemd units
   -h, --help                    Show this help
 
@@ -33,7 +33,7 @@ Notes:
   - Run this script from the extracted checkout at /opt/ids_ml_new/ops/install.sh.
   - The script recreates /opt/ids_ml_new/.venv on the target host and installs the app via pip install -e.
   - If wheelhouse/ is present under the checkout, the script prefers it for dependency installation only.
-  - console-only ends with the operator console + notification worker on the canonical packaged services.
+  - console-only runs console schema migration + admin bootstrap through ids-operator-console-manage, then starts the operator console + notification worker on the canonical packaged services.
   - full-stack-same-host auto-runs ids-stack bootstrap with the bundled default artifact unless --candidate-bundle-root overrides it.
 EOF
 }
@@ -61,6 +61,7 @@ CREATE_SECRETS=0
 SKIP_SERVICE_ENABLE=0
 CANDIDATE_BUNDLE_ROOT=""
 DEFAULT_BUNDLED_BUNDLE_ROOT="${INSTALL_ROOT}/artifacts/final_model/catboost_full_data_v1"
+DEFAULT_CONSOLE_ADMIN_PASSWORD_FILE="${OPS_CONFIG_DIR}/admin.password"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -206,7 +207,7 @@ require_mode() {
 
 ensure_mode_contract() {
   if [[ "${MODE}" == "console-only" ]]; then
-    if [[ ${BOOTSTRAP} -eq 1 || -n "${CANDIDATE_BUNDLE_ROOT}" || -n "${ADMIN_PASSWORD_FILE}" ]]; then
+    if [[ ${BOOTSTRAP} -eq 1 || -n "${CANDIDATE_BUNDLE_ROOT}" ]]; then
       printf 'console-only mode does not accept bootstrap or bundle inputs.\n' >&2
       exit 1
     fi
@@ -226,6 +227,11 @@ ensure_system_user() {
   if ! id -u "$user" >/dev/null 2>&1; then
     useradd --system --home /nonexistent --shell /usr/sbin/nologin "$user"
   fi
+}
+
+operator_env_value() {
+  local key=$1
+  sed -n "s/^${key}=//p" "${OPERATOR_ENV_DEST}" | tail -n 1
 }
 
 seed_operator_env() {
@@ -255,6 +261,33 @@ seed_live_sensor_env() {
   fi
 }
 
+seed_console_admin_password() {
+  local admin_password_file=$1
+  if [[ -z "${admin_password_file}" ]]; then
+    printf 'console-only mode requires --create-secrets or --admin-password-file.\n' >&2
+    exit 1
+  fi
+
+  if [[ -f "${admin_password_file}" ]]; then
+    chmod 0640 "${admin_password_file}"
+    chown root:ids-operator "${admin_password_file}"
+    return
+  fi
+
+  if [[ ${CREATE_SECRETS} -ne 1 ]]; then
+    printf 'console-only mode requires --create-secrets or --admin-password-file.\n' >&2
+    exit 1
+  fi
+
+  mkdir -p "$(dirname -- "${admin_password_file}")"
+  "${PYTHON_BIN}" - <<'PY' > "${admin_password_file}"
+import secrets
+print(secrets.token_hex(24))
+PY
+  chmod 0640 "${admin_password_file}"
+  chown root:ids-operator "${admin_password_file}"
+}
+
 seed_console_secret() {
   if [[ -f "${CONSOLE_SECRET_FILE}" ]]; then
     chmod 0640 "${CONSOLE_SECRET_FILE}"
@@ -282,7 +315,7 @@ install_service_units() {
 
 enable_mode_services() {
   if [[ "${MODE}" == "console-only" ]]; then
-    systemctl enable --now ids-operator-console.service ids-operator-console-notify.service >/dev/null
+    systemctl enable ids-operator-console.service ids-operator-console-notify.service >/dev/null
     return
   fi
 
@@ -306,6 +339,45 @@ install_python_product() {
 }
 
 run_bootstrap() {
+  if [[ "${MODE}" == "console-only" ]]; then
+    local operator_db_path
+    local console_admin_password_file
+    local console_manage_cmd
+
+    operator_db_path=$(operator_env_value IDS_OPERATOR_CONSOLE_DATABASE_PATH)
+    if [[ -z "${operator_db_path}" ]]; then
+      printf 'console-only mode requires IDS_OPERATOR_CONSOLE_DATABASE_PATH in %s.\n' "${OPERATOR_ENV_DEST}" >&2
+      exit 1
+    fi
+
+    console_admin_password_file="${ADMIN_PASSWORD_FILE}"
+    if [[ -z "${console_admin_password_file}" ]]; then
+      console_admin_password_file="${DEFAULT_CONSOLE_ADMIN_PASSWORD_FILE}"
+    fi
+    seed_console_admin_password "${console_admin_password_file}"
+
+    console_manage_cmd=(
+      "${INSTALL_ROOT}/.venv/bin/python"
+      -m
+      ids.ops.operator_console_manage
+      --database-path
+      "${operator_db_path}"
+    )
+
+    "${console_manage_cmd[@]}" --json migrate --allow-bootstrap
+    "${console_manage_cmd[@]}" \
+      --json bootstrap-admin \
+      --username "${ADMIN_USERNAME}" \
+      --password-file "${console_admin_password_file}"
+    if [[ ${SKIP_SERVICE_ENABLE} -ne 1 ]]; then
+      systemctl start ids-operator-console.service ids-operator-console-notify.service >/dev/null
+    fi
+    "${console_manage_cmd[@]}" --json status
+    "${console_manage_cmd[@]}" --json smoke
+    "${console_manage_cmd[@]}" --json notify-status
+    return
+  fi
+
   if [[ ${BOOTSTRAP} -ne 1 ]]; then
     return
   fi
@@ -385,7 +457,7 @@ install_service_units
 
 if [[ ${SKIP_SERVICE_ENABLE} -ne 1 ]]; then
   if [[ "${MODE}" == "console-only" ]]; then
-    printf '[6/6] Enabling and starting console-only services...\n'
+    printf '[6/6] Enabling console-only services...\n'
   else
     printf '[6/6] Enabling full-stack services...\n'
   fi
@@ -405,9 +477,10 @@ chown root:ids-operator /var/lib/ids-operator-console/operator_console.db 2>/dev
 printf '\nInstall complete.\n'
 printf 'Next checks:\n'
 if [[ "${MODE}" == "console-only" ]]; then
-  printf '  %s\n' "${INSTALL_ROOT}/.venv/bin/ids-stack --repo-root ${INSTALL_ROOT} --operator-env-file ${OPERATOR_ENV_DEST} --activation-path /var/lib/ids-live-sensor/active_bundle.json --json preflight"
-  printf '  %s\n' "${INSTALL_ROOT}/.venv/bin/ids-stack --repo-root ${INSTALL_ROOT} --operator-env-file ${OPERATOR_ENV_DEST} --activation-path /var/lib/ids-live-sensor/active_bundle.json --json status"
-  printf '  %s\n' "${INSTALL_ROOT}/.venv/bin/ids-stack --repo-root ${INSTALL_ROOT} --operator-env-file ${OPERATOR_ENV_DEST} --activation-path /var/lib/ids-live-sensor/active_bundle.json --proxy-public-url https://console.example --json smoke"
+  console_db_path=$(operator_env_value IDS_OPERATOR_CONSOLE_DATABASE_PATH)
+  printf '  %s\n' "${INSTALL_ROOT}/.venv/bin/python -m ids.ops.operator_console_manage --database-path ${console_db_path} --json status"
+  printf '  %s\n' "${INSTALL_ROOT}/.venv/bin/python -m ids.ops.operator_console_manage --database-path ${console_db_path} --json smoke"
+  printf '  %s\n' "${INSTALL_ROOT}/.venv/bin/python -m ids.ops.operator_console_manage --database-path ${console_db_path} --json notify-status"
 else
   printf '  %s\n' "${INSTALL_ROOT}/.venv/bin/ids-model-bundle-manage --activation-path /var/lib/ids-live-sensor/active_bundle.json --json status"
   printf '  %s\n' "${INSTALL_ROOT}/.venv/bin/ids-stack --repo-root ${INSTALL_ROOT} --operator-env-file ${OPERATOR_ENV_DEST} --activation-path /var/lib/ids-live-sensor/active_bundle.json --json preflight"
