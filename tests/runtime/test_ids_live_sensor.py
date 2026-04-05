@@ -505,34 +505,30 @@ def test_serve_capture_session_returns_cleanly_on_recoverable_dumpcap_exit(tmp_p
 
 def test_service_unit_keeps_preflight_and_stdout_journal_contract() -> None:
     service_path = REPO_ROOT / "deploy" / "systemd" / "ids-live-sensor.service"
+    env_text = (REPO_ROOT / "ops" / "ids-live-sensor.env.example").read_text(encoding="utf-8")
     content = service_path.read_text(encoding="utf-8")
 
-    assert "IDS_LIVE_SENSOR_DUMPCAP_BINARY=" in content
-    assert "IDS_LIVE_SENSOR_EXTRACTOR_COMMAND_PREFIX=" in content
-    assert "IDS_LIVE_SENSOR_ACTIVE_BUNDLE_PATH=" in content
+    assert "IDS_LIVE_SENSOR_DUMPCAP_BINARY=" in env_text
+    assert "IDS_LIVE_SENSOR_EXTRACTOR_COMMAND_PREFIX=" in env_text
+    assert "IDS_LIVE_SENSOR_ACTIVE_BUNDLE_PATH=" in env_text
     assert "-m ids.ops.live_sensor_preflight" in content
     assert '--dumpcap-binary ${IDS_LIVE_SENSOR_DUMPCAP_BINARY}' in content
     assert '--extractor-command-prefix ${IDS_LIVE_SENSOR_EXTRACTOR_COMMAND_PREFIX}' in content
     assert '--activation-path ${IDS_LIVE_SENSOR_ACTIVE_BUNDLE_PATH}' in content
-    assert '--interface "$IDS_LIVE_SENSOR_INTERFACE"' in content
-    assert '--dumpcap-binary "$IDS_LIVE_SENSOR_DUMPCAP_BINARY"' in content
-    assert '--extractor-command-prefix "$IDS_LIVE_SENSOR_EXTRACTOR_COMMAND_PREFIX"' not in content
-    execstart_line = next(
-        line for line in content.splitlines() if line.startswith("ExecStart=")
-    )
-    command_match = re.search(r"bash -lc '(.*)'$", execstart_line)
-    assert command_match is not None
-    shell_command = command_match.group(1).replace(
-        "${IDS_LIVE_SENSOR_EXTRACTOR_COMMAND_PREFIX}",
-        "/opt/extractor-prefix /opt/extractor-bridge",
-    )
-    tokens = shlex.split(shell_command)
+    assert "ExecStart=/opt/ids_ml_new/.venv/bin/python -m ids.runtime.live_sensor" in content
+    assert "ExecStart=/usr/bin/bash -lc" not in content
+    execstart_line = next(line for line in content.splitlines() if line.startswith("ExecStart="))
+    tokens = shlex.split(execstart_line.partition("ExecStart=")[2])
+    assert tokens[0] == "/opt/ids_ml_new/.venv/bin/python"
+    assert tokens[1:3] == ["-m", "ids.runtime.live_sensor"]
+    assert "--interface" in tokens
+    assert "--dumpcap-binary" in tokens
+    assert "--extractor-command-prefix" in tokens
     prefix_index = tokens.index("--extractor-command-prefix")
-    assert tokens[prefix_index + 1 : prefix_index + 3] == [
-        "/opt/extractor-prefix",
-        "/opt/extractor-bridge",
-    ]
-    assert '--activation-path "$IDS_LIVE_SENSOR_ACTIVE_BUNDLE_PATH"' in content
+    assert tokens[prefix_index + 1] == "${IDS_LIVE_SENSOR_EXTRACTOR_COMMAND_PREFIX}"
+    assert "--activation-path" in tokens
+    activation_index = tokens.index("--activation-path")
+    assert tokens[activation_index + 1] == "${IDS_LIVE_SENSOR_ACTIVE_BUNDLE_PATH}"
     assert "StandardOutput=journal" in content
     assert "StandardError=journal" in content
 

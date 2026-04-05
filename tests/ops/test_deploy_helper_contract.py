@@ -19,6 +19,7 @@ def test_install_helper_keeps_in_place_editable_checkout_contract() -> None:
     assert "--mode MODE" in install_script
     assert "console-only" in install_script
     assert "full-stack-same-host" in install_script
+    assert "--live-sensor-env PATH" in install_script
     assert 'INSTALL_ROOT=$(cd -- "${SCRIPT_DIR}/.." && pwd)' in install_script
     assert 'if [[ "${INSTALL_ROOT}" != "/opt/ids_ml_new" ]]' in install_script
     assert '"${PYTHON_BIN}" -m venv --clear "${INSTALL_ROOT}/.venv"' in install_script
@@ -27,6 +28,9 @@ def test_install_helper_keeps_in_place_editable_checkout_contract() -> None:
     assert 'console-only mode does not accept bootstrap or bundle inputs.' in install_script
     assert 'full-stack-same-host mode requires --bootstrap.' in install_script
     assert 'Cannot run --bootstrap without --candidate-bundle-root.' in install_script
+    assert 'LIVE_SENSOR_ENV_SRC="${INSTALL_ROOT}/ops/ids-live-sensor.env.example"' in install_script
+    assert 'LIVE_SENSOR_ENV_DEST="${LIVE_SENSOR_CONFIG_DIR}/ids-live-sensor.env"' in install_script
+    assert 'seed_live_sensor_env()' in install_script
     assert '--extractor-command-prefix-token P' in install_script
     assert '--extractor-command-prefix "${EXTRACTOR_COMMAND_PREFIX[@]}"' in install_script
 
@@ -38,6 +42,35 @@ def test_install_helper_routes_service_enable_by_mode() -> None:
     assert "systemctl enable --now ids-operator-console.service ids-operator-console-notify.service" in install_script
     assert "systemctl enable ids-live-sensor.service ids-operator-console.service ids-operator-console-notify.service" in install_script
     assert "Finalizing %s install path" in install_script
+
+
+def test_install_helper_seeds_live_sensor_env_contract() -> None:
+    install_script = (REPO_ROOT / "ops" / "install.sh").read_text(encoding="utf-8")
+    env_text = (REPO_ROOT / "ops" / "ids-live-sensor.env.example").read_text(encoding="utf-8")
+    live_sensor_service = (REPO_ROOT / "deploy" / "systemd" / "ids-live-sensor.service").read_text(
+        encoding="utf-8"
+    )
+
+    assert "EnvironmentFile=-/etc/ids-live-sensor/ids-live-sensor.env" in live_sensor_service
+    assert "Environment=" not in live_sensor_service, "live-sensor service must not hardcode Environment="
+    assert "ExecStartPre=/opt/ids_ml_new/.venv/bin/python -m ids.ops.live_sensor_preflight" in live_sensor_service
+    assert "ExecStart=/opt/ids_ml_new/.venv/bin/python -m ids.runtime.live_sensor" in live_sensor_service
+    assert "ExecStart=/usr/bin/bash -lc" not in live_sensor_service
+    assert "IDS_LIVE_SENSOR_INTERFACE=eth0" in env_text
+    assert "IDS_LIVE_SENSOR_SPOOL_DIR=/var/lib/ids-live-sensor" in env_text
+    assert "IDS_LIVE_SENSOR_ALERTS_OUTPUT=/var/log/ids-live-sensor/ids_live_alerts.jsonl" in env_text
+    assert "IDS_LIVE_SENSOR_QUARANTINE_OUTPUT=/var/log/ids-live-sensor/ids_live_quarantine.jsonl" in env_text
+    assert "IDS_LIVE_SENSOR_SUMMARY_OUTPUT=/var/log/ids-live-sensor/ids_live_sensor_summary.jsonl" in env_text
+    assert "IDS_LIVE_SENSOR_DUMPCAP_BINARY=/usr/bin/dumpcap" in env_text
+    assert "IDS_LIVE_SENSOR_EXTRACTOR_COMMAND_PREFIX=/opt/cicflowmeter/Cmd" in env_text
+    assert "IDS_LIVE_SENSOR_ACTIVE_BUNDLE_PATH=/var/lib/ids-live-sensor/active_bundle.json" in env_text
+    assert '--extractor-command-prefix ${IDS_LIVE_SENSOR_EXTRACTOR_COMMAND_PREFIX}' in live_sensor_service
+    assert 'require_file "${LIVE_SENSOR_ENV_SRC}"' in install_script
+    assert 'install -d -m 0750 -o root -g ids-sensor "${LIVE_SENSOR_CONFIG_DIR}"' in install_script
+    assert 'install -m 0640 -o root -g ids-sensor "${LIVE_SENSOR_ENV_SRC}" "${LIVE_SENSOR_ENV_DEST}"' in install_script
+    assert 'chmod 0640 "${LIVE_SENSOR_ENV_DEST}"' in install_script
+    assert 'chown root:ids-sensor "${LIVE_SENSOR_ENV_DEST}"' in install_script
+    assert 'seed_live_sensor_env' in install_script
 
 
 def test_install_helper_hardens_preseeded_env_file() -> None:

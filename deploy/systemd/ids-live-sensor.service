@@ -8,16 +8,9 @@ Type=exec
 User=ids-sensor
 Group=ids-sensor
 WorkingDirectory=/opt/ids_ml_new
-Environment=IDS_LIVE_SENSOR_INTERFACE=eth0
-Environment=IDS_LIVE_SENSOR_SPOOL_DIR=/var/lib/ids-live-sensor
-Environment=IDS_LIVE_SENSOR_ALERTS_OUTPUT=/var/log/ids-live-sensor/ids_live_alerts.jsonl
-Environment=IDS_LIVE_SENSOR_QUARANTINE_OUTPUT=/var/log/ids-live-sensor/ids_live_quarantine.jsonl
-Environment=IDS_LIVE_SENSOR_SUMMARY_OUTPUT=/var/log/ids-live-sensor/ids_live_sensor_summary.jsonl
-Environment=IDS_LIVE_SENSOR_DUMPCAP_BINARY=/usr/bin/dumpcap
-Environment=IDS_LIVE_SENSOR_EXTRACTOR_COMMAND_PREFIX=/opt/cicflowmeter/Cmd
-Environment=IDS_LIVE_SENSOR_ACTIVE_BUNDLE_PATH=/var/lib/ids-live-sensor/active_bundle.json
+EnvironmentFile=-/etc/ids-live-sensor/ids-live-sensor.env
 ExecStartPre=/opt/ids_ml_new/.venv/bin/python -m ids.ops.live_sensor_preflight --interface ${IDS_LIVE_SENSOR_INTERFACE} --dumpcap-binary ${IDS_LIVE_SENSOR_DUMPCAP_BINARY} --extractor-command-prefix ${IDS_LIVE_SENSOR_EXTRACTOR_COMMAND_PREFIX} --activation-path ${IDS_LIVE_SENSOR_ACTIVE_BUNDLE_PATH} --spool-dir ${IDS_LIVE_SENSOR_SPOOL_DIR} --alerts-output-path ${IDS_LIVE_SENSOR_ALERTS_OUTPUT} --quarantine-output-path ${IDS_LIVE_SENSOR_QUARANTINE_OUTPUT} --summary-output-path ${IDS_LIVE_SENSOR_SUMMARY_OUTPUT}
-ExecStart=/usr/bin/bash -lc 'exec /opt/ids_ml_new/.venv/bin/python -m ids.runtime.live_sensor --interface "$IDS_LIVE_SENSOR_INTERFACE" --spool-dir "$IDS_LIVE_SENSOR_SPOOL_DIR" --capture-window-duration-seconds 2.5 --capture-window-file-count 2 --max-pending-windows 2 --capture-buffer-megabytes 64 --update-interval-seconds 0.5 --dumpcap-binary "$IDS_LIVE_SENSOR_DUMPCAP_BINARY" --extractor-command-prefix ${IDS_LIVE_SENSOR_EXTRACTOR_COMMAND_PREFIX} --adapter-profile-id cicflowmeter_primary_v1 --alerts-output-path "$IDS_LIVE_SENSOR_ALERTS_OUTPUT" --quarantine-output-path "$IDS_LIVE_SENSOR_QUARANTINE_OUTPUT" --summary-output-path "$IDS_LIVE_SENSOR_SUMMARY_OUTPUT" --activation-path "$IDS_LIVE_SENSOR_ACTIVE_BUNDLE_PATH"'
+ExecStart=/opt/ids_ml_new/.venv/bin/python -m ids.runtime.live_sensor --interface ${IDS_LIVE_SENSOR_INTERFACE} --spool-dir ${IDS_LIVE_SENSOR_SPOOL_DIR} --capture-window-duration-seconds 2.5 --capture-window-file-count 2 --max-pending-windows 2 --capture-buffer-megabytes 64 --update-interval-seconds 0.5 --dumpcap-binary ${IDS_LIVE_SENSOR_DUMPCAP_BINARY} --extractor-command-prefix ${IDS_LIVE_SENSOR_EXTRACTOR_COMMAND_PREFIX} --adapter-profile-id cicflowmeter_primary_v1 --alerts-output-path ${IDS_LIVE_SENSOR_ALERTS_OUTPUT} --quarantine-output-path ${IDS_LIVE_SENSOR_QUARANTINE_OUTPUT} --summary-output-path ${IDS_LIVE_SENSOR_SUMMARY_OUTPUT} --activation-path ${IDS_LIVE_SENSOR_ACTIVE_BUNDLE_PATH}
 Restart=on-failure
 RestartSec=5s
 StateDirectory=ids-live-sensor
