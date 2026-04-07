@@ -1,0 +1,102 @@
+{
+  "manifest_version": 2,
+  "bundle_name": "catboost_two_stage_family_v1",
+  "created_at": "2026-04-06T06:21:24.823831+07:00",
+  "model_key": "catboost_full_data",
+  "model_family": "CatBoostClassifier",
+  "model_artifact": "model.cbm",
+  "feature_columns_file": "feature_columns.json",
+  "threshold": 0.5,
+  "positive_label": "Attack",
+  "negative_label": "Benign",
+  "feature_count": 72,
+  "train_rows": 18679445,
+  "recommended_threshold_from_validation_fpr_cap_0_02": 0.475,
+  "decision": {
+    "selected_threshold": 0.5,
+    "selected_model": "CatBoost full-data",
+    "reason": "Chosen as the final IDS model because it balances detection quality, FPR, scalability, and training cost."
+  },
+  "metrics_file": "metrics.json",
+  "training_summary_file": "training_summary.json",
+  "compatibility": {
+    "feature_schema": {
+      "kind": "feature_columns_json.v1",
+      "path": "feature_columns.json",
+      "feature_count": 72,
+      "sha256": "c36074099703b19204bcc080aad5587155294fc843833db09d613a1576a36214"
+    },
+    "inference_contract": {
+      "version": "ids_two_stage_family_contract.v1",
+      "prediction_type": "two_stage_family_classifier",
+      "stage1": {
+        "version": "ids_binary_classifier.v1",
+        "prediction_type": "binary_classifier",
+        "score_field": "attack_score",
+        "alert_field": "is_alert",
+        "threshold_source": "bundle",
+        "threshold": 0.5,
+        "positive_label": "Attack",
+        "negative_label": "Benign",
+        "allows_external_model_path": false,
+        "allows_external_feature_columns_path": false,
+        "allows_external_threshold_override": false
+      },
+      "stage2": {
+        "version": "ids_family_classifier.v1",
+        "prediction_type": "family_classifier",
+        "model_artifact": "stage2_model.cbm",
+        "feature_columns_file": "stage2_feature_columns.json",
+        "feature_schema": {
+          "kind": "feature_columns_json.v1",
+          "path": "stage2_feature_columns.json",
+          "feature_count": 72,
+          "sha256": "c36074099703b19204bcc080aad5587155294fc843833db09d613a1576a36214"
+        },
+        "closed_set_labels": [
+          "DDoS",
+          "DoS",
+          "Mirai",
+          "Spoofing",
+          "Web-Based"
+        ],
+        "allows_external_model_path": false,
+        "allows_external_feature_columns_path": false
+      },
+      "abstention": {
+        "threshold_source": "bundle",
+        "top1_confidence": 0.5588587362527666,
+        "runner_up_margin": 0.3097277574209342
+      },
+      "allows_external_stage1_model_path": false,
+      "allows_external_stage1_feature_columns_path": false,
+      "allows_external_stage1_threshold_override": false,
+      "allows_external_stage2_model_path": false,
+      "allows_external_stage2_feature_columns_path": false,
+      "allows_external_abstention_override": false
+    }
+  },
+  "source_artifacts": {
+    "model_path": "F:\\Work\\IDS_ML_New\\artifacts\\kaggle\\outputs\\catboost_full_data_attempt\\catboost_full_data_attempt_results\\catboost_full_data_attempt.cbm",
+    "feature_columns_path": "F:\\Work\\IDS_ML_New\\artifacts\\cic_iot_diad_2024_binary\\manifests\\feature_columns.json",
+    "summary_path": "F:\\Work\\IDS_ML_New\\artifacts\\kaggle\\outputs\\catboost_full_data_attempt\\catboost_full_data_attempt_results\\reports\\summary.csv",
+    "training_summary_path": "F:\\Work\\IDS_ML_New\\artifacts\\kaggle\\outputs\\catboost_full_data_attempt\\catboost_full_data_attempt_results\\reports\\training_summary.json",
+    "threshold_selection_path": "F:\\Work\\IDS_ML_New\\artifacts\\posttrain_analysis\\scaling_finalists\\reports\\catboost_full_threshold_selection.json",
+    "stage2_model_path": "F:\\Work\\IDS_ML_New\\artifacts\\modeling\\cic_iot_diad_2024_family_views\\family_classifier\\models\\catboost_family_classifier.cbm",
+    "stage2_feature_columns_path": "F:\\Work\\IDS_ML_New\\artifacts\\cic_iot_diad_2024_binary\\manifests\\feature_columns.json",
+    "stage2_report_path": "F:\\Work\\IDS_ML_New\\artifacts\\modeling\\cic_iot_diad_2024_family_views\\family_classifier\\reports\\oracle_family_eval.json"
+  },
+  "bundle_kind": "composite",
+  "stage2_report_file": "stage2_report.json",
+  "stage2_report_summary": {
+    "closed_set_labels": [
+      "DDoS",
+      "DoS",
+      "Mirai",
+      "Spoofing",
+      "Web-Based"
+    ],
+    "top1_confidence_threshold": 0.5588587362527666,
+    "runner_up_margin_threshold": 0.3097277574209342
+  }
+}
