@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import re
 import subprocess
 import time
@@ -15,7 +16,10 @@ DEFAULT_OUTPUT_FORMAT = "pcap"
 DEFAULT_CAPTURE_BUFFER_MEGABYTES = 64
 DEFAULT_UPDATE_INTERVAL_SECONDS = 1.0
 _VALID_INTERFACE_NAME = re.compile(r"^[A-Za-z0-9_.:-]+$")
-_WINDOW_PATH_RE = re.compile(r"(?P<path>[^\s'\"<>|]+?\.pcap(?:ng)?)", re.IGNORECASE)
+_WINDOW_PATH_RE = re.compile(
+    r"(?P<path>[^\s'\"<>|]+?(?:\.pcap(?:ng)?|[-_]\d{5}(?:_\d{14})?(?!\.pcap(?:ng)?)))",
+    re.IGNORECASE,
+)
 _FATAL_FAILURE_MARKERS = (
     "no such device",
     "permission denied",
@@ -46,6 +50,13 @@ def _format_number(value: float | int) -> str:
     if float(value).is_integer():
         return str(int(value))
     return format(float(value), "g")
+
+
+def _format_update_interval_milliseconds(value_seconds: float) -> str:
+    milliseconds = int(math.ceil(float(value_seconds) * 1000.0))
+    if milliseconds < 1:
+        milliseconds = 1
+    return str(milliseconds)
 
 
 def _normalize_capture_filter(capture_filter: str) -> str:
@@ -153,6 +164,7 @@ class RollingDumpcapCaptureManager:
         self.time_source = time_source or time.monotonic
         self._next_sequence_number = 0
         self._pending_windows: Deque[ClosedCaptureWindow] = deque()
+        self._active_window_path: Path | None = None
 
     @property
     def capture_output_prefix(self) -> Path:
@@ -185,13 +197,13 @@ class RollingDumpcapCaptureManager:
             "-B",
             str(self.config.capture_buffer_megabytes),
             "--update-interval",
-            _format_number(self.config.update_interval_seconds),
+            _format_update_interval_milliseconds(self.config.update_interval_seconds),
             "-b",
             f"duration:{_format_number(self.config.window_duration_seconds)}",
             "-b",
             f"files:{self.config.window_file_count}",
             "-b",
-            f"printname:{prefix}",
+            "printname:stderr",
         ]
 
     def launch_dumpcap(
@@ -237,9 +249,22 @@ class RollingDumpcapCaptureManager:
         *,
         observed_at: float | None = None,
     ) -> ClosedCaptureWindow | None:
-        event = self.parse_closed_window_notification(line, observed_at=observed_at)
-        if event is None:
+        active_window = self.parse_closed_window_notification(line, observed_at=observed_at)
+        if active_window is None:
             return None
+        if active_window.path.suffix.lower() not in {".pcap", ".pcapng"}:
+            if self._active_window_path is None:
+                self._active_window_path = active_window.path
+                return None
+            prior_path = self._active_window_path
+            self._active_window_path = active_window.path
+            event = replace(
+                active_window,
+                path=prior_path,
+                slot_index=self._extract_slot_index(prior_path),
+            )
+        else:
+            event = active_window
         sequence_number = self._next_sequence_number
         self._next_sequence_number += 1
         event = replace(
@@ -313,6 +338,9 @@ class RollingDumpcapCaptureManager:
 
     @staticmethod
     def _extract_slot_index(path: Path) -> int | None:
+        match = re.search(r"(?:-|_)(\d{5})(?:_\d{14})?$", path.name)
+        if match is not None:
+            return int(match.group(1))
         stem = path.stem
         match = re.search(r"(?:-|_)(\d+)$", stem)
         if match is None:

@@ -76,8 +76,8 @@ def test_build_dumpcap_command_enforces_tcp_udp_filter_and_pcap_output(tmp_path:
     assert command[command.index("-f") + 1] == "tcp or udp"
     assert command[command.index("-F") + 1] == "pcap"
     assert command[command.index("-B") + 1] == "32"
-    assert command[command.index("--update-interval") + 1] == "0.25"
-    assert b_values == ["duration:12.5", "files:4", f"printname:{prefix}"]
+    assert command[command.index("--update-interval") + 1] == "250"
+    assert b_values == ["duration:12.5", "files:4", "printname:stderr"]
     assert prefix.parent == tmp_path / "spool"
     assert prefix.name == "eth0-window"
 
@@ -106,6 +106,42 @@ def test_parse_closed_window_notification_extracts_path_and_ignores_noise(tmp_pa
     assert event.interface == "eth0"
     assert event.observed_at == 12.5
     assert event.notification == line
+
+
+def test_parse_closed_window_notification_accepts_extensionless_dumpcap_ringbuffer_names(
+    tmp_path: Path,
+) -> None:
+    manager = make_manager(tmp_path)
+
+    window_path = tmp_path / "spool" / "eth0-window_00084_20260405185140"
+    line = str(window_path)
+    event = manager.parse_closed_window_notification(line, observed_at=15.0)
+
+    assert event is not None
+    assert event.path == window_path
+    assert event.slot_index == 84
+    assert event.interface == "eth0"
+    assert event.observed_at == 15.0
+    assert event.notification == line
+
+
+def test_record_closed_window_notification_treats_printname_as_next_active_window(
+    tmp_path: Path,
+) -> None:
+    manager = make_manager(tmp_path, window_file_count=2, max_pending_windows=2)
+
+    first_active = tmp_path / "spool" / "eth0-window_00084_20260405185140"
+    second_active = tmp_path / "spool" / "eth0-window_00085_20260405185143"
+
+    assert manager.record_closed_window_notification(str(first_active), observed_at=10.0) is None
+
+    closed = manager.record_closed_window_notification(str(second_active), observed_at=12.0)
+
+    assert closed is not None
+    assert closed.path == first_active
+    assert closed.sequence_number == 0
+    assert closed.slot_index == 84
+    assert closed.rolled_over is False
 
 
 def test_window_rollover_wraps_file_slots_and_backlog_is_bounded(tmp_path: Path) -> None:
