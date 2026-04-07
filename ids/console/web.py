@@ -16,6 +16,7 @@ from .alerts import (
     ALERT_TRIAGE_STATES,
     add_investigation_note,
     get_alert_timeline,
+    list_alert_incidents_for_triage,
     list_alerts_for_triage,
     transition_alert_status,
 )
@@ -277,7 +278,11 @@ def create_operator_console_web_app(
         runtime_store = _open_store()
         try:
             readiness = build_readiness_payload(config, include_sensitive=True)
-            alert_preview = runtime_store.list_alerts(limit=8)
+            alert_preview = list_alert_incidents_for_triage(
+                runtime_store,
+                limit=8,
+                include_suppressed=True,
+            )
             anomaly_preview = runtime_store.list_anomalies(limit=8)
         finally:
             if store is None:
@@ -300,7 +305,7 @@ def create_operator_console_web_app(
             return redirect
         runtime_store = _open_store()
         try:
-            alerts = list_alerts_for_triage(
+            alerts = list_alert_incidents_for_triage(
                 runtime_store,
                 limit=200,
                 triage_status=status_filter,

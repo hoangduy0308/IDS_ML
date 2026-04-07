@@ -8,6 +8,7 @@ from ids.console.db import OperatorStore  # noqa: E402
 from ids.console.notifications import (  # noqa: E402
     NotificationDeliveryError,
     TelegramNotifierConfig,
+    build_alert_notification_text,
     dispatch_pending_telegram_notifications,
     queue_alert_notifications,
     redrive_failed_telegram_notifications,
@@ -201,6 +202,72 @@ def test_redrive_failed_notifications_requires_explicit_operator_action(tmp_path
         assert pending_delivery["last_error"] is None
     finally:
         store.close()
+
+
+def test_queue_alert_notifications_groups_burst_into_single_delivery(tmp_path: Path) -> None:
+    store = _new_store(tmp_path)
+    try:
+        for idx, dst_port in enumerate((80, 443, 830), start=1):
+            store.upsert_alert(
+                source_event_id=f"burst-{idx}",
+                event_ts=f"2026-04-05T23:00:{10 + idx:02d}+00:00",
+                severity=None,
+                src_ip=None,
+                dst_ip=None,
+                src_port=None,
+                dst_port=None,
+                protocol=None,
+                fingerprint=None,
+                payload={
+                    "event_type": "model_prediction",
+                    "attack_score": 0.9999,
+                    "predicted_label": "Attack",
+                    "is_alert": True,
+                    "passthrough": {
+                        "transport_family": "tcp",
+                        "source_flow_id": f"192.168.117.132:56619-192.168.117.128:{dst_port}-00{idx:03d}",
+                    },
+                },
+            )
+
+        queued = queue_alert_notifications(store, chat_id="-100burst", limit=20)
+        delivery = store._connection.execute(  # noqa: SLF001
+            "SELECT dedupe_key, payload_json FROM notification_deliveries"
+        ).fetchone()
+
+        assert queued == 1
+        assert delivery is not None
+        assert str(delivery["dedupe_key"]).startswith("incident:192.168.117.132:192.168.117.128:tcp:2026-04-05T23:00")
+        payload_json = str(delivery["payload_json"])
+        assert "[IDS ALERT BURST]" in payload_json
+        assert "alerts=3" in payload_json
+        assert "dst_ports=80, 443, 830" in payload_json
+    finally:
+        store.close()
+
+
+def test_build_alert_notification_text_for_single_alert_includes_flow_context() -> None:
+    text = build_alert_notification_text(
+        {
+            "id": 44,
+            "source_event_id": "alert-44",
+            "severity": "high",
+            "src_ip": "192.168.1.10",
+            "dst_ip": "192.168.1.20",
+            "src_port": 51515,
+            "dst_port": 443,
+            "protocol": "tcp",
+            "predicted_label": "Attack",
+            "attack_family": "unknown",
+            "payload": {"attack_score": 0.9123},
+        }
+    )
+
+    assert "[IDS ALERT]" in text
+    assert "flow=192.168.1.10:51515 -> 192.168.1.20:443" in text
+    assert "protocol=TCP" in text
+    assert "label=Attack" in text
+    assert "score=0.9123" in text
 
 
 def testresolve_telegram_config_db_overrides_none(tmp_path: Path) -> None:

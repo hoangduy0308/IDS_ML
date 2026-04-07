@@ -9,6 +9,7 @@ from ids.console.alerts import (  # noqa: E402
     add_investigation_note,
     build_alert_family_view,
     get_alert_timeline,
+    list_alert_incidents_for_triage,
     list_alerts_for_notification,
     list_alerts_for_triage,
     load_console_snapshot,
@@ -257,3 +258,85 @@ def test_build_alert_family_view_handles_payload_json_fallback() -> None:
     assert family["attack_family"] == "Recon"
     assert family["attack_family_confidence"] == pytest.approx(0.75)
     assert family["attack_family_margin"] == pytest.approx(0.25)
+
+
+def test_list_alerts_for_triage_enriches_flow_fields_from_passthrough_payload(tmp_path: Path) -> None:
+    store = _new_store(tmp_path)
+    try:
+        store.upsert_alert(
+            source_event_id="live-alert-001",
+            event_ts="2026-04-05T23:00:17+00:00",
+            severity=None,
+            src_ip=None,
+            dst_ip=None,
+            src_port=None,
+            dst_port=None,
+            protocol=None,
+            fingerprint=None,
+            payload={
+                "event_type": "model_prediction",
+                "attack_score": 0.9999,
+                "predicted_label": "Attack",
+                "is_alert": True,
+                "passthrough": {
+                    "transport_family": "tcp",
+                    "source_flow_id": "192.168.117.132:56619-192.168.117.128:830-00103",
+                },
+            },
+        )
+
+        alerts = list_alerts_for_triage(store, include_suppressed=True)
+
+        assert len(alerts) == 1
+        alert = alerts[0]
+        assert alert["src_ip"] == "192.168.117.132"
+        assert alert["dst_ip"] == "192.168.117.128"
+        assert alert["src_port"] == 56619
+        assert alert["dst_port"] == 830
+        assert alert["protocol"] == "tcp"
+        assert alert["severity"] == "critical"
+        assert alert["source_flow_id"] == "192.168.117.132:56619-192.168.117.128:830-00103"
+        assert "192.168.117.132:56619 -> 192.168.117.128:830" in alert["flow_summary"]
+    finally:
+        store.close()
+
+
+def test_list_alert_incidents_for_triage_groups_same_burst_into_single_incident(tmp_path: Path) -> None:
+    store = _new_store(tmp_path)
+    try:
+        for idx, dst_port in enumerate((80, 443, 830), start=1):
+            store.upsert_alert(
+                source_event_id=f"scan-alert-{idx}",
+                event_ts=f"2026-04-05T23:00:{10 + idx:02d}+00:00",
+                severity=None,
+                src_ip=None,
+                dst_ip=None,
+                src_port=None,
+                dst_port=None,
+                protocol=None,
+                fingerprint=None,
+                payload={
+                    "event_type": "model_prediction",
+                    "attack_score": 0.9999,
+                    "predicted_label": "Attack",
+                    "is_alert": True,
+                    "passthrough": {
+                        "transport_family": "tcp",
+                        "source_flow_id": f"192.168.117.132:56619-192.168.117.128:{dst_port}-00{idx:03d}",
+                    },
+                },
+            )
+
+        incidents = list_alert_incidents_for_triage(store, include_suppressed=True)
+
+        assert len(incidents) == 1
+        incident = incidents[0]
+        assert incident["incident_alert_count"] == 3
+        assert incident["src_ip"] == "192.168.117.132"
+        assert incident["dst_ip"] == "192.168.117.128"
+        assert incident["incident_dst_ports"] == [80, 443, 830]
+        assert incident["severity"] == "critical"
+        assert incident["source_event_id"] == "192.168.117.132 -> 192.168.117.128 (3 alerts)"
+        assert "tcp" in str(incident["incident_summary"]).lower()
+    finally:
+        store.close()

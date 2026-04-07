@@ -7,7 +7,7 @@ from urllib import error as urllib_error
 from urllib import request as urllib_request
 import json
 
-from .alerts import list_alerts_for_notification
+from .alerts import list_alert_incidents_for_notification
 from .db import OperatorStore
 
 
@@ -79,31 +79,81 @@ class NotificationDeliveryError(Exception):
 TelegramSender = Callable[[TelegramNotifierConfig, str, str], str]
 
 
+def _format_score_fragment(value: Any) -> str:
+    if isinstance(value, (int, float)):
+        return f"{float(value):.4f}"
+    return "n/a"
+
+
 def build_alert_notification_text(alert: Mapping[str, Any]) -> str:
     payload = _decode_payload(alert.get("payload"))
     if not payload:
         payload = _decode_payload(alert.get("payload_json"))
 
-    source_event_id = str(alert.get("source_event_id") or f"alert-{alert.get('id')}")
+    source_event_id = str(
+        alert.get("latest_source_event_id")
+        or alert.get("source_event_id")
+        or f"alert-{alert.get('id')}"
+    )
     severity = str(alert.get("severity") or "unknown").upper()
     event_ts = str(alert.get("event_ts") or payload.get("timestamp") or "unknown")
     src_ip = str(alert.get("src_ip") or payload.get("src_ip") or "n/a")
     dst_ip = str(alert.get("dst_ip") or payload.get("dst_ip") or "n/a")
+    src_port = alert.get("src_port")
+    dst_port = alert.get("dst_port")
+    protocol = str(alert.get("protocol") or payload.get("protocol") or "n/a").upper()
+    incident_count = int(alert.get("incident_alert_count") or 1)
+    incident_summary = str(alert.get("incident_summary") or f"{src_ip} -> {dst_ip}")
+    predicted_label = str(alert.get("predicted_label") or payload.get("predicted_label") or "unknown")
+    attack_family = str(alert.get("attack_family") or payload.get("attack_family") or "unknown")
+    dst_ports = alert.get("incident_dst_ports")
     score = payload.get("attack_score", payload.get("score"))
-    score_fragment = f"{float(score):.4f}" if isinstance(score, (int, float)) else "n/a"
+    score_fragment = _format_score_fragment(alert.get("attack_score") or score)
 
+    if incident_count > 1:
+        port_preview = ""
+        if isinstance(dst_ports, list) and dst_ports:
+            shown = ", ".join(str(port) for port in dst_ports[:6])
+            remainder = len(dst_ports) - min(len(dst_ports), 6)
+            port_preview = f"\ndst_ports={shown}" + (f" +{remainder} more" if remainder > 0 else "")
+        return (
+            "[IDS ALERT BURST]\n"
+            f"incident={source_event_id}\n"
+            f"severity={severity}\n"
+            f"alerts={incident_count}\n"
+            f"flow={incident_summary}\n"
+            f"protocol={protocol}\n"
+            f"score_max={score_fragment}"
+            f"{port_preview}\n"
+            f"timestamp={event_ts}"
+        )
+
+    src_fragment = f"{src_ip}:{src_port}" if src_port is not None else src_ip
+    dst_fragment = f"{dst_ip}:{dst_port}" if dst_port is not None else dst_ip
     return (
         "[IDS ALERT]\n"
         f"event={source_event_id}\n"
         f"severity={severity}\n"
+        f"flow={src_fragment} -> {dst_fragment}\n"
+        f"protocol={protocol}\n"
+        f"label={predicted_label}\n"
+        f"family={attack_family}\n"
         f"score={score_fragment}\n"
-        f"src={src_ip}\n"
-        f"dst={dst_ip}\n"
         f"timestamp={event_ts}"
     )
 
 
 def _alert_dedupe_key(alert: Mapping[str, Any]) -> str:
+    if int(alert.get("incident_alert_count") or 1) > 1:
+        src_ip = str(alert.get("src_ip") or "unknown-src")
+        dst_ip = str(alert.get("dst_ip") or "unknown-dst")
+        protocol = str(alert.get("protocol") or "unknown-proto").lower()
+        bucket = str(alert.get("event_ts") or "unknown-ts")[:16]
+        return f"incident:{src_ip}:{dst_ip}:{protocol}:{bucket}"
+    fingerprint = alert.get("fingerprint")
+    if fingerprint:
+        bucket = str(alert.get("event_ts") or "unknown-ts")[:16]
+        return f"flow:{fingerprint}:{bucket}"
     source_event_id = alert.get("source_event_id")
     if source_event_id:
         return str(source_event_id)
@@ -119,7 +169,7 @@ def queue_alert_notifications(
     if not chat_id.strip():
         raise ValueError("chat_id must not be blank")
 
-    alerts = list_alerts_for_notification(store, limit=limit)
+    alerts = list_alert_incidents_for_notification(store, limit=limit)
     queued = 0
     for alert in alerts:
         payload = {
